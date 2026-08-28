@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Verdana, Geneva, sans-serif;
+
+  --color-bg: #141c29;
+  --color-bg-raised: #1b2536;
+  --color-bg-card: #1e2a3d;
+  --color-border: #2c3a52;
+  --color-primary: #4c8df5;
+  --color-accent: #9d4eed;
+  --color-profit: #3ddc84;
+  --color-loss: #f55c5c;
+  --color-text: #e8ecf5;
+  --color-text-muted: #8a94a8;
+
+  --color-pos-qb: #f55c5c;
+  --color-pos-rb: #3ddc84;
+  --color-pos-wr: #4c8df5;
+  --color-pos-te: #f5a45c;
+  --color-pos-k: #9d4eed;
+  --color-pos-ml: #4ce0d6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+@keyframes flash-profit {
+  0% {
+    background-color: rgba(61, 220, 132, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes flash-loss {
+  0% {
+    background-color: rgba(245, 92, 92, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash-profit {
+  animation: flash-profit 900ms ease-out;
+}
+.flash-loss {
+  animation: flash-loss 900ms ease-out;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.skeleton {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  background: var(--color-bg-raised);
+}
