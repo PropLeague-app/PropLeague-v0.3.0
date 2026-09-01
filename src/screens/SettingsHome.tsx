@@ -46,6 +46,91 @@ function SectionHeader({ children }: { children: string }) {
   return <p className="font-semibold text-sm text-text-muted uppercase tracking-wide mt-2">{children}</p>;
 }
 
+/** Collapsed to a single row by default; expands into a small inline form.
+ * Manages its own state so it doesn't add more hooks to the already-large
+ * SettingsHome component. */
+function ChangePasswordRow() {
+  const updatePassword = useAuthStore((s) => s.updatePassword);
+  const [open, setOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    setError(null);
+    if (!newPassword) {
+      setError('Enter a new password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setSubmitting(true);
+    const result = await updatePassword(newPassword);
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.error ?? 'Something went wrong.');
+      return;
+    }
+    setSuccess(true);
+    setNewPassword('');
+    setConfirmPassword('');
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => {
+          setOpen(true);
+          setSuccess(false);
+          setError(null);
+        }}
+        className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left"
+      >
+        <span>🔑</span> Change Password
+      </button>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <input
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        placeholder="New password"
+        type="password"
+        autoComplete="new-password"
+        className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+      />
+      <input
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        placeholder="Confirm new password"
+        type="password"
+        autoComplete="new-password"
+        className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+      />
+      {error && <p className="text-loss text-xs">{error}</p>}
+      {success && <p className="text-profit text-xs">Password updated.</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+        >
+          Save
+        </button>
+        <button onClick={() => setOpen(false)} className="flex-1 bg-bg-raised border border-border font-medium py-2 rounded-lg text-sm">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsHome() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
@@ -756,7 +841,8 @@ export function SettingsHome() {
         )}
       </div>
       <SectionHeader>Account</SectionHeader>
-      <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
+        <ChangePasswordRow />
         <button
           onClick={async () => {
             if (!confirm('Log out of PropLeague?')) return;

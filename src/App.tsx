@@ -7,6 +7,7 @@ import { MobileShell } from './components/layout/MobileShell';
 import { Welcome } from './screens/onboarding/Welcome';
 import { HowItWorks } from './screens/onboarding/HowItWorks';
 import { Auth } from './screens/onboarding/Auth';
+import { ResetPassword } from './screens/onboarding/ResetPassword';
 import { ProfileSetup } from './screens/onboarding/ProfileSetup';
 import { CreateLeague } from './screens/onboarding/CreateLeague';
 import { InviteScreen } from './screens/onboarding/InviteScreen';
@@ -90,6 +91,7 @@ function App() {
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/how-it-works" element={<HowItWorks />} />
       <Route path="/auth" element={<Auth />} />
+<Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/profile-setup" element={<ProfileSetup />} />
       <Route path="/create-league" element={<CreateLeague />} />
       <Route path="/create-league/invite/:leagueId" element={<InviteScreen />} />

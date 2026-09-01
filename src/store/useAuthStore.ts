@@ -36,6 +36,8 @@ interface AuthState {
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   completeProfileSetup: (username: string, avatarEmoji: string) => Promise<{ ok: boolean; error?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  updatePassword: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 interface ProfileRow {
@@ -154,6 +156,20 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     const profile = rowToProfile(data as ProfileRow);
     syncAppStoreProfile(profile);
     set({ profile });
+    return { ok: true };
+  },
+
+  requestPasswordReset: async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+
+  updatePassword: async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { ok: false, error: error.message };
     return { ok: true };
   },
 }));

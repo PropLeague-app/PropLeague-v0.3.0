@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { goBack } from '../../components/layout/BackHeader';
 
-type Mode = 'signin' | 'signup';
+type Mode = 'signin' | 'signup' | 'forgot';
 
 /** Where to send the user once auth finishes. Kept in sessionStorage too
  * because the Google/Apple flows do a full-page redirect away and back —
@@ -20,18 +20,22 @@ export function Auth() {
   const signUpWithEmail = useAuthStore((s) => s.signUpWithEmail);
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
   const signInWithApple = useAuthStore((s) => s.signInWithApple);
+  const requestPasswordReset = useAuthStore((s) => s.requestPasswordReset);
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function switchMode() {
-    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+  function goToMode(m: Mode) {
+    setMode(m);
     setError(null);
     setInfo(null);
+    setPassword('');
+    setConfirmPassword('');
   }
 
   async function submitEmail() {
@@ -39,6 +43,10 @@ export function Auth() {
     setInfo(null);
     if (!email.trim() || !password) {
       setError('Email and password are required.');
+      return;
+    }
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
     setSubmitting(true);
@@ -51,10 +59,27 @@ export function Auth() {
     }
     if (result.needsEmailConfirmation) {
       setInfo('Check your email to confirm your account, then log in.');
-      setMode('signin');
+      goToMode('signin');
       return;
     }
     navigate('/profile-setup', { state: { next } });
+  }
+
+  async function submitForgotPassword() {
+    setError(null);
+    setInfo(null);
+    if (!email.trim()) {
+      setError('Enter your email first.');
+      return;
+    }
+    setSubmitting(true);
+    const result = await requestPasswordReset(email.trim());
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.error ?? 'Something went wrong.');
+      return;
+    }
+    setInfo('Check your email for a link to reset your password.');
   }
 
   function oauth(fn: () => Promise<void>) {
@@ -70,55 +95,99 @@ export function Auth() {
           <span className="text-sm">Back</span>
         </button>
 
-        <h1 className="text-2xl font-bold">{mode === 'signin' ? 'Log in' : 'Create your account'}</h1>
+        <h1 className="text-2xl font-bold">
+          {mode === 'signin' ? 'Log in' : mode === 'signup' ? 'Create your account' : 'Reset your password'}
+        </h1>
 
-        <div className="flex flex-col gap-3">
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            type="email"
-            autoComplete="email"
-            className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
-          />
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            type="password"
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
-          />
-          {error && <p className="text-loss text-xs">{error}</p>}
-          {info && <p className="text-text-muted text-xs">{info}</p>}
-          <button
-            onClick={submitEmail}
-            disabled={submitting}
-            className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
-          >
-            {mode === 'signin' ? 'Log in' : 'Sign up'}
-          </button>
-        </div>
+        {mode === 'forgot' ? (
+          <div className="flex flex-col gap-3">
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              type="email"
+              autoComplete="email"
+              className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
+            />
+            {error && <p className="text-loss text-xs">{error}</p>}
+            {info && <p className="text-text-muted text-xs">{info}</p>}
+            <button
+              onClick={submitForgotPassword}
+              disabled={submitting}
+              className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+            >
+              Send reset email
+            </button>
+            <button onClick={() => goToMode('signin')} className="text-primary text-sm font-medium">
+              Back to log in
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-3">
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                type="email"
+                autoComplete="email"
+                className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
+              />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                type="password"
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
+              />
+              {mode === 'signup' && (
+                <input
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm password"
+                  type="password"
+                  autoComplete="new-password"
+                  className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
+                />
+              )}
+              {mode === 'signin' && (
+                <button onClick={() => goToMode('forgot')} className="text-primary text-xs font-medium self-end -mt-1">
+                  Forgot password?
+                </button>
+              )}
+              {error && <p className="text-loss text-xs">{error}</p>}
+              {info && <p className="text-text-muted text-xs">{info}</p>}
+              <button
+                onClick={submitEmail}
+                disabled={submitting}
+                className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+              >
+                {mode === 'signin' ? 'Log in' : 'Sign up'}
+              </button>
+            </div>
 
-        <button onClick={switchMode} className="text-primary text-sm font-medium">
-          {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
-        </button>
+            <button onClick={() => goToMode(mode === 'signin' ? 'signup' : 'signin')} className="text-primary text-sm font-medium">
+              {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
+            </button>
 
-        <div className="flex flex-col gap-2 mt-2">
-          <p className="text-center text-xs text-text-muted">or continue with</p>
-          <button
-            onClick={() => oauth(signInWithGoogle)}
-            className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-          >
-            Google
-          </button>
-          <button
-            onClick={() => oauth(signInWithApple)}
-            className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-          >
-            Apple
-          </button>
-        </div>
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-center text-xs text-text-muted">or continue with</p>
+              <button
+                onClick={() => oauth(signInWithGoogle)}
+                className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+              >
+                Google
+              </button>
+              <button
+                onClick={() => oauth(signInWithApple)}
+                className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+              >
+                Apple
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
