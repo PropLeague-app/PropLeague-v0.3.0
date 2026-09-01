@@ -56,15 +56,10 @@ function matchupsFromSchedule(scheduleByWeek: Record<number, [string, string][]>
   return matchupsByWeek;
 }
 
-function randomInviteCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
-}
-
 export interface CreateLeagueParams {
   id: string;
+  inviteCode: string;
+  userTeamId: string;
   name: string;
   teamCount: number;
   isPublic: boolean;
@@ -76,7 +71,7 @@ export interface CreateLeagueParams {
 
 export function createLeague(params: CreateLeagueParams): League {
   const userTeam: LeagueTeam = {
-    id: 'user',
+    id: params.userTeamId,
     ownerName: 'You',
     teamName: params.userTeamName,
     abbrev: params.userTeamAbbrev,
@@ -99,7 +94,7 @@ export function createLeague(params: CreateLeagueParams): League {
   return {
     id: params.id,
     name: params.name,
-    inviteCode: randomInviteCode(),
+    inviteCode: params.inviteCode,
     commissionerTeamId: userTeam.id,
     settings,
     targetTeamCount: params.teamCount,
@@ -127,20 +122,104 @@ export function createLeague(params: CreateLeagueParams): League {
   };
 }
 
-/** Populates remaining league slots (up to `teamCount`) with AI-controlled teams,
- * generates the season's H2H schedule, and auto-submits their Week 1 lineups. */
-export function fillWithSimulatedTeams(league: League, teamCount: number): League {
-  const rng = createRng(`${league.id}-simteams`);
+/** Used when JOINING an existing real league rather than creating one — builds a
+ * local League shell around whatever real teams already exist in Supabase for it,
+ * instead of assuming exactly one starting team. Matchups/rosters are deliberately
+ * left empty: this joiner's browser has no access to the commissioner's locally-
+ * simulated schedule (that only becomes shared once Steps 4-6 move it to Supabase
+ * too), so showing a real team list with an honestly-empty season beats faking one. */
+export interface RealTeamInput {
+  id: string;
+  teamName: string;
+  abbrev: string;
+  ownerName: string;
+  isSimulated: boolean;
+  logoColor: string;
+  conferenceId: string | null;
+}
+
+export function buildLeagueFromRealTeams(params: {
+  id: string;
+  name: string;
+  inviteCode: string;
+  commissionerTeamId: string;
+  targetTeamCount: number;
+  isPublic: boolean;
+  teams: RealTeamInput[];
+}): League {
+  const teams: LeagueTeam[] = params.teams.map((t) => ({
+    id: t.id,
+    ownerName: t.ownerName,
+    teamName: t.teamName,
+    abbrev: t.abbrev,
+    logoMode: 'initials',
+    logoEmoji: TEAM_LOGO_EMOJIS[0],
+    logoColor: t.logoColor,
+    isUser: false, // caller overwrites this for whichever team is actually theirs
+    isSimulated: t.isSimulated,
+    conferenceId: t.conferenceId,
+    logoDataUrl: null,
+  }));
+
+  const settings: LeagueSettings = {
+    ...DEFAULT_LEAGUE_SETTINGS,
+    leagueName: params.name,
+    isPublic: params.isPublic,
+  };
+
+  return {
+    id: params.id,
+    name: params.name,
+    inviteCode: params.inviteCode,
+    commissionerTeamId: params.commissionerTeamId,
+    settings,
+    targetTeamCount: params.targetTeamCount,
+    logoMode: 'initials',
+    logoEmoji: '🏆',
+    logoDataUrl: null,
+    logoColor: TEAM_LOGO_COLORS[0],
+    teams,
+    currentWeek: 1,
+    seasonPhase: 'regular',
+    matchupsByWeek: {},
+    rostersByTeamWeek: {},
+    standings: teams.map((t) => emptyStanding(t.id)),
+    bracket: null,
+    prizePool: null,
+    manualGameOverrides: {},
+    activity: [
+      {
+        id: `joined-${params.id}`,
+        ts: new Date().toISOString(),
+        type: 'announcement',
+        message: `Welcome to ${params.name}!`,
+      },
+    ],
+  };
+}
+
+export interface SimulatedTeamIdentity {
+  ownerName: string;
+  teamName: string;
+  abbrev: string;
+  logoMode: LeagueTeam['logoMode'];
+  logoEmoji: string;
+  logoColor: string;
+}
+
+/** Generates the cosmetic identity (name/abbrev/colors/etc) for `count` simulated
+ * teams, seeded so repeat calls with the same seed are stable. Deliberately doesn't
+ * assign ids — those only exist once the real Supabase row is created via
+ * add_simulated_team, so the caller attaches them after. */
+export function generateSimulatedTeamIdentities(seed: string, count: number): SimulatedTeamIdentity[] {
+  const rng = createRng(seed);
   const namePool = shuffle(rng, FUNNY_TEAM_NAMES);
   const ownerPool = shuffle(rng, FUNNY_OWNER_NAMES);
   const colorPool = shuffle(rng, TEAM_LOGO_COLORS);
-  const slotsToFill = Math.max(0, teamCount - league.teams.length);
-
   const emojiPool = shuffle(rng, TEAM_LOGO_EMOJIS);
-  const simTeams: LeagueTeam[] = Array.from({ length: slotsToFill }, (_, i) => {
+  return Array.from({ length: count }, (_, i) => {
     const name = namePool[i % namePool.length];
     return {
-      id: `sim-${i + 1}`,
       ownerName: ownerPool[i % ownerPool.length],
       teamName: name,
       abbrev: abbrevFromName(name),
@@ -148,12 +227,28 @@ export function fillWithSimulatedTeams(league: League, teamCount: number): Leagu
       logoMode: rng() < 0.5 ? 'emoji' : 'initials',
       logoEmoji: emojiPool[i % emojiPool.length],
       logoColor: colorPool[i % colorPool.length],
-      isUser: false,
-      isSimulated: true,
-      conferenceId: null,
-      logoDataUrl: null,
     };
   });
+}
+
+/** Adds already-identified simulated teams (real ids already assigned by the
+ * caller, from the real Supabase rows) into the league, generates the season's H2H
+ * schedule, and auto-submits their Week 1 lineups. */
+export function fillWithSimulatedTeams(league: League, simIdentities: (SimulatedTeamIdentity & { id: string })[]): League {
+  const slotsToFill = simIdentities.length;
+  const simTeams: LeagueTeam[] = simIdentities.map((t) => ({
+    id: t.id,
+    ownerName: t.ownerName,
+    teamName: t.teamName,
+    abbrev: t.abbrev,
+    logoMode: t.logoMode,
+    logoEmoji: t.logoEmoji,
+    logoColor: t.logoColor,
+    isUser: false,
+    isSimulated: true,
+    conferenceId: null,
+    logoDataUrl: null,
+  }));
 
   let teams = [...league.teams, ...simTeams];
 

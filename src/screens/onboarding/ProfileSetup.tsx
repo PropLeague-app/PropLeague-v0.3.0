@@ -1,25 +1,37 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAppStore } from '../../store/useAppStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
+
+/** Matches the key Auth.tsx writes before an OAuth redirect (which loses
+ * router state on the round trip to Google/Apple and back). */
+const NEXT_KEY = 'pl_auth_next';
 
 export function ProfileSetup() {
   const navigate = useNavigate();
   const location = useLocation();
-  const setProfile = useAppStore((s) => s.setProfile);
+  const completeProfileSetup = useAuthStore((s) => s.completeProfileSetup);
   const [username, setUsername] = useState('');
   const [avatar, setAvatar] = useState(AVATARS[0]);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const next = (location.state as { next?: string } | null)?.next ?? '/create-league';
+  const next = (location.state as { next?: string } | null)?.next ?? sessionStorage.getItem(NEXT_KEY) ?? '/create-league';
 
-  function createProfile() {
+  async function submit() {
     if (username.trim() === '') {
       setError('Username is required.');
       return;
     }
-    setProfile({ username: username.trim(), avatarEmoji: avatar, oddsFormat: 'american' });
+    setSubmitting(true);
+    const result = await completeProfileSetup(username.trim(), avatar);
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.error ?? 'Something went wrong.');
+      return;
+    }
+    sessionStorage.removeItem(NEXT_KEY);
     navigate(next);
   }
 
@@ -60,25 +72,12 @@ export function ProfileSetup() {
         </div>
 
         <button
-          onClick={createProfile}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2"
+          onClick={submit}
+          disabled={submitting}
+          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2 disabled:opacity-40"
         >
           Continue
         </button>
-
-        <div className="flex flex-col gap-2">
-          <p className="text-center text-xs text-text-muted">or continue with</p>
-          {['Google', 'Apple', 'Email'].map((provider) => (
-            <button
-              key={provider}
-              onClick={createProfile}
-              className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-            >
-              {provider}
-              <span className="text-text-muted text-xs">(coming soon)</span>
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

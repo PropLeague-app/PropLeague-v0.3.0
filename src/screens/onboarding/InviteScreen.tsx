@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { LeagueLogo } from '../../components/common/LeagueLogo';
@@ -7,15 +8,24 @@ export function InviteScreen() {
   const navigate = useNavigate();
   const league = useAppStore((s) => (leagueId ? s.leagues[leagueId] : undefined));
   const fillWithSimulatedTeams = useAppStore((s) => s.fillWithSimulatedTeams);
+  const [error, setError] = useState<string | null>(null);
+  const [filling, setFilling] = useState(false);
 
   if (!league) return null;
 
   const alreadyFilled = league.teams.length > 1;
   const targetTeamCount = league.targetTeamCount;
 
-  function handleFill() {
+  async function handleFill() {
     if (!leagueId) return;
-    fillWithSimulatedTeams(leagueId, targetTeamCount);
+    setError(null);
+    setFilling(true);
+    const result = await fillWithSimulatedTeams(leagueId, targetTeamCount);
+    setFilling(false);
+    if (!result.ok) {
+      setError(result.error ?? 'Something went wrong.');
+      return;
+    }
     navigate('/home');
   }
 
@@ -27,21 +37,28 @@ export function InviteScreen() {
           <LeagueLogo league={league} size="md" />
           <h1 className="text-2xl font-bold">{league.name} is ready</h1>
         </div>
-        <p className="text-text-muted text-sm">Share this invite code with friends (cosmetic — this demo has no real backend to join through):</p>
+        <p className="text-text-muted text-sm">Share this invite code with friends so they can join your league:</p>
         <div className="bg-bg-card border border-dashed border-primary rounded-xl px-8 py-4">
           <span className="text-3xl font-mono font-bold tracking-[0.3em] text-primary">{league.inviteCode}</span>
         </div>
 
+        {error && <p className="text-loss text-sm">{error}</p>}
         <button
-          onClick={handleFill}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl"
+          onClick={alreadyFilled ? () => navigate('/home') : handleFill}
+          disabled={filling}
+          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
         >
-          {alreadyFilled ? 'Continue to League' : 'Fill with simulated teams'}
+          {filling ? 'Filling…' : alreadyFilled ? 'Continue to League' : 'Fill with simulated teams'}
         </button>
         {!alreadyFilled && (
-          <p className="text-xs text-text-muted">
-            Populates the league with AI-controlled teams so you can start Week 1 right away.
-          </p>
+          <>
+            <p className="text-xs text-text-muted">
+              Populates the league with AI-controlled teams so you can start Week 1 right away.
+            </p>
+            <button onClick={() => navigate('/home')} disabled={filling} className="text-primary text-sm font-medium">
+              Skip — wait for real friends to join
+            </button>
+          </>
         )}
       </div>
     </div>

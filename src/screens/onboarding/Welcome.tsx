@@ -1,12 +1,17 @@
 import { useNavigate } from 'react-router-dom';
-import { useAppStore } from '../../store/useAppStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 export function Welcome() {
   const navigate = useNavigate();
-  const hasProfile = useAppStore((s) => !!s.profile);
+  const session = useAuthStore((s) => s.session);
+  const onboarded = useAuthStore((s) => s.profile?.onboarded ?? false);
 
   function go(next: string) {
-    navigate(hasProfile ? next : '/profile-setup', { state: { next } });
+    if (!session) {
+      navigate('/auth', { state: { next } });
+      return;
+    }
+    navigate(onboarded ? next : '/profile-setup', { state: { next } });
   }
 
   return (

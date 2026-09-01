@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import * as leagueService from '../../services/leagueService';
+import { createRealLeague } from '../../services/supabaseLeague';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { Toggle } from '../../components/common/Toggle';
 import { NumberInput } from '../../components/common/NumberInput';
@@ -12,7 +14,7 @@ import type { PlayoffFieldSize } from '../../types';
 export function CreateLeague() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
-  const createLeague = useAppStore((s) => s.createLeague);
+  const addLeague = useAppStore((s) => s.addLeague);
 
   const defaultName = `${profile?.username ?? 'Your'}'s League`;
   const [name, setName] = useState(defaultName);
@@ -24,6 +26,8 @@ export function CreateLeague() {
   const [conferencesEnabled, setConferencesEnabled] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [fieldSizeNotice, setFieldSizeNotice] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const fieldSizeOptions = fieldSizeOptionsForTeamCount(teamCount);
 
@@ -44,14 +48,37 @@ export function CreateLeague() {
     if (!conferencesEligible(teamCount)) setConferencesEnabled(false);
   }, [teamCount]);
 
-  function submit() {
+  async function submit() {
     if (name.trim() === '') {
       setNameError('League name is required.');
       return;
     }
+    setSubmitError(null);
+    setSubmitting(true);
+
     const teamName = `${profile?.username ?? 'My'}'s Team`;
+    const teamAbbrev = abbrevFromName(teamName);
+    const userLogoColor = TEAM_LOGO_COLORS[0];
     const useConferences = conferencesEnabled && conferencesEligible(teamCount);
-    const leagueId = createLeague({
+
+    const result = await createRealLeague({
+      name: name.trim(),
+      targetTeamCount: teamCount,
+      isPublic,
+      userTeamName: teamName,
+      userTeamAbbrev: teamAbbrev,
+      userLogoColor,
+    });
+    setSubmitting(false);
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+
+    const league = leagueService.createLeague({
+      id: result.leagueId,
+      inviteCode: result.inviteCode,
+      userTeamId: result.teamId,
       name: name.trim(),
       teamCount,
       isPublic,
@@ -63,10 +90,11 @@ export function CreateLeague() {
         ...(useConferences ? { conferences: defaultConferences(2) } : {}),
       },
       userTeamName: teamName,
-      userTeamAbbrev: abbrevFromName(teamName),
-      userLogoColor: TEAM_LOGO_COLORS[0],
+      userTeamAbbrev: teamAbbrev,
+      userLogoColor,
     });
-    navigate(`/create-league/invite/${leagueId}`);
+    addLeague(league);
+    navigate(`/create-league/invite/${result.leagueId}`);
   }
 
   return (
@@ -194,8 +222,13 @@ export function CreateLeague() {
           </div>
         </div>
 
-        <button onClick={submit} className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2">
-          Continue
+        {submitError && <p className="text-loss text-sm">{submitError}</p>}
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2 disabled:opacity-40"
+        >
+          {submitting ? 'Creating…' : 'Continue'}
         </button>
       </div>
     </div>

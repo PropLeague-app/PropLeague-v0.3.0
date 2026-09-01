@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import type { League, LeagueTeam, PlayoffFieldSize, Position } from '../types';
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../types';
@@ -754,7 +755,19 @@ export function SettingsHome() {
           </button>
         )}
       </div>
-
+      <SectionHeader>Account</SectionHeader>
+      <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
+        <button
+          onClick={async () => {
+            if (!confirm('Log out of PropLeague?')) return;
+            await useAuthStore.getState().signOut();
+            navigate('/welcome');
+          }}
+          className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left text-loss"
+        >
+          <span>🔒</span> Log Out
+        </button>
+      </div>
       {/* manual v0.2.0 §4 #10: was anchored bottom-24 left-4, which clipped off the left
           edge of the centered mobile shell on wider viewports. Moved to the bottom-right,
           stacked above the always-present DEV button (also bottom-right, at bottom-24)

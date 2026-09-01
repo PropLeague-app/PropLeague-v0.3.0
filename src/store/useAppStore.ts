@@ -10,6 +10,7 @@ import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
+import { addSimulatedTeamRemote } from '../services/supabaseLeague';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -44,18 +45,9 @@ interface AppState {
   updateLeagueLogo: (leagueId: string, partial: Partial<Pick<League, 'logoMode' | 'logoEmoji' | 'logoDataUrl' | 'logoColor'>>) => void;
   setTeamConference: (leagueId: string, teamId: string, conferenceId: string) => void;
 
-  createLeague: (params: {
-    name: string;
-    teamCount: number;
-    isPublic: boolean;
-    settingsOverrides?: Partial<LeagueSettings>;
-    userTeamName: string;
-    userTeamAbbrev: string;
-    userLogoColor: string;
-  }) => string;
-  fillWithSimulatedTeams: (leagueId: string, teamCount: number) => void;
+  addLeague: (league: League) => void;
+  fillWithSimulatedTeams: (leagueId: string, teamCount: number) => Promise<{ ok: boolean; error?: string }>;
   updateTargetTeamCount: (leagueId: string, count: number) => void;
-  joinDemoLeague: () => string;
   setCurrentLeague: (leagueId: string) => void;
   updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => void;
   transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => void;
@@ -117,24 +109,25 @@ export const useAppStore = create<AppState>()(
           })),
         ),
 
-      createLeague: (params) => {
-        // manual v0.2.0 §6: Date.now() alone collided when two leagues were created in
-        // the same millisecond (trivially reachable now that a user can create more
-        // than one league in a session) — the second create would silently overwrite
-        // the first under the same key. The random suffix makes that practically impossible.
-        const leagueId = `league-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const league = leagueService.createLeague({ id: leagueId, ...params });
-        set((state) => ({
-          leagues: { ...state.leagues, [leagueId]: league },
-          currentLeagueId: leagueId,
-        }));
-        return leagueId;
-      },
+        addLeague: (league) => set((state) => ({ leagues: { ...state.leagues, [league.id]: league }, currentLeagueId: league.id })),
 
-      fillWithSimulatedTeams: (leagueId, teamCount) =>
-        set((state) =>
-          updateLeague(state, leagueId, (league) => leagueService.fillWithSimulatedTeams(league, teamCount)),
-        ),
+        fillWithSimulatedTeams: async (leagueId, teamCount) => {
+          const league = get().leagues[leagueId];
+          if (!league) return { ok: false, error: 'League not found.' };
+          const slotsToFill = Math.max(0, teamCount - league.teams.length);
+          if (slotsToFill === 0) return { ok: true };
+  
+          const identities = leagueService.generateSimulatedTeamIdentities(`${leagueId}-simteams`, slotsToFill);
+          const withIds: (leagueService.SimulatedTeamIdentity & { id: string })[] = [];
+          for (const identity of identities) {
+            const result = await addSimulatedTeamRemote(leagueId, identity.teamName, identity.abbrev, identity.logoColor);
+            if (!result.ok) return { ok: false, error: result.error };
+            withIds.push({ ...identity, id: result.teamId });
+          }
+  
+          set((state) => updateLeague(state, leagueId, (l) => leagueService.fillWithSimulatedTeams(l, withIds)));
+          return { ok: true };
+        },
 
       // manual v0.2.0 §2 #3: team count can only be resized pre-season — once
       // simulated members have joined, the schedule/rosters/standings built around the
@@ -160,27 +153,7 @@ export const useAppStore = create<AppState>()(
           }),
         ),
 
-      joinDemoLeague: () => {
-        const state = get();
-        const existing = Object.values(state.leagues).find((l) => l.id === 'demo-league');
-        if (existing) {
-          set({ currentLeagueId: existing.id });
-          return existing.id;
-        }
-        const profile = state.profile;
-        let league = leagueService.createLeague({
-          id: 'demo-league',
-          name: "Demo League",
-          teamCount: 10,
-          isPublic: false,
-          userTeamName: profile ? `${profile.username}'s Team` : 'Your Team',
-          userTeamAbbrev: 'YOU',
-          userLogoColor: '#4C8DF5',
-        });
-        league = leagueService.fillWithSimulatedTeams(league, 10);
-        set((s) => ({ leagues: { ...s.leagues, [league.id]: league }, currentLeagueId: league.id }));
-        return league.id;
-      },
+
 
       setCurrentLeague: (leagueId) => set({ currentLeagueId: leagueId }),
 

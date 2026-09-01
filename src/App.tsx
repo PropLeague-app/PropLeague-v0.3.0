@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
+import { useAuthStore } from './store/useAuthStore';
 import { MobileShell } from './components/layout/MobileShell';
 
 import { Welcome } from './screens/onboarding/Welcome';
 import { HowItWorks } from './screens/onboarding/HowItWorks';
+import { Auth } from './screens/onboarding/Auth';
 import { ProfileSetup } from './screens/onboarding/ProfileSetup';
 import { CreateLeague } from './screens/onboarding/CreateLeague';
 import { InviteScreen } from './screens/onboarding/InviteScreen';
@@ -34,6 +36,10 @@ import { Leaderboards } from './screens/Leaderboards';
  * league that wasn't their only one), fall back to that instead of assuming they have
  * none. */
 function RootRedirect() {
+  const authLoading = useAuthStore((s) => s.loading);
+  const session = useAuthStore((s) => s.session);
+  const authProfile = useAuthStore((s) => s.profile);
+
   const profile = useAppStore((s) => s.profile);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const leagues = useAppStore((s) => s.leagues);
@@ -42,7 +48,7 @@ function RootRedirect() {
   // A league only counts as "the user's" if their team is still in it — otherwise
   // Leave This League (manual §6 #12) could hand the user right back into a league
   // they just left, since it still has plenty of (now all-simulated) teams.
-  const isUserReady = (l: (typeof leagues)[string]) => l.teams.length > 1 && l.teams.some((t) => t.isUser);
+  const isUserReady = (l: (typeof leagues)[string]) => l.teams.some((t) => t.isUser);
   const currentLeague = currentLeagueId ? leagues[currentLeagueId] : undefined;
   const readyLeagues = Object.values(leagues).filter(isUserReady);
   const targetLeague = currentLeague && isUserReady(currentLeague) ? currentLeague : readyLeagues[0];
@@ -50,6 +56,14 @@ function RootRedirect() {
   useEffect(() => {
     if (targetLeague && targetLeague.id !== currentLeagueId) setCurrentLeague(targetLeague.id);
   }, [targetLeague?.id, currentLeagueId, setCurrentLeague]);
+
+  // Auth gates come first: don't decide anything league-related until we know
+  // whether there's a real session, and whether it's finished onboarding.
+  if (authLoading) {
+    return <div className="min-h-screen bg-bg flex items-center justify-center text-text-muted text-sm">Loading…</div>;
+  }
+  if (!session) return <Navigate to="/welcome" replace />;
+  if (authProfile && !authProfile.onboarded) return <Navigate to="/profile-setup" replace />;
 
   if (!profile) return <Navigate to="/welcome" replace />;
   if (!targetLeague) return <Navigate to="/create-league" replace />;
@@ -65,12 +79,17 @@ function AppShellLayout() {
 }
 
 function App() {
+  useEffect(() => {
+    useAuthStore.getState().init();
+  }, []);
+
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
 
       <Route path="/welcome" element={<Welcome />} />
       <Route path="/how-it-works" element={<HowItWorks />} />
+      <Route path="/auth" element={<Auth />} />
       <Route path="/profile-setup" element={<ProfileSetup />} />
       <Route path="/create-league" element={<CreateLeague />} />
       <Route path="/create-league/invite/:leagueId" element={<InviteScreen />} />

@@ -1,17 +1,74 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import * as leagueService from '../../services/leagueService';
+import { joinRealLeague, fetchLeagueMeta, fetchLeagueTeams } from '../../services/supabaseLeague';
+import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { goBack } from '../../components/layout/BackHeader';
 
 export function JoinLeague() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
+  const addLeague = useAppStore((s) => s.addLeague);
   const [code, setCode] = useState('');
-  const joinDemoLeague = useAppStore((s) => s.joinDemoLeague);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit() {
+  async function submit() {
     if (!code.trim()) return;
-    joinDemoLeague();
+    setError(null);
+    setSubmitting(true);
+
+    const teamName = `${profile?.username ?? 'My'}'s Team`;
+    const teamAbbrev = abbrevFromName(teamName);
+    const userLogoColor = TEAM_LOGO_COLORS[0];
+
+    const joinResult = await joinRealLeague({
+      inviteCode: code.trim(),
+      teamName,
+      teamAbbrev,
+      logoColor: userLogoColor,
+    });
+    if (!joinResult.ok) {
+      setSubmitting(false);
+      setError(joinResult.error);
+      return;
+    }
+
+    const [metaResult, teamsResult] = await Promise.all([
+      fetchLeagueMeta(joinResult.leagueId),
+      fetchLeagueTeams(joinResult.leagueId),
+    ]);
+    setSubmitting(false);
+    if (!metaResult.ok) {
+      setError(metaResult.error);
+      return;
+    }
+    if (!teamsResult.ok) {
+      setError(teamsResult.error);
+      return;
+    }
+    if (!metaResult.commissionerTeamId) {
+      setError('Joined, but this league has no commissioner team set.');
+      return;
+    }
+
+    const builtLeague = leagueService.buildLeagueFromRealTeams({
+      id: metaResult.id,
+      name: metaResult.name,
+      inviteCode: metaResult.inviteCode,
+      commissionerTeamId: metaResult.commissionerTeamId,
+      targetTeamCount: metaResult.targetTeamCount,
+      isPublic: metaResult.isPublic,
+      teams: teamsResult.teams,
+    });
+    // Mark which of the real teams is actually this user's.
+    const league = {
+      ...builtLeague,
+      teams: builtLeague.teams.map((t) => (t.id === joinResult.teamId ? { ...t, isUser: true } : t)),
+    };
+
+    addLeague(league);
     navigate('/home');
   }
 
@@ -28,21 +85,20 @@ export function JoinLeague() {
           </button>
         )}
         <h1 className="text-2xl font-bold">Join a League</h1>
-        <p className="text-text-muted text-sm">
-          In this beta, any invite code joins a pre-seeded demo league so you can start playing right away.
-        </p>
+        <p className="text-text-muted text-sm">Enter the invite code a commissioner shared with you.</p>
         <input
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           placeholder="Enter invite code"
           className="w-full bg-bg-card border border-border rounded-lg px-3 py-3 font-mono tracking-widest text-center text-lg"
         />
+        {error && <p className="text-loss text-sm text-center">{error}</p>}
         <button
           onClick={submit}
-          disabled={!code.trim()}
+          disabled={!code.trim() || submitting}
           className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
         >
-          Join League
+          {submitting ? 'Joining…' : 'Join League'}
         </button>
       </div>
     </div>
