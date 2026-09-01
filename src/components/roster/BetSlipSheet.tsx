@@ -53,6 +53,7 @@ export function BetSlipSheet({
 
   const [stake, setStake] = useState(() => Math.max(settings.minBetPerSlot, Math.min(effectiveMax, 10)));
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Pre-checked up front (manual v0.1.1 §3 #7 — "same treatment inside the bet slip if
   // reached via deep link") rather than only discovered after tapping Add to Roster, so
@@ -79,9 +80,10 @@ export function BetSlipSheet({
   const valid = reasons.length === 0 && stake > 0;
   const potentialProfit = profitForStake(stake, target.outcome.price);
 
-  function confirm() {
+  async function confirm() {
     if (!valid) return;
-    const result = placeWager({
+    setSubmitting(true);
+    const result = await placeWager({
       leagueId: target.leagueId,
       teamId: target.teamId,
       week: target.week,
@@ -95,11 +97,12 @@ export function BetSlipSheet({
       playerName: target.playerName,
       stake,
     });
+    setSubmitting(false);
     if (!result.ok) {
       setClaimError(
         result.claimedByTeamId && league
           ? claimBlockReason(league, result.claimedByTeamId)
-          : 'This pick is no longer available.',
+          : (result.error ?? 'This pick is no longer available.'),
       );
       return;
     }
@@ -152,11 +155,11 @@ export function BetSlipSheet({
         {reasons.length > 0 && <p className="text-loss text-xs">{reasons[0]}</p>}
 
         <button
-          disabled={!valid}
+          disabled={!valid || submitting}
           onClick={confirm}
           className="w-full bg-primary text-white font-semibold py-3 rounded-xl disabled:opacity-40"
         >
-          Add to Roster
+          {submitting ? 'Adding…' : 'Add to Roster'}
         </button>
       </div>
     </div>

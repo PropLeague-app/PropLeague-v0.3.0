@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -19,6 +19,12 @@ export function MarketBrowser() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
+  const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+
+  useEffect(() => {
+    if (league) loadWeekRosters(league.id, league.currentWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league?.id, league?.currentWeek]);
 
   const [gameFilter, setGameFilter] = useState('all');
   const [propTypeFilter, setPropTypeFilter] = useState<MarketKey | 'all'>('all');

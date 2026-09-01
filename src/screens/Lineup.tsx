@@ -16,11 +16,19 @@ export function Lineup() {
   const clearSlot = useAppStore((s) => s.clearSlot);
   const submitLineup = useAppStore((s) => s.submitLineup);
   const syncVoidedPicks = useAppStore((s) => s.syncVoidedPicks);
+  const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
 
   const userTeam = league?.teams.find((t) => t.isUser);
 
   useEffect(() => {
     if (league && userTeam) syncVoidedPicks(league.id, league.currentWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league?.id, league?.currentWeek]);
+
+  // Refreshes rosters/wagers from Supabase — the source of truth for who's claimed
+  // what, since another real teammate could have placed picks from their own device.
+  useEffect(() => {
+    if (league) loadWeekRosters(league.id, league.currentWeek);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [league?.id, league?.currentWeek]);
 

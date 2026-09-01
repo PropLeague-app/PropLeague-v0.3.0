@@ -11,6 +11,7 @@ import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
 import { addSimulatedTeamRemote } from '../services/supabaseLeague';
+import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -53,10 +54,11 @@ interface AppState {
   transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => void;
   leaveLeague: (leagueId: string) => { ok: boolean; reason?: string };
 
-  placeWager: (params: PlaceWagerParams) => { ok: boolean; claimedByTeamId?: string };
-  updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => void;
-  clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => void;
-  submitLineup: (leagueId: string, teamId: string, week: WeekId) => boolean;
+  placeWager: (params: PlaceWagerParams) => Promise<{ ok: boolean; claimedByTeamId?: string; error?: string }>;
+  updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<void>;
+  clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<void>;
+  submitLineup: (leagueId: string, teamId: string, week: WeekId) => Promise<boolean>;
+  loadWeekRosters: (leagueId: string, week: WeekId) => Promise<void>;
   syncVoidedPicks: (leagueId: string, week: WeekId) => void;
 
   advanceWeek: (leagueId: string) => void;
@@ -109,25 +111,25 @@ export const useAppStore = create<AppState>()(
           })),
         ),
 
-        addLeague: (league) => set((state) => ({ leagues: { ...state.leagues, [league.id]: league }, currentLeagueId: league.id })),
+      addLeague: (league) => set((state) => ({ leagues: { ...state.leagues, [league.id]: league }, currentLeagueId: league.id })),
 
-        fillWithSimulatedTeams: async (leagueId, teamCount) => {
-          const league = get().leagues[leagueId];
-          if (!league) return { ok: false, error: 'League not found.' };
-          const slotsToFill = Math.max(0, teamCount - league.teams.length);
-          if (slotsToFill === 0) return { ok: true };
-  
-          const identities = leagueService.generateSimulatedTeamIdentities(`${leagueId}-simteams`, slotsToFill);
-          const withIds: (leagueService.SimulatedTeamIdentity & { id: string })[] = [];
-          for (const identity of identities) {
-            const result = await addSimulatedTeamRemote(leagueId, identity.teamName, identity.abbrev, identity.logoColor);
-            if (!result.ok) return { ok: false, error: result.error };
-            withIds.push({ ...identity, id: result.teamId });
-          }
-  
-          set((state) => updateLeague(state, leagueId, (l) => leagueService.fillWithSimulatedTeams(l, withIds)));
-          return { ok: true };
-        },
+      fillWithSimulatedTeams: async (leagueId, teamCount) => {
+        const league = get().leagues[leagueId];
+        if (!league) return { ok: false, error: 'League not found.' };
+        const slotsToFill = Math.max(0, teamCount - league.teams.length);
+        if (slotsToFill === 0) return { ok: true };
+
+        const identities = leagueService.generateSimulatedTeamIdentities(`${leagueId}-simteams`, slotsToFill);
+        const withIds: (leagueService.SimulatedTeamIdentity & { id: string })[] = [];
+        for (const identity of identities) {
+          const result = await addSimulatedTeamRemote(leagueId, identity.teamName, identity.abbrev, identity.logoColor);
+          if (!result.ok) return { ok: false, error: result.error };
+          withIds.push({ ...identity, id: result.teamId });
+        }
+
+        set((state) => updateLeague(state, leagueId, (l) => leagueService.fillWithSimulatedTeams(l, withIds)));
+        return { ok: true };
+      },
 
       // manual v0.2.0 §2 #3: team count can only be resized pre-season — once
       // simulated members have joined, the schedule/rosters/standings built around the
@@ -152,8 +154,6 @@ export const useAppStore = create<AppState>()(
             };
           }),
         ),
-
-
 
       setCurrentLeague: (leagueId) => set({ currentLeagueId: leagueId }),
 
@@ -201,11 +201,13 @@ export const useAppStore = create<AppState>()(
         return { ok: true };
       },
 
-      placeWager: (params) => {
+      placeWager: async (params) => {
         const state = get();
         const league = state.leagues[params.leagueId];
         if (!league) return { ok: false };
 
+        // Fast local pre-check — a UI hint only, not authoritative. The RPC below
+        // enforces the cap for real, atomically, against the whole league's live data.
         const claimedByTeamId = findClaimingTeam(
           league,
           params.week,
@@ -214,18 +216,32 @@ export const useAppStore = create<AppState>()(
         );
         if (claimedByTeamId) return { ok: false, claimedByTeamId };
 
+        const result = await placeWagerRemote({
+          teamId: params.teamId,
+          week: params.week,
+          slotId: params.slotId,
+          gameId: params.gameId,
+          marketKey: params.marketKey,
+          playerId: params.playerId,
+          playerName: params.playerName,
+          side: params.side,
+          point: params.point,
+          odds: params.price,
+          stake: params.stake,
+        });
+        if (!result.ok) return { ok: false, error: result.error };
+
         set((s) => {
           const lg = s.leagues[params.leagueId];
           if (!lg) return {};
           const key = rosterKey(params.teamId, params.week);
           const existing = lg.rostersByTeamWeek[key] ?? buildEmptyRoster(params.teamId, params.week, lg.settings.lineupSlots);
-          const wagerId = `${params.slotId}-${params.gameId}-${params.playerId ?? 'game'}-${Date.now()}`;
           const slots = existing.slots.map((slot) =>
             slot.slotId === params.slotId
               ? {
                   ...slot,
                   wager: {
-                    id: wagerId,
+                    id: result.wagerId,
                     slotId: params.slotId,
                     gameId: params.gameId,
                     marketKey: params.marketKey,
@@ -256,7 +272,9 @@ export const useAppStore = create<AppState>()(
         return { ok: true };
       },
 
-      updateWagerStake: (leagueId, teamId, week, slotId, stake) =>
+      updateWagerStake: async (leagueId, teamId, week, slotId, stake) => {
+        const result = await updateWagerStakeRemote(teamId, week, slotId, stake);
+        if (!result.ok) return;
         set((state) => {
           const league = state.leagues[leagueId];
           if (!league) return {};
@@ -273,9 +291,12 @@ export const useAppStore = create<AppState>()(
               [leagueId]: { ...league, rostersByTeamWeek: { ...league.rostersByTeamWeek, [key]: updatedRoster } },
             },
           };
-        }),
+        });
+      },
 
-      clearSlot: (leagueId, teamId, week, slotId) =>
+      clearSlot: async (leagueId, teamId, week, slotId) => {
+        const result = await clearWagerRemote(teamId, week, slotId);
+        if (!result.ok) return;
         set((state) => {
           const league = state.leagues[leagueId];
           if (!league) return {};
@@ -290,9 +311,10 @@ export const useAppStore = create<AppState>()(
               [leagueId]: { ...league, rostersByTeamWeek: { ...league.rostersByTeamWeek, [key]: updatedRoster } },
             },
           };
-        }),
+        });
+      },
 
-      submitLineup: (leagueId, teamId, week) => {
+      submitLineup: async (leagueId, teamId, week) => {
         const state = get();
         const league = state.leagues[leagueId];
         if (!league) return false;
@@ -301,6 +323,8 @@ export const useAppStore = create<AppState>()(
         if (!roster) return false;
         const result = validateLineup(roster, league.settings);
         if (!result.valid) return false;
+        const remote = await submitRosterRemote(teamId, week);
+        if (!remote.ok) return false;
         set((s) => ({
           leagues: {
             ...s.leagues,
@@ -311,6 +335,17 @@ export const useAppStore = create<AppState>()(
           },
         }));
         return true;
+      },
+
+      loadWeekRosters: async (leagueId, week) => {
+        const result = await fetchLeagueRostersForWeek(leagueId, week);
+        if (!result.ok) return;
+        set((state) =>
+          updateLeague(state, leagueId, (league) => ({
+            ...league,
+            rostersByTeamWeek: { ...league.rostersByTeamWeek, ...result.rosters },
+          })),
+        );
       },
 
       syncVoidedPicks: (leagueId, week) =>
