@@ -12,7 +12,7 @@ import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../eng
 import { getGame } from '../services/oddsService';
 import { addSimulatedTeamRemote } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
-import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings } from '../services/supabaseSettlement';
+import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -390,15 +390,19 @@ export const useAppStore = create<AppState>()(
         }),
 
       loadLeagueResults: async (leagueId) => {
-        const [matchupsResult, standingsResult] = await Promise.all([
+        const [matchupsResult, standingsResult, progressResult] = await Promise.all([
           fetchLeagueMatchups(leagueId),
           fetchLeagueStandings(leagueId),
+          fetchLeagueProgress(leagueId),
         ]);
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,
             standings: standingsResult.ok && standingsResult.standings.length > 0 ? standingsResult.standings : league.standings,
+            currentWeek: progressResult.ok ? progressResult.currentWeek : league.currentWeek,
+            seasonPhase: progressResult.ok ? (progressResult.seasonPhase as League['seasonPhase']) : league.seasonPhase,
+            bracket: progressResult.ok ? progressResult.bracket : league.bracket,
           })),
         );
       },
@@ -442,7 +446,7 @@ export const useAppStore = create<AppState>()(
           await upsertStandingRemote(standing);
         }
 
-        await updateLeagueWeekRemote(leagueId, String(updatedLeague.currentWeek), updatedLeague.seasonPhase);
+        await updateLeagueWeekRemote(leagueId, String(updatedLeague.currentWeek), updatedLeague.seasonPhase, updatedLeague.bracket);
 
         set((state) => updateLeague(state, leagueId, () => updatedLeague));
       },

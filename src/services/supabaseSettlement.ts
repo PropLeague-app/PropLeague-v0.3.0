@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import type { Matchup, TeamStanding, WagerStatus, WeekId } from '../types';
+import type { Matchup, PlayoffBracket, TeamStanding, WagerStatus, WeekId } from '../types';
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -55,8 +55,13 @@ export async function settleWagerRemote(wagerId: string, status: WagerStatus, se
   return { ok: true };
 }
 
-export async function updateLeagueWeekRemote(leagueId: string, currentWeek: string, seasonPhase: string): Promise<ServiceResult> {
-  const { error } = await supabase.from('leagues').update({ current_week: currentWeek, season_phase: seasonPhase }).eq('id', leagueId);
+export async function updateLeagueWeekRemote(
+  leagueId: string,
+  currentWeek: string,
+  seasonPhase: string,
+  bracket: PlayoffBracket | null,
+): Promise<ServiceResult> {
+  const { error } = await supabase.from('leagues').update({ current_week: currentWeek, season_phase: seasonPhase, bracket }).eq('id', leagueId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -134,8 +139,8 @@ export async function fetchLeagueStandings(leagueId: string): Promise<ServiceRes
   return { ok: true, standings };
 }
 
-export async function fetchLeagueCurrentWeek(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string }>> {
-  const { data, error } = await supabase.from('leagues').select('current_week, season_phase').eq('id', leagueId).single();
+export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null }>> {
+  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket').eq('id', leagueId).single();
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load league.' };
-  return { ok: true, currentWeek: parseWeekId(data.current_week), seasonPhase: data.season_phase };
+  return { ok: true, currentWeek: parseWeekId(data.current_week), seasonPhase: data.season_phase, bracket: data.bracket };
 }
