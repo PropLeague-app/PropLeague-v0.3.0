@@ -12,6 +12,7 @@ import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../eng
 import { getGame } from '../services/oddsService';
 import { addSimulatedTeamRemote } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
+import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings } from '../services/supabaseSettlement';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -59,9 +60,10 @@ interface AppState {
   clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<void>;
   submitLineup: (leagueId: string, teamId: string, week: WeekId) => Promise<boolean>;
   loadWeekRosters: (leagueId: string, week: WeekId) => Promise<void>;
+  loadLeagueResults: (leagueId: string) => Promise<void>;
   syncVoidedPicks: (leagueId: string, week: WeekId) => void;
 
-  advanceWeek: (leagueId: string) => void;
+  advanceWeek: (leagueId: string) => Promise<void>;
   simulateToWeek: (leagueId: string, week: number) => void;
   autoFillUserLineup: (leagueId: string) => void;
   resetSeason: (leagueId: string) => void;
@@ -387,8 +389,63 @@ export const useAppStore = create<AppState>()(
           };
         }),
 
-      advanceWeek: (leagueId) =>
-        set((state) => updateLeague(state, leagueId, (league) => simulationService.advanceWeek(league))),
+      loadLeagueResults: async (leagueId) => {
+        const [matchupsResult, standingsResult] = await Promise.all([
+          fetchLeagueMatchups(leagueId),
+          fetchLeagueStandings(leagueId),
+        ]);
+        set((state) =>
+          updateLeague(state, leagueId, (league) => ({
+            ...league,
+            matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,
+            standings: standingsResult.ok && standingsResult.standings.length > 0 ? standingsResult.standings : league.standings,
+          })),
+        );
+      },
+
+      // The season simulation itself is still computed locally exactly as before —
+      // see the chat for why porting the whole playoffs/moments/prize-pool engine to
+      // SQL right now would be both risky and premature. What's new: once computed,
+      // the settled week's matchup results, standings, and wager statuses are pushed
+      // to Supabase so every real league member sees the same shared result, not just
+      // whoever clicked Advance Week. This makes the commissioner a trusted reporter
+      // of results, not a cryptographically-enforced one — an accepted trade-off for
+      // now, worth hardening once real settlement data (vs. today's simulated
+      // outcomes) makes server-side enforcement actually meaningful.
+      advanceWeek: async (leagueId) => {
+        const league = get().leagues[leagueId];
+        if (!league) return;
+
+        const settledWeek = league.currentWeek;
+        const updatedLeague = simulationService.advanceWeek(league);
+        if (updatedLeague === league) return;
+
+        const settledMatchups = updatedLeague.matchupsByWeek[String(settledWeek)] ?? [];
+        for (const m of settledMatchups) {
+          await upsertMatchupRemote(leagueId, String(settledWeek), m.teamAId, m.teamBId, m.teamAScore, m.teamBScore, m.winnerId, m.isTie);
+        }
+
+        // Bot-team wagers never went through place_wager (Step 4 scope boundary — see
+        // chat), so there's no real row for them to settle. Real teams only.
+        const realTeamIds = new Set(updatedLeague.teams.filter((t) => !t.isSimulated).map((t) => t.id));
+        for (const team of updatedLeague.teams) {
+          if (!realTeamIds.has(team.id)) continue;
+          const roster = updatedLeague.rostersByTeamWeek[rosterKey(team.id, settledWeek)];
+          if (!roster) continue;
+          for (const slot of roster.slots) {
+            if (!slot.wager || slot.wager.status === 'pending') continue;
+            await settleWagerRemote(slot.wager.id, slot.wager.status, slot.wager.settledProfit);
+          }
+        }
+
+        for (const standing of updatedLeague.standings) {
+          await upsertStandingRemote(standing);
+        }
+
+        await updateLeagueWeekRemote(leagueId, String(updatedLeague.currentWeek), updatedLeague.seasonPhase);
+
+        set((state) => updateLeague(state, leagueId, () => updatedLeague));
+      },
 
       autoFillUserLineup: (leagueId) =>
         set((state) =>

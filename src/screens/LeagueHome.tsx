@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { getSlate } from '../services/oddsService';
@@ -18,10 +18,18 @@ export function LeagueHome() {
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
+  const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
   const [showAll, setShowAll] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceText, setAnnounceText] = useState('');
   const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  // Pulls the real, shared matchup/standings results — matters most for anyone who
+  // isn't the commissioner, since they never ran Advance Week themselves.
+  useEffect(() => {
+    if (currentLeagueId) loadLeagueResults(currentLeagueId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLeagueId]);
 
   if (!league) {
     return (
