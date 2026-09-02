@@ -42,7 +42,10 @@ export function IdentityPicker({
   value: LogoIdentity;
   initials: string;
   previewSize?: LogoSize;
-  onSave: (next: LogoIdentity) => void;
+  /** `file` is the raw image file staged this session (null unless the user just
+   * picked a new image and hasn't saved yet) — the caller uploads it to Storage on
+   * save; this component only handles the local compressed-preview side. */
+  onSave: (next: LogoIdentity, file: File | null) => void;
   /** Reported on every draft change so a parent can drive a global "leaving with
    * unsaved changes" confirm (manual v0.1.1 §2 #4) — this component only handles the
    * in-page Save Changes button itself. */
@@ -53,6 +56,7 @@ export function IdentityPicker({
   const [emojiSearch, setEmojiSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const baseline = pickIdentity(value);
@@ -80,6 +84,7 @@ export function IdentityPicker({
         return;
       }
       update({ logoDataUrl: dataUrl, logoMode: 'image' });
+      setPendingFile(file);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not process that image.');
     } finally {
@@ -191,7 +196,13 @@ export function IdentityPicker({
               {busy ? 'Processing…' : 'Tap or drag an image here'}
             </div>
             {draft.logoDataUrl && (
-              <button onClick={() => update({ logoDataUrl: null })} className="text-xs text-text-muted">
+              <button
+                onClick={() => {
+                  update({ logoDataUrl: null });
+                  setPendingFile(null);
+                }}
+                className="text-xs text-text-muted"
+              >
                 Remove
               </button>
             )}
@@ -215,13 +226,22 @@ export function IdentityPicker({
       <div className="flex items-center gap-2 pt-1 border-t border-border">
         <button
           disabled={!dirty}
-          onClick={() => onSave(draft)}
+          onClick={() => {
+            onSave(draft, pendingFile);
+            setPendingFile(null);
+          }}
           className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
         >
           Save Changes
         </button>
         {dirty && (
-          <button onClick={() => setDraft(baseline)} className="text-xs text-text-muted px-2">
+          <button
+            onClick={() => {
+              setDraft(baseline);
+              setPendingFile(null);
+            }}
+            className="text-xs text-text-muted px-2"
+          >
             Discard
           </button>
         )}

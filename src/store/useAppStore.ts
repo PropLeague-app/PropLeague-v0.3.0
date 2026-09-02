@@ -10,10 +10,11 @@ import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
-import { addSimulatedTeamRemote } from '../services/supabaseLeague';
+import { addSimulatedTeamRemote, fetchLeagueTeams } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
+import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -407,11 +408,12 @@ export const useAppStore = create<AppState>()(
         }),
 
       loadLeagueResults: async (leagueId) => {
-        const [matchupsResult, standingsResult, progressResult, activityResult] = await Promise.all([
+        const [matchupsResult, standingsResult, progressResult, activityResult, teamsResult] = await Promise.all([
           fetchLeagueMatchups(leagueId),
           fetchLeagueStandings(leagueId),
           fetchLeagueProgress(leagueId),
           fetchLeagueActivity(leagueId),
+          fetchLeagueTeams(leagueId),
         ]);
         set((state) =>
           updateLeague(state, leagueId, (league) => {
@@ -423,6 +425,21 @@ export const useAppStore = create<AppState>()(
                   .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
                   .slice(0, 40)
               : league.activity;
+            // Narrow merge: only picks up a real uploaded logo for teams that already
+            // exist locally — this isn't a general team-roster sync (name/color edits
+            // made in Settings still aren't pushed to Supabase at all, a pre-existing
+            // gap from before this step, not something Step 8 attempts to fix).
+            const teams = teamsResult.ok
+              ? league.teams.map((localTeam) => {
+                  const fresh = teamsResult.teams.find((t) => t.id === localTeam.id);
+                  if (!fresh?.logoStoragePath) return localTeam;
+                  return { ...localTeam, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(fresh.logoStoragePath) };
+                })
+              : league.teams;
+            const leagueLogo =
+              progressResult.ok && progressResult.logoStoragePath
+                ? { logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(progressResult.logoStoragePath) }
+                : {};
             return {
               ...league,
               matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,
@@ -431,6 +448,8 @@ export const useAppStore = create<AppState>()(
               seasonPhase: progressResult.ok ? (progressResult.seasonPhase as League['seasonPhase']) : league.seasonPhase,
               bracket: progressResult.ok ? progressResult.bracket : league.bracket,
               activity,
+              teams,
+              ...leagueLogo,
             };
           }),
         );

@@ -139,8 +139,8 @@ export async function fetchLeagueStandings(leagueId: string): Promise<ServiceRes
   return { ok: true, standings };
 }
 
-export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null }>> {
-  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket').eq('id', leagueId).single();
+export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null; logoStoragePath: string | null }>> {
+  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket, logo_storage_path').eq('id', leagueId).single();
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load league.' };
-  return { ok: true, currentWeek: parseWeekId(data.current_week), seasonPhase: data.season_phase, bracket: data.bracket };
+  return { ok: true, currentWeek: parseWeekId(data.current_week), seasonPhase: data.season_phase, bracket: data.bracket, logoStoragePath: data.logo_storage_path };
 }

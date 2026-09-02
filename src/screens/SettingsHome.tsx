@@ -9,6 +9,7 @@ import { NumberInput, NullableNumberInput } from '../components/common/NumberInp
 import { NameInput } from '../components/common/NameInput';
 import { Toggle, ToggleRow } from '../components/common/Toggle';
 import { IdentityPicker } from '../components/common/IdentityPicker';
+import { uploadTeamLogo, uploadLeagueLogo } from '../services/supabaseLogo';
 import { TeamLogo } from '../components/common/TeamLogo';
 import { conferencesEligible, defaultConferences } from '../engine/conferences';
 import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount, structureAvailable } from '../engine/playoffs';
@@ -152,6 +153,7 @@ export function SettingsHome() {
   const [teamIdentityDirty, setTeamIdentityDirty] = useState(false);
   const [leagueIdentityDirty, setLeagueIdentityDirty] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
 
   const userTeam = league?.teams.find((t) => t.isUser);
   const settings = league?.settings;
@@ -253,10 +255,22 @@ export function SettingsHome() {
           title="Team Logo"
           value={userTeam}
           initials={userTeam.abbrev.slice(0, 2)}
-          onSave={(next) => updateUserTeam(league.id, next)}
+          onSave={async (next, file) => {
+            updateUserTeam(league.id, next);
+            if (!file) return;
+            setLogoUploadError(null);
+            const result = await uploadTeamLogo(userTeam.id, file);
+            if (!result.ok) {
+              setLogoUploadError(result.error);
+              return;
+            }
+            // Swap the local base64 preview for the real, now-shared public URL.
+            updateUserTeam(league.id, { logoDataUrl: result.publicUrl });
+          }}
           onDirtyChange={setTeamIdentityDirty}
         />
       )}
+      {logoUploadError && <p className="text-loss text-xs px-1">{logoUploadError}</p>}
 
       <SectionHeader>App Preferences</SectionHeader>
       <div className="bg-bg-card border border-border rounded-xl p-3 space-y-3">
@@ -293,7 +307,17 @@ export function SettingsHome() {
               title="League Logo"
               value={league}
               initials={initialsFromLeagueName(league.name)}
-              onSave={(next) => updateLeagueLogo(league.id, next)}
+              onSave={async (next, file) => {
+                updateLeagueLogo(league.id, next);
+                if (!file) return;
+                setLogoUploadError(null);
+                const result = await uploadLeagueLogo(league.id, file);
+                if (!result.ok) {
+                  setLogoUploadError(result.error);
+                  return;
+                }
+                updateLeagueLogo(league.id, { logoDataUrl: result.publicUrl });
+              }}
               onDirtyChange={setLeagueIdentityDirty}
             />
             <p className="text-[11px] text-text-muted mt-1.5 px-1">

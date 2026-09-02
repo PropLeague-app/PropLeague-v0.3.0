@@ -16,6 +16,7 @@ export interface RealLeagueTeam {
   ownerName: string; // real username, or 'Simulated' for AI-controlled teams
   isSimulated: boolean;
   logoColor: string;
+  logoStoragePath: string | null;
   conferenceId: string | null;
 }
 
@@ -29,6 +30,7 @@ interface TeamRow {
   abbrev: string;
   is_simulated: boolean;
   logo_color: string;
+  logo_storage_path: string | null;
   conference_id: string | null;
   league_memberships: { profiles: { username: string } | null } | null;
 }
@@ -99,7 +101,7 @@ export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<R
 export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<{ teams: RealLeagueTeam[] }>> {
   const { data, error } = await supabase
     .from('teams')
-    .select('id, team_name, abbrev, is_simulated, logo_color, conference_id, league_memberships(profiles(username))')
+    .select('id, team_name, abbrev, is_simulated, logo_color, logo_storage_path, conference_id, league_memberships(profiles(username))')
     .eq('league_id', leagueId)
     .order('created_at', { ascending: true });
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load teams.' };
@@ -111,6 +113,7 @@ export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<
     ownerName: row.league_memberships?.profiles?.username ?? 'Simulated',
     isSimulated: row.is_simulated,
     logoColor: row.logo_color,
+    logoStoragePath: row.logo_storage_path,
     conferenceId: row.conference_id,
   }));
   return { ok: true, teams };
