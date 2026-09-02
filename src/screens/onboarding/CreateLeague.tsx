@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import * as leagueService from '../../services/leagueService';
 import { createRealLeague } from '../../services/supabaseLeague';
+import { postSystemActivityRemote } from '../../services/supabaseActivity';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { Toggle } from '../../components/common/Toggle';
 import { NumberInput } from '../../components/common/NumberInput';
@@ -94,6 +95,11 @@ export function CreateLeague() {
       userLogoColor,
     });
     addLeague(league);
+    // The welcome item already shows immediately (built into league.activity above);
+    // this makes it visible to whoever joins later too, like a pinned channel intro.
+    // (Join-time's own "Welcome to X!" stays local-only — see chat: it's just a
+    // personal greeting for that one joiner, not new information for anyone else.)
+    await postSystemActivityRemote(result.leagueId, league.activity[0]);
     navigate(`/create-league/invite/${result.leagueId}`);
   }
 

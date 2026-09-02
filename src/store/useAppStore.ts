@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { League, LeagueSettings, LeagueTeam, MarketKey, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
+import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
 import * as leagueService from '../services/leagueService';
 import * as simulationService from '../services/simulationService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -13,6 +13,7 @@ import { getGame } from '../services/oddsService';
 import { addSimulatedTeamRemote } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
+import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -70,8 +71,8 @@ interface AppState {
   factoryReset: () => void;
   setGameOverride: (leagueId: string, gameId: string, status: 'live' | 'final') => void;
   simulateDay: (leagueId: string, daySlot: string) => void;
-  postAnnouncement: (leagueId: string, message: string) => void;
-  reactToActivity: (leagueId: string, itemId: string, emoji: string) => void;
+  postAnnouncement: (leagueId: string, message: string) => Promise<void>;
+  reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
 }
 
 function updateLeague(
@@ -82,6 +83,20 @@ function updateLeague(
   const league = state.leagues[leagueId];
   if (!league) return {};
   return { leagues: { ...state.leagues, [leagueId]: updater(league) } };
+}
+
+/** Pushes whatever's newly present in `next` but wasn't in `prev` (by id) to
+ * Supabase as commissioner-authored system activity — used after any local
+ * computation that generates activity items (fillWithSimulatedTeams, advanceWeek).
+ * Item ids are deterministic/content-addressed (see leagueService.ts/simulateWeek.ts),
+ * so a simple id-presence diff correctly identifies genuinely new items even once
+ * the 40-item cap starts trimming old ones off the end. */
+async function syncNewActivity(leagueId: string, prev: ActivityItem[], next: ActivityItem[]) {
+  const prevIds = new Set(prev.map((item) => item.id));
+  const newItems = next.filter((item) => !prevIds.has(item.id));
+  for (const item of newItems) {
+    await postSystemActivityRemote(leagueId, item);
+  }
 }
 
 export const useAppStore = create<AppState>()(
@@ -129,7 +144,9 @@ export const useAppStore = create<AppState>()(
           withIds.push({ ...identity, id: result.teamId });
         }
 
-        set((state) => updateLeague(state, leagueId, (l) => leagueService.fillWithSimulatedTeams(l, withIds)));
+        const updatedLeague = leagueService.fillWithSimulatedTeams(league, withIds);
+        set((state) => updateLeague(state, leagueId, () => updatedLeague));
+        await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
       },
 
@@ -390,20 +407,32 @@ export const useAppStore = create<AppState>()(
         }),
 
       loadLeagueResults: async (leagueId) => {
-        const [matchupsResult, standingsResult, progressResult] = await Promise.all([
+        const [matchupsResult, standingsResult, progressResult, activityResult] = await Promise.all([
           fetchLeagueMatchups(leagueId),
           fetchLeagueStandings(leagueId),
           fetchLeagueProgress(leagueId),
+          fetchLeagueActivity(leagueId),
         ]);
         set((state) =>
-          updateLeague(state, leagueId, (league) => ({
-            ...league,
-            matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,
-            standings: standingsResult.ok && standingsResult.standings.length > 0 ? standingsResult.standings : league.standings,
-            currentWeek: progressResult.ok ? progressResult.currentWeek : league.currentWeek,
-            seasonPhase: progressResult.ok ? (progressResult.seasonPhase as League['seasonPhase']) : league.seasonPhase,
-            bracket: progressResult.ok ? progressResult.bracket : league.bracket,
-          })),
+          updateLeague(state, leagueId, (league) => {
+            // Real synced items plus whatever local-only items (settlement/moment
+            // messages — see chat for that accepted boundary) aren't in the fetched
+            // set yet, re-sorted together rather than one replacing the other.
+            const activity = activityResult.ok
+              ? [...activityResult.activity, ...league.activity.filter((item) => !activityResult.activity.some((f) => f.id === item.id))]
+                  .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+                  .slice(0, 40)
+              : league.activity;
+            return {
+              ...league,
+              matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,
+              standings: standingsResult.ok && standingsResult.standings.length > 0 ? standingsResult.standings : league.standings,
+              currentWeek: progressResult.ok ? progressResult.currentWeek : league.currentWeek,
+              seasonPhase: progressResult.ok ? (progressResult.seasonPhase as League['seasonPhase']) : league.seasonPhase,
+              bracket: progressResult.ok ? progressResult.bracket : league.bracket,
+              activity,
+            };
+          }),
         );
       },
 
@@ -447,6 +476,7 @@ export const useAppStore = create<AppState>()(
         }
 
         await updateLeagueWeekRemote(leagueId, String(updatedLeague.currentWeek), updatedLeague.seasonPhase, updatedLeague.bracket);
+        await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
 
         set((state) => updateLeague(state, leagueId, () => updatedLeague));
       },
@@ -495,18 +525,23 @@ export const useAppStore = create<AppState>()(
           }),
         ),
 
-      postAnnouncement: (leagueId, message) =>
+      postAnnouncement: async (leagueId, message) => {
+        const result = await postAnnouncementRemote(leagueId, message);
+        if (!result.ok) return;
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             activity: [
-              { id: `announcement-${leagueId}-${Date.now()}`, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: true },
+              { id: result.itemId, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: true },
               ...league.activity,
             ].slice(0, 40),
           })),
-        ),
+        );
+      },
 
-      reactToActivity: (leagueId, itemId, emoji) =>
+      reactToActivity: async (leagueId, itemId, emoji) => {
+        const result = await reactToActivityRemote(itemId, emoji);
+        if (!result.ok) return;
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
@@ -514,7 +549,8 @@ export const useAppStore = create<AppState>()(
               item.id === itemId ? { ...item, reactions: { ...item.reactions, [emoji]: (item.reactions?.[emoji] ?? 0) + 1 } } : item,
             ),
           })),
-        ),
+        );
+      },
     }),
     {
       name: 'propleague-storage',
