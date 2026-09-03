@@ -168,3 +168,21 @@ export async function fetchRealGame(gameId: string): Promise<NFLGame | undefined
   if (gameResult.error || !gameResult.data) return undefined;
   return mapRow(gameResult.data as RealGameRow, roster);
 }
+
+interface RefreshPropsResult {
+  ok: boolean;
+  onCooldown?: boolean;
+  secondsRemaining?: number;
+  gamesUpdated?: number;
+  error?: string;
+}
+
+/** Calls the manually-triggered player-props Edge Function (see chat: kept off
+ * the automatic cron on purpose, given its real per-game API cost). Server-side
+ * cooldown-enforced — see 11_refresh_cooldown.sql — so this is safe to expose
+ * as a button any tester can press. */
+export async function refreshPlayerProps(): Promise<RefreshPropsResult> {
+  const { data, error } = await supabase.functions.invoke('fetch-nfl-player-props', { method: 'POST' });
+  if (error) return { ok: false, error: error.message };
+  return data as RefreshPropsResult;
+}

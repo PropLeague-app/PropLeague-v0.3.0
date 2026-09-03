@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
+import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, NFLGame, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
 import * as leagueService from '../services/leagueService';
 import * as simulationService from '../services/simulationService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -15,6 +15,7 @@ import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRoste
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
+import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -38,6 +39,13 @@ interface AppState {
   profile: UserProfile | null;
   leagues: Record<string, League>;
   currentLeagueId: string | null;
+  /** Real games/odds — global, not per-league (the real NFL slate is the same
+   * for everyone), unlike everything else in `leagues`. Keyed by String(week);
+   * absence means "not loaded yet or nothing real for that week", in which case
+   * callers fall back to the local simulated engine — see chat: touching only
+   * MarketBrowser/Lineup for now, not all 13 places that read odds data. */
+  realGamesByWeek: Record<string, NFLGame[]>;
+  realGamesById: Record<string, NFLGame>;
 
   setProfile: (profile: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
@@ -74,6 +82,9 @@ interface AppState {
   simulateDay: (leagueId: string, daySlot: string) => void;
   postAnnouncement: (leagueId: string, message: string) => Promise<void>;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
+
+  loadRealGamesForWeek: (week: WeekId) => Promise<void>;
+  loadRealGame: (gameId: string) => Promise<void>;
 }
 
 function updateLeague(
@@ -106,6 +117,8 @@ export const useAppStore = create<AppState>()(
       profile: null,
       leagues: {},
       currentLeagueId: null,
+      realGamesByWeek: {},
+      realGamesById: {},
 
       setProfile: (profile) => set({ profile }),
       updateProfile: (partial) =>
@@ -570,11 +583,34 @@ export const useAppStore = create<AppState>()(
           })),
         );
       },
+
+      loadRealGamesForWeek: async (week) => {
+        const games = await fetchRealGamesForWeek(week);
+        if (games.length === 0) return; // don't overwrite a previously-loaded slate with an empty result
+        set((state) => ({
+          realGamesByWeek: { ...state.realGamesByWeek, [String(week)]: games },
+          realGamesById: { ...state.realGamesById, ...Object.fromEntries(games.map((g) => [g.id, g])) },
+        }));
+      },
+
+      loadRealGame: async (gameId) => {
+        const game = await fetchRealGame(gameId);
+        if (!game) return;
+        set((state) => ({ realGamesById: { ...state.realGamesById, [gameId]: game } }));
+      },
     }),
     {
       name: 'propleague-storage',
       version: STORE_VERSION,
       migrate: migratePersistedState,
+      // realGamesByWeek/realGamesById are excluded: they're a pure, cheaply
+      // re-fetchable cache (odds/bookmaker data can be sizeable), not something
+      // that needs to survive a page reload — re-fetched fresh via the loading
+      // useEffect in whichever screen needs it, same as rosters/standings/etc.
+      partialize: (state) => {
+        const { realGamesByWeek: _realGamesByWeek, realGamesById: _realGamesById, ...rest } = state;
+        return rest;
+      },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         return { ...current, ...p, leagues: normalizeLeagues(p.leagues as unknown as Record<string, unknown>) };

@@ -17,6 +17,8 @@ export function Lineup() {
   const submitLineup = useAppStore((s) => s.submitLineup);
   const syncVoidedPicks = useAppStore((s) => s.syncVoidedPicks);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const realGamesById = useAppStore((s) => s.realGamesById);
 
   const userTeam = league?.teams.find((t) => t.isUser);
 
@@ -40,6 +42,18 @@ export function Lineup() {
     );
   }, [league, userTeam]);
 
+  // A wager placed against a real game has a real Odds-API event id, which the
+  // local simulated dataset has never heard of — without this, a real wager's
+  // game details would silently fail to show at all. Fetches only whichever
+  // wagered games aren't already cached from an earlier MarketBrowser visit.
+  useEffect(() => {
+    if (!roster) return;
+    for (const slot of roster.slots) {
+      if (slot.wager && !realGamesById[slot.wager.gameId]) loadRealGame(slot.wager.gameId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster]);
+
   if (!league || !userTeam || !roster) {
     return (
       <div className="p-4 text-center text-text-muted text-sm">Join or create a league to build a lineup.</div>
@@ -61,7 +75,8 @@ export function Lineup() {
       <div className="flex flex-col gap-2.5 px-4 pb-32">
         {roster.slots.map((slot) => {
           const game = slot.wager
-            ? getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)
+            ? (realGamesById[slot.wager.gameId] ??
+              getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides))
             : undefined;
           const locked = !!game && game.status !== 'upcoming';
           const slotValidation = validation.slotResults.find((r) => r.slotId === slot.slotId);

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { getSlate, getPlayerPropGroups, getGameMarkets } from '../services/oddsService';
+import { refreshPlayerProps } from '../services/supabaseOdds';
 import { nflTeamById } from '../data/nflTeams';
 import { MARKETS_BY_POSITION, MARKET_LABELS } from '../data/propsGenerator';
 import { MarketRow } from '../components/roster/MarketRow';
@@ -20,16 +21,43 @@ export function MarketBrowser() {
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
+  const realGamesForWeek = useAppStore((s) => (league ? s.realGamesByWeek[String(league.currentWeek)] : undefined));
 
   useEffect(() => {
     if (league) loadWeekRosters(league.id, league.currentWeek);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [league?.id, league?.currentWeek]);
 
+  useEffect(() => {
+    if (league) loadRealGamesForWeek(league.currentWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league?.currentWeek]);
+
   const [gameFilter, setGameFilter] = useState('all');
   const [propTypeFilter, setPropTypeFilter] = useState<MarketKey | 'all'>('all');
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  async function handleRefreshOdds() {
+    setRefreshing(true);
+    setRefreshMessage(null);
+    const result = await refreshPlayerProps();
+    setRefreshing(false);
+    if (result.onCooldown) {
+      const minutes = Math.ceil((result.secondsRemaining ?? 0) / 60);
+      setRefreshMessage(`Odds were just refreshed — try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+      return;
+    }
+    if (!result.ok) {
+      setRefreshMessage(result.error ?? 'Could not refresh odds.');
+      return;
+    }
+    setRefreshMessage(`Refreshed real odds for ${result.gamesUpdated ?? 0} game${result.gamesUpdated === 1 ? '' : 's'}.`);
+    if (league) loadRealGamesForWeek(league.currentWeek);
+  }
 
   const roster = useMemo(() => {
     if (!league || !userTeam) return undefined;
@@ -43,8 +71,14 @@ export function MarketBrowser() {
 
   const games = useMemo(() => {
     if (!league) return [];
+    // Real games, when we have them for this week, take priority — only games
+    // that actually have real odds attached are worth showing as "real" (an
+    // empty bookmakers array would mean nothing to bet on); otherwise fall back
+    // to the local simulated slate, unchanged from before this existed.
+    const real = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
+    if (real && real.length > 0) return real;
     return getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled).filter((g) => g.status === 'upcoming');
-  }, [league]);
+  }, [league, realGamesForWeek]);
 
   const filteredGames = gameFilter === 'all' ? games : games.filter((g) => g.id === gameFilter);
   const validMarketKeys = slot?.position === 'ML' ? (['h2h', 'spreads'] as MarketKey[]) : MARKETS_BY_POSITION[slot?.position as keyof typeof MARKETS_BY_POSITION] ?? [];
@@ -112,8 +146,16 @@ export function MarketBrowser() {
             <span className="text-xl leading-none">‹</span>
             <span className="text-sm">Back</span>
           </button>
-          <h1 className="text-lg font-bold">Add {slot.position} Pick</h1>
+          <h1 className="text-lg font-bold flex-1">Add {slot.position} Pick</h1>
+          <button
+            onClick={handleRefreshOdds}
+            disabled={refreshing}
+            className="text-xs text-primary font-medium border border-border rounded-lg px-2.5 py-1.5 disabled:opacity-40 shrink-0"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh Odds'}
+          </button>
         </div>
+        {refreshMessage && <p className="text-xs text-text-muted mb-2">{refreshMessage}</p>}
         <div className="flex gap-2 overflow-x-auto pb-1">
           <select
             value={gameFilter}
