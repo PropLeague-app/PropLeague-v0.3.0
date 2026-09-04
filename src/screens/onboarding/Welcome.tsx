@@ -42,6 +42,12 @@ export function Welcome() {
             Join League
           </button>
           <button
+            onClick={() => navigate('/auth', { state: { next: '/' } })}
+            className="w-full text-primary text-sm font-medium py-2"
+          >
+            Already have an account? Sign In
+          </button>
+          <button
             onClick={() => navigate('/how-it-works')}
             className="w-full text-primary text-sm font-medium py-2"
           >

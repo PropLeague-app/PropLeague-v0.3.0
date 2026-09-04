@@ -62,6 +62,17 @@ export function Auth() {
       goToMode('signin');
       return;
     }
+    if (mode === 'signin') {
+      // A returning user's onboarded status isn't reliably known yet here --
+      // it's only set once useAuthStore's auth-state listener finishes
+      // fetching their profile, a separate async chain not guaranteed done
+      // by the time this resolves. Sending them to root lets RootRedirect's
+      // already-correct, wait-for-it logic decide where they actually belong
+      // (profile-setup if somehow incomplete, otherwise their real hydrated
+      // leagues) instead of this screen guessing and routing them wrong.
+      navigate('/');
+      return;
+    }
     navigate('/profile-setup', { state: { next } });
   }
 
