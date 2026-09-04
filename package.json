@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "@capacitor/push-notifications": "^8.1.2",
     "@supabase/supabase-js": "^2.112.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -17,6 +20,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
