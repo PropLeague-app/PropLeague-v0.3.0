@@ -16,21 +16,66 @@ interface RosterCandidate {
   position: string;
 }
 
-/** Loads the live, current NFL roster (real_players — see the chat: PropLeague's
- * old static data/players.ts went stale the moment a real trade happened; this
- * table doesn't, as long as fetch-nfl-rosters keeps running). Fetched once per
- * games-for-week call and threaded through, rather than queried per outcome —
- * a week's worth of games can have hundreds of prop outcomes, and this avoids
- * turning that into hundreds of round-trips. */
+// PostgREST (Supabase's API layer) silently caps any unpaginated query at
+// 1000 rows -- no error, no warning, it just returns a truncated result. This
+// was the actual root cause of Drake Maye (and likely many other players)
+// missing from prop options: real_players has 1746 active rows alone, so
+// roughly 746 of them -- in whatever arbitrary order Postgres happened to
+// return them in -- were silently never making it into the roster crosswalk
+// at all, regardless of name spelling or team. Confirmed via direct testing:
+// matchPlayerName() itself correctly matches "Drake Maye" against "Drake
+// Maye" in isolation; the player was simply never in the candidate list to
+// begin with.
+//
+// Still fetched once per games-for-week call and threaded through, rather
+// than queried per outcome -- a week's worth of games can have hundreds of
+// prop outcomes, and this avoids turning that into hundreds of round-trips.
+// Pagination adds one extra round-trip per 1000 rows (2 total right now),
+// which is a much smaller cost than that would be.
+const PAGE_SIZE = 1000;
+
+// nflverse's team codes don't always match this app's canonical abbreviations
+// (built from the Odds API's full team names via resolveTeamAbbrev above) --
+// confirmed two real mismatches by directly diffing nflverse's actual distinct
+// team values against this app's 32: nflverse uses "LA" for the Rams (this
+// app uses "LAR", the now-more-standard code), and inconsistently tags some
+// Cardinals players "AZ" instead of "ARI". Either one would silently exclude
+// every player on that team from the roster crosswalk, the same bug class as
+// the pagination issue, just at a different stage -- checked comprehensively
+// this time (a full diff of all distinct team codes) rather than one player
+// at a time, since that's exactly how Drake Maye and Stafford were each found
+// separately.
+const NFLVERSE_TEAM_CODE_FIXUPS: Record<string, string> = {
+  LA: 'LAR',
+  AZ: 'ARI',
+};
+
+function normalizeTeamCode(code: string): string {
+  return NFLVERSE_TEAM_CODE_FIXUPS[code] ?? code;
+}
+
 async function loadActiveRoster(): Promise<RosterCandidate[]> {
-  const { data, error } = await supabase.from('real_players').select('id, full_name, team, position').eq('status', 'ACT');
-  if (error || !data) return [];
-  return (data as { id: string; full_name: string; team: string; position: string }[]).map((p) => ({
-    id: p.id,
-    playerName: p.full_name,
-    team: p.team,
-    position: p.position,
-  }));
+  const all: RosterCandidate[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('real_players')
+      .select('id, full_name, team, position')
+      .eq('status', 'ACT')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data) break;
+    all.push(
+      ...(data as { id: string; full_name: string; team: string; position: string }[]).map((p) => ({
+        id: p.id,
+        playerName: p.full_name,
+        team: normalizeTeamCode(p.team),
+        position: p.position,
+      })),
+    );
+    if (data.length < PAGE_SIZE) break; // last page reached
+    from += PAGE_SIZE;
+  }
+  return all;
 }
 
 /** Resolves a player-prop outcome's raw `description` (a real name from the

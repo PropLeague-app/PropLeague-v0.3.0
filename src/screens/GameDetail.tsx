@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { getGame, getGameMarkets, getPlayerPropGroups } from '../services/oddsService';
@@ -17,11 +17,23 @@ export function GameDetail() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const setGameOverride = useAppStore((s) => s.setGameOverride);
+  const realGamesById = useAppStore((s) => s.realGamesById);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Same real-first, simulated-fallback pattern already used in Lineup.tsx --
+  // without this, a game reached from the (now real-data) NFL Slate screen
+  // would only ever look itself up in the simulated dataset, which is exactly
+  // why its markets/props were showing up empty.
+  useEffect(() => {
+    if (gameId && !realGamesById[gameId]) loadRealGame(gameId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId]);
+
   const game = gameId
-    ? getGame(gameId, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled ?? true, league?.manualGameOverrides)
+    ? (realGamesById[gameId] ??
+      getGame(gameId, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled ?? true, league?.manualGameOverrides))
     : undefined;
   if (!game) {
     return (

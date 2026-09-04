@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { DaySlot, WeekId } from '../types';
 import { getSlate } from '../services/oddsService';
@@ -7,26 +7,40 @@ import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
 
 const DAY_LABELS: Record<DaySlot, string> = {
+  WED: 'Wednesday',
   TNF: 'Thursday Night',
+  SAT: 'Saturday',
   SUN_EARLY: 'Sunday Early',
   SUN_LATE: 'Sunday Late',
   SNF: 'Sunday Night',
   MNF: 'Monday Night',
 };
 
-const DAY_ORDER: DaySlot[] = ['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'];
+const DAY_ORDER: DaySlot[] = ['WED', 'TNF', 'SAT', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'];
 
 export function NFLSlate() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const [week, setWeek] = useState<WeekId | null>(null);
   const [loading, setLoading] = useState(false);
+  const realGamesForWeek = useAppStore((s) => s.realGamesByWeek[String(week ?? league?.currentWeek ?? 1)]);
+  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
 
   const activeWeek = week ?? league?.currentWeek ?? 1;
-  const games = useMemo(
-    () => getSlate(activeWeek, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled, league?.manualGameOverrides),
-    [activeWeek, league?.currentWeek, league?.settings.lineMovementEnabled, league?.manualGameOverrides],
-  );
+
+  useEffect(() => {
+    loadRealGamesForWeek(activeWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWeek]);
+
+  const games = useMemo(() => {
+    // NFL Slate browses every game regardless of status (unlike MarketBrowser,
+    // which only wants games still open for new bets) -- no bookmakers.length
+    // filter either, since a final/past game's matchup and score are still
+    // worth showing once its pre-game odds are gone.
+    if (realGamesForWeek && realGamesForWeek.length > 0) return realGamesForWeek;
+    return getSlate(activeWeek, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled, league?.manualGameOverrides);
+  }, [realGamesForWeek, activeWeek, league?.currentWeek, league?.settings.lineMovementEnabled, league?.manualGameOverrides]);
 
   function changeWeek(w: WeekId) {
     setLoading(true);

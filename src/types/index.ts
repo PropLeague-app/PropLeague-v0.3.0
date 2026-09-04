@@ -9,7 +9,7 @@ export const APP_VERSION = '0.3.0';
 export type Position = 'QB' | 'RB' | 'WR' | 'TE' | 'K';
 export type SlotPosition = Position | 'ML';
 
-export type DaySlot = 'TNF' | 'SUN_EARLY' | 'SUN_LATE' | 'SNF' | 'MNF';
+export type DaySlot = 'WED' | 'TNF' | 'SAT' | 'SUN_EARLY' | 'SUN_LATE' | 'SNF' | 'MNF';
 export type GameStatus = 'upcoming' | 'live' | 'final';
 
 /** 1-18 for the regular season, then the three PropLeague playoff rounds. */
