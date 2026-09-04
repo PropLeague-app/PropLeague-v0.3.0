@@ -10,7 +10,7 @@ import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
-import { addSimulatedTeamRemote, fetchLeagueTeams } from '../services/supabaseLeague';
+import { addSimulatedTeamRemote, fetchLeagueTeams, fetchMyLeagueMemberships, fetchLeagueMeta } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
@@ -46,6 +46,12 @@ interface AppState {
    * MarketBrowser/Lineup for now, not all 13 places that read odds data. */
   realGamesByWeek: Record<string, NFLGame[]>;
   realGamesById: Record<string, NFLGame>;
+  /** Whether hydrateMyLeagues has run (successfully or not) for the current
+   * session -- gates RootRedirect's routing decision so a returning user with
+   * a real Supabase membership isn't bounced to Create League before we've
+   * even checked, and gets reset on sign-out so a different person logging in
+   * on the same device gets their own leagues, not a stale skip. */
+  leaguesHydrated: boolean;
 
   setProfile: (profile: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
@@ -85,6 +91,7 @@ interface AppState {
 
   loadRealGamesForWeek: (week: WeekId) => Promise<void>;
   loadRealGame: (gameId: string) => Promise<void>;
+  hydrateMyLeagues: () => Promise<void>;
 }
 
 function updateLeague(
@@ -119,6 +126,7 @@ export const useAppStore = create<AppState>()(
       currentLeagueId: null,
       realGamesByWeek: {},
       realGamesById: {},
+      leaguesHydrated: false,
 
       setProfile: (profile) => set({ profile }),
       updateProfile: (partial) =>
@@ -537,7 +545,7 @@ export const useAppStore = create<AppState>()(
       // manual v0.1.1 §7 #11: wipes every persisted field (profile, leagues,
       // currentLeagueId) and drops back to onboarding — distinct from Reset Season,
       // which only rewinds one league's season data and keeps the profile/league intact.
-      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null }),
+      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false }),
 
       setGameOverride: (leagueId, gameId, status) =>
         set((state) =>
@@ -598,6 +606,48 @@ export const useAppStore = create<AppState>()(
         if (!game) return;
         set((state) => ({ realGamesById: { ...state.realGamesById, [gameId]: game } }));
       },
+
+      // Discovers every league the currently authenticated user actually
+      // belongs to in Supabase and reconstructs local League objects for
+      // them -- the fix for a real, serious gap: previously the app only
+      // ever knew about leagues that were created/joined THIS SESSION on
+      // THIS DEVICE, so a returning user on a fresh install (every
+      // TestFlight tester's actual situation) or after signing back in
+      // would see no leagues at all despite having real ones, and could
+      // end up creating a duplicate team by going through Create/Join again.
+      hydrateMyLeagues: async () => {
+        if (get().leaguesHydrated) return;
+        const membershipsResult = await fetchMyLeagueMemberships();
+        if (!membershipsResult.ok) {
+          set({ leaguesHydrated: true }); // don't loop forever retrying on a real error
+          return;
+        }
+
+        const builtLeagues: Record<string, League> = {};
+        for (const { leagueId, teamId } of membershipsResult.memberships) {
+          const [metaResult, teamsResult] = await Promise.all([fetchLeagueMeta(leagueId), fetchLeagueTeams(leagueId)]);
+          if (!metaResult.ok || !teamsResult.ok) continue; // skip a league we couldn't load rather than fail the whole hydration
+          const league = leagueService.buildLeagueFromRealTeams({
+            id: metaResult.id,
+            name: metaResult.name,
+            inviteCode: metaResult.inviteCode,
+            commissionerTeamId: metaResult.commissionerTeamId ?? '',
+            targetTeamCount: metaResult.targetTeamCount,
+            isPublic: metaResult.isPublic,
+            teams: teamsResult.teams,
+          });
+          builtLeagues[league.id] = {
+            ...league,
+            teams: league.teams.map((t) => (t.id === teamId ? { ...t, isUser: true } : t)),
+          };
+        }
+
+        // builtLeagues spread first, then existing state.leagues spread over
+        // it: if hydration ever runs again with richer local state already
+        // present (rosters/standings from loadLeagueResults), that state
+        // wins rather than being clobbered by this leaner reconstruction.
+        set((state) => ({ leagues: { ...builtLeagues, ...state.leagues }, leaguesHydrated: true }));
+      },
     }),
     {
       name: 'propleague-storage',
@@ -608,7 +658,7 @@ export const useAppStore = create<AppState>()(
       // that needs to survive a page reload — re-fetched fresh via the loading
       // useEffect in whichever screen needs it, same as rosters/standings/etc.
       partialize: (state) => {
-        const { realGamesByWeek: _realGamesByWeek, realGamesById: _realGamesById, ...rest } = state;
+        const { realGamesByWeek: _realGamesByWeek, realGamesById: _realGamesById, leaguesHydrated: _leaguesHydrated, ...rest } = state;
         return rest;
       },
       merge: (persisted, current) => {

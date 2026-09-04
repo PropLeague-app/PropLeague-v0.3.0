@@ -31,7 +31,13 @@ export function BottomTabBar() {
   }
 
   return (
-    <nav className="fixed bottom-0 w-full max-w-md bg-bg-raised border-t border-border flex z-40" style={{ height: BOTTOM_TAB_BAR_HEIGHT }}>
+    <nav
+      className="fixed bottom-0 w-full max-w-md bg-bg-raised border-t border-border flex z-40"
+      style={{
+        height: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))`,
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+    >
       {TABS.map((tab) => (
         <NavLink
           key={tab.to}

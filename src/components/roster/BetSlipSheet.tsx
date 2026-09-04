@@ -113,6 +113,7 @@ export function BetSlipSheet({
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60" onClick={onClose}>
       <div
         className="w-full max-w-md bg-bg-raised border-t border-border rounded-t-2xl p-4 space-y-4"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start">

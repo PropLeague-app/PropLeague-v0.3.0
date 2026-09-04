@@ -115,13 +115,19 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
   return (
     <div className="fixed inset-0 z-[60] bg-bg flex justify-center">
       <div className="w-full max-w-md min-h-screen flex flex-col border-x border-border">
-        <div className="flex justify-between items-center p-4 sticky top-0 bg-bg z-10 border-b border-border">
+        <div
+          className="flex justify-between items-center p-4 sticky top-0 bg-bg z-10 border-b border-border"
+          style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+        >
           <h1 className="text-lg font-bold">How PropLeague Works</h1>
           <button onClick={onClose} className="text-text-muted text-sm">
             Close
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
+        <div
+          className="flex-1 overflow-y-auto px-4 py-5 space-y-6"
+          style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
+        >
           {sections.map((section) => (
             <div key={section.title}>
               <h2 className="text-base font-bold flex items-center gap-2 mb-1.5">

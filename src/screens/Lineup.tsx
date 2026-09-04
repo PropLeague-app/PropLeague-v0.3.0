@@ -101,7 +101,7 @@ export function Lineup() {
 
       <div
         className="fixed w-full max-w-md bg-bg-raised border-t border-border p-3 space-y-2"
-        style={{ bottom: BOTTOM_TAB_BAR_HEIGHT }}
+        style={{ bottom: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
       >
         {validation.overallReasons.length === 1 && (
           <p className="text-loss text-xs text-center">{validation.overallReasons[0]}</p>

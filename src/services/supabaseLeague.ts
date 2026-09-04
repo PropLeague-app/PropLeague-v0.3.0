@@ -35,6 +35,43 @@ interface TeamRow {
   league_memberships: { profiles: { username: string } | null } | null;
 }
 
+export interface MyLeagueMembership {
+  leagueId: string;
+  teamId: string;
+}
+
+/** Discovers every league + team the currently authenticated user actually
+ * belongs to in Supabase -- the missing piece that let a fresh login/install
+ * see nothing even with real existing memberships (see chat: RootRedirect only
+ * ever checked local on-device state, never asked Supabase at all). Two simple
+ * top-level-filtered queries rather than one query with a nested-table filter --
+ * deliberately, since I can't verify PostgREST's exact embedded-filter syntax
+ * without a live instance to test against, and this is launch-critical enough
+ * to want the pattern I'm actually certain works (used successfully everywhere
+ * else in this codebase), not the one I'm merely fairly confident about. */
+export async function fetchMyLeagueMemberships(): Promise<ServiceResult<{ memberships: MyLeagueMembership[] }>> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) return { ok: false, error: userError?.message ?? 'Not signed in.' };
+
+  const { data: membershipRows, error: membershipError } = await supabase
+    .from('league_memberships')
+    .select('id, league_id')
+    .eq('profile_id', userData.user.id);
+  if (membershipError || !membershipRows) return { ok: false, error: membershipError?.message ?? 'Could not load your memberships.' };
+  if (membershipRows.length === 0) return { ok: true, memberships: [] };
+
+  const membershipIds = membershipRows.map((m) => m.id as string);
+  const { data: teamRows, error: teamError } = await supabase.from('teams').select('id, membership_id').in('membership_id', membershipIds);
+  if (teamError || !teamRows) return { ok: false, error: teamError?.message ?? 'Could not load your teams.' };
+
+  const teamIdByMembership = new Map((teamRows as { id: string; membership_id: string }[]).map((t) => [t.membership_id, t.id]));
+  const memberships: MyLeagueMembership[] = (membershipRows as { id: string; league_id: string }[])
+    .map((m) => ({ leagueId: m.league_id, teamId: teamIdByMembership.get(m.id) }))
+    .filter((m): m is MyLeagueMembership => m.teamId != null);
+
+  return { ok: true, memberships };
+}
+
 export async function createRealLeague(params: {
   name: string;
   targetTeamCount: number;

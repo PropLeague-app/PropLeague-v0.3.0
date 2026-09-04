@@ -45,6 +45,8 @@ function RootRedirect() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const leagues = useAppStore((s) => s.leagues);
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
+  const leaguesHydrated = useAppStore((s) => s.leaguesHydrated);
+  const hydrateMyLeagues = useAppStore((s) => s.hydrateMyLeagues);
 
   // A league only counts as "the user's" if their team is still in it — otherwise
   // Leave This League (manual §6 #12) could hand the user right back into a league
@@ -58,6 +60,17 @@ function RootRedirect() {
     if (targetLeague && targetLeague.id !== currentLeagueId) setCurrentLeague(targetLeague.id);
   }, [targetLeague?.id, currentLeagueId, setCurrentLeague]);
 
+  // Discovers any leagues Supabase says this user actually belongs to, once we
+  // know they're a real, fully-onboarded session. Without this, a returning
+  // user on a fresh install (every TestFlight tester's actual situation) or
+  // after signing back in would never learn about their real memberships —
+  // the app only ever knew about leagues created/joined THIS session on THIS
+  // device. Gated on leaguesHydrated (reset on sign-out) so it runs once per
+  // session, not on every render.
+  useEffect(() => {
+    if (session && authProfile?.onboarded && !leaguesHydrated) hydrateMyLeagues();
+  }, [session, authProfile?.onboarded, leaguesHydrated, hydrateMyLeagues]);
+
   // Auth gates come first: don't decide anything league-related until we know
   // whether there's a real session, and whether it's finished onboarding.
   if (authLoading) {
@@ -67,6 +80,14 @@ function RootRedirect() {
   if (authProfile && !authProfile.onboarded) return <Navigate to="/profile-setup" replace />;
 
   if (!profile) return <Navigate to="/welcome" replace />;
+
+  // Don't decide "no leagues, go create one" until hydration has actually had
+  // a chance to check Supabase — otherwise a returning user with a real
+  // membership would get bounced to Create League before we'd even looked.
+  if (!leaguesHydrated) {
+    return <div className="min-h-screen bg-bg flex items-center justify-center text-text-muted text-sm">Loading…</div>;
+  }
+
   if (!targetLeague) return <Navigate to="/create-league" replace />;
   return <Navigate to="/home" replace />;
 }
