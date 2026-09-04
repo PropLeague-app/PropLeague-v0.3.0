@@ -97,15 +97,32 @@ export function getPlayerPropGroups(game: NFLGame): PlayerPropGroup[] {
     for (const market of bookmaker.markets) {
       if (!market.playerId) continue;
       if (!groups.has(market.playerId)) {
-        const player = playerById(market.playerId);
-        groups.set(market.playerId, {
-          playerId: player.id,
-          playerName: player.name,
-          position: player.position,
-          teamId: player.nflTeamId,
-          injury: deriveInjuryTag(game.id, player.id),
-          markets: [],
-        });
+        // Real markets carry their own player info (see supabaseOdds.ts) and are
+        // used directly -- the static playerById() lookup is only a fallback for
+        // simulated markets, since it can't find a real player who isn't in that
+        // curated list or who's since changed teams. Skip (not crash) if neither
+        // source has anything -- an unresolvable player just isn't shown.
+        if (market.playerName && market.playerPosition && market.playerTeamId) {
+          groups.set(market.playerId, {
+            playerId: market.playerId,
+            playerName: market.playerName,
+            position: market.playerPosition,
+            teamId: market.playerTeamId,
+            injury: deriveInjuryTag(game.id, market.playerId),
+            markets: [],
+          });
+        } else {
+          const player = playerById(market.playerId);
+          if (!player) continue;
+          groups.set(market.playerId, {
+            playerId: player.id,
+            playerName: player.name,
+            position: player.position,
+            teamId: player.nflTeamId,
+            injury: deriveInjuryTag(game.id, player.id),
+            markets: [],
+          });
+        }
       }
       groups.get(market.playerId)!.markets.push(market);
     }

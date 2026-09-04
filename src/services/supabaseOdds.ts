@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 import { NFL_TEAMS } from '../data/nflTeams';
 import { matchPlayerName } from '../engine/playerNameMatch';
-import type { DaySlot, GameStatus, MarketKey, NFLGame, OddsBookmaker, OddsMarket, WeekId } from '../types';
+import type { DaySlot, GameStatus, MarketKey, NFLGame, OddsBookmaker, OddsMarket, Position, WeekId } from '../types';
 
 const TEAM_NAME_TO_ABBREV = new Map(NFL_TEAMS.map((t) => [`${t.city} ${t.name}`, t.abbrev]));
 
@@ -13,6 +13,7 @@ interface RosterCandidate {
   id: string;
   playerName: string;
   team: string;
+  position: string;
 }
 
 /** Loads the live, current NFL roster (real_players — see the chat: PropLeague's
@@ -22,22 +23,28 @@ interface RosterCandidate {
  * a week's worth of games can have hundreds of prop outcomes, and this avoids
  * turning that into hundreds of round-trips. */
 async function loadActiveRoster(): Promise<RosterCandidate[]> {
-  const { data, error } = await supabase.from('real_players').select('id, full_name, team').eq('status', 'ACT');
+  const { data, error } = await supabase.from('real_players').select('id, full_name, team, position').eq('status', 'ACT');
   if (error || !data) return [];
-  return (data as { id: string; full_name: string; team: string }[]).map((p) => ({ id: p.id, playerName: p.full_name, team: p.team }));
+  return (data as { id: string; full_name: string; team: string; position: string }[]).map((p) => ({
+    id: p.id,
+    playerName: p.full_name,
+    team: p.team,
+    position: p.position,
+  }));
 }
 
 /** Resolves a player-prop outcome's raw `description` (a real name from the
- * bookmaker) to a real player's id from the live roster — verified matching
- * logic from Phase 1.5, run in reverse (matching a real name against the real
- * roster instead of the other way around). Candidates are scoped to just this
- * game's two teams, which both narrows the fallback correctly and doesn't need
- * an explicit team on every outcome (the API doesn't provide one per-outcome,
+ * bookmaker) to a real player from the live roster — verified matching logic
+ * from Phase 1.5, run in reverse (matching a real name against the real roster
+ * instead of the other way around). Candidates are scoped to just this game's
+ * two teams, which both narrows the fallback correctly and doesn't need an
+ * explicit team on every outcome (the API doesn't provide one per-outcome,
  * only per-game). Returns null for real players the bookmaker prices who
  * aren't resolvable on either team's active roster — should be rare now that
  * the roster itself is live, rather than the common case it was against the
- * old static file. */
-function resolvePlayerId(description: string, homeAbbrev: string | null, awayAbbrev: string | null, roster: RosterCandidate[]): string | null {
+ * old static file. Returns the full roster entry, not just an id, so callers
+ * have position/team without a second lookup. */
+function resolvePlayer(description: string, homeAbbrev: string | null, awayAbbrev: string | null, roster: RosterCandidate[]): RosterCandidate | null {
   const candidateTeams = [homeAbbrev, awayAbbrev].filter((t): t is string => t != null);
   const candidates = roster.filter((p) => candidateTeams.includes(p.team)).map((p) => ({ playerName: p.playerName, team: p.team }));
 
@@ -45,7 +52,7 @@ function resolvePlayerId(description: string, homeAbbrev: string | null, awayAbb
     const result = matchPlayerName(description, team, candidates);
     if (result.matchedName) {
       const match = roster.find((p) => p.playerName === result.matchedName && candidateTeams.includes(p.team));
-      if (match) return match.id;
+      if (match) return match;
     }
   }
   return null;
@@ -96,12 +103,19 @@ function mapPlayerPropMarkets(rawMarket: RawMarket, homeAbbrev: string | null, a
 
   const markets: OddsMarket[] = [];
   for (const [description, outcomes] of byPlayer) {
-    const playerId = resolvePlayerId(description, homeAbbrev, awayAbbrev, roster);
-    if (!playerId) continue;
+    const player = resolvePlayer(description, homeAbbrev, awayAbbrev, roster);
+    if (!player) continue;
     markets.push({
       key: rawMarket.key as MarketKey,
-      playerId,
-      outcomes: outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point, playerId })),
+      playerId: player.id,
+      playerName: player.playerName,
+      // nflverse's raw position string isn't guaranteed to be one of PropLeague's
+      // five roster-slot positions (could be a non-skill position) -- cast rather
+      // than validated, but safe: a value that doesn't match any of them simply
+      // never matches any slot.position comparison downstream, it doesn't crash.
+      playerPosition: player.position as Position,
+      playerTeamId: player.team,
+      outcomes: outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point, playerId: player.id })),
       // Real data has one line per player per market, no alternates -- altLines
       // stays undefined (already optional on the type).
     });

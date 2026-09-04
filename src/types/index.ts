@@ -81,6 +81,15 @@ export interface AltLine {
 export interface OddsMarket {
   key: MarketKey;
   playerId?: string; // absent for game-level markets (h2h/spreads)
+  /** Carried directly on real markets (see supabaseOdds.ts) so getPlayerPropGroups
+   * doesn't have to re-derive them via the static roster lookup, which can't find
+   * a real player who isn't in that curated, hand-maintained list (or who's since
+   * been traded to a different team than it says) -- that gap is exactly what
+   * caused a real crash. Left undefined for simulated markets, which still use
+   * the static playerById() lookup as before. */
+  playerName?: string;
+  playerPosition?: Position;
+  playerTeamId?: string;
   outcomes: OddsOutcome[];
   /** One lower and one higher alternate line, each with its own shifted odds (manual
    * §6). Only present on player over/under markets with a numeric point. */
