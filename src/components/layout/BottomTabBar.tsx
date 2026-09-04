@@ -1,5 +1,8 @@
 import { NavLink } from 'react-router-dom';
 import { useUIStore } from '../../store/useUIStore';
+import { useAppStore } from '../../store/useAppStore';
+import { validateLineup } from '../../engine/validation';
+import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 
 const TABS = [
   { to: '/home', label: 'League Home', icon: '🏠' },
@@ -16,6 +19,20 @@ export const BOTTOM_TAB_BAR_HEIGHT = 64;
 export function BottomTabBar() {
   const hasUnsavedChanges = useUIStore((s) => s.hasUnsavedChanges);
   const setHasUnsavedChanges = useUIStore((s) => s.setHasUnsavedChanges);
+
+  // Global "is this week's lineup incomplete or under-allocated" check, so the
+  // indicator is visible from anywhere in the app, not just while already on
+  // the Lineup screen -- exactly the case Hunter described (navigated away
+  // to research a prop, wants a reminder that something's still unfinished).
+  const currentLeagueId = useAppStore((s) => s.currentLeagueId);
+  const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
+  const userTeam = league?.teams.find((t) => t.isUser);
+  const roster =
+    league && userTeam
+      ? (league.rostersByTeamWeek[rosterKey(userTeam.id, league.currentWeek)] ??
+        buildEmptyRoster(userTeam.id, league.currentWeek, league.settings.lineupSlots))
+      : undefined;
+  const lineupIncomplete = !!(roster && league && !validateLineup(roster, league.settings).valid);
 
   // Discard-on-leave confirm for the identity/logo editors (manual v0.1.1 §2 #4) — the
   // app has no data-router set up (plain <Routes>), so react-router's navigation
@@ -49,7 +66,14 @@ export function BottomTabBar() {
             }`
           }
         >
-          <span className="text-lg leading-none">{tab.icon}</span>
+          <span className="relative text-lg leading-none">
+            {tab.icon}
+            {tab.to === '/lineup' && lineupIncomplete && (
+              <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
+                !
+              </span>
+            )}
+          </span>
           <span>{tab.label}</span>
         </NavLink>
       ))}
