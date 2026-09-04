@@ -8,6 +8,17 @@ const config: CapacitorConfig = {
   appId: 'com.propleague.app',
   appName: 'PropLeague',
   webDir: 'dist',
+  ios: {
+    // This is the actual root cause of the top/bottom clipping that two
+    // rounds of CSS-only fixes failed to solve. Capacitor's iOS webview maps
+    // this directly to UIScrollView.contentInsetAdjustmentBehavior, and its
+    // DEFAULT VALUE IS "never" -- meaning the webview was never adjusting for
+    // the safe area at the native level at all, which is exactly why
+    // env(safe-area-inset-top) was verified (via Web Inspector) to resolve to
+    // 0px no matter where the CSS padding was placed. No CSS change was ever
+    // going to fix this; it needed to happen here.
+    contentInset: 'automatic',
+  },
 };
 
 export default config;

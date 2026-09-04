@@ -123,6 +123,23 @@ function mapPlayerPropMarkets(rawMarket: RawMarket, homeAbbrev: string | null, a
   return markets;
 }
 
+// Real feeds include up to ~9 different bookmakers, each with their own line for
+// the same market -- without filtering, a player's "Passing TDs" market would
+// show up once per bookmaker, which is exactly the clutter Hunter reported.
+// Simulated data never had this problem (it only ever generated one bookmaker's
+// worth of lines). This is the immediate fix: default to one preferred book.
+// Making this a real, commissioner-only league setting (with a UI to pick it) is
+// a separate, larger piece of work -- tied to a broader point about
+// commissioner-locked settings in general, worth doing but not rushed in here.
+const PREFERRED_BOOKMAKER_KEY = 'draftkings';
+
+function pickPreferredBookmaker(bookmakers: RawBookmaker[]): RawBookmaker[] {
+  const preferred = bookmakers.find((b) => b.key === PREFERRED_BOOKMAKER_KEY);
+  if (preferred) return [preferred];
+  // DraftKings didn't have a line for this specific game (rare, but possible) --
+  // fall back to whichever bookmaker is first, rather than showing zero odds.
+  return bookmakers.length > 0 ? [bookmakers[0]] : [];
+}
 function mapBookmaker(raw: RawBookmaker, homeAbbrev: string | null, awayAbbrev: string | null, roster: RosterCandidate[]): OddsBookmaker {
   const markets: OddsMarket[] = [];
   for (const rawMarket of raw.markets) {
@@ -161,7 +178,7 @@ function mapRow(row: RealGameRow, roster: RosterCandidate[]): NFLGame {
     status: row.status as GameStatus,
     homeScore: row.home_score,
     awayScore: row.away_score,
-    bookmakers: row.bookmakers.map((b) => mapBookmaker(b, homeAbbrev, awayAbbrev, roster)),
+    bookmakers: pickPreferredBookmaker(row.bookmakers).map((b) => mapBookmaker(b, homeAbbrev, awayAbbrev, roster)),
   };
 }
 

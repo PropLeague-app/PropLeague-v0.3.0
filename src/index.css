@@ -28,6 +28,18 @@ body,
   height: 100%;
 }
 
+/* iOS Safari/WebKit automatically zooms the whole page when a text input's
+ * font-size is under 16px on focus -- a well-known, deterministic behavior
+ * (not something env(safe-area-inset-*)-style CSS quirks apply to), and this
+ * app's inputs mostly use Tailwind's text-sm (14px) or text-xs (12px). This
+ * app never runs outside a mobile context, so there's no reason not to apply
+ * this globally rather than hunt down every individual input. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
