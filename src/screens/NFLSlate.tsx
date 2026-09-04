@@ -39,30 +39,34 @@ export function NFLSlate() {
   );
 
   return (
-    <div className="p-4 space-y-3">
-      <h1 className="text-xl font-bold">NFL Slate</h1>
-      <WeekSelector value={activeWeek} onChange={changeWeek} />
+    <>
+      <div className="p-4 pb-3 space-y-3 sticky top-0 bg-bg z-10">
+        <h1 className="text-xl font-bold">NFL Slate</h1>
+        <WeekSelector value={activeWeek} onChange={changeWeek} />
+      </div>
 
-      {loading ? (
-        <div className="space-y-2">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {grouped.map(({ day, games: dayGames }) => (
-            <div key={day}>
-              <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">{DAY_LABELS[day]}</p>
-              <div className="space-y-2">
-                {dayGames.map((game) => (
-                  <GameCard key={game.id} game={game} />
-                ))}
+      <div className="px-4 pb-4">
+        {loading ? (
+          <div className="space-y-2">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {grouped.map(({ day, games: dayGames }) => (
+              <div key={day}>
+                <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">{DAY_LABELS[day]}</p>
+                <div className="space-y-2">
+                  {dayGames.map((game) => (
+                    <GameCard key={game.id} game={game} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

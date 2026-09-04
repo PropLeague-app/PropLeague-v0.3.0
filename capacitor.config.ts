@@ -19,6 +19,11 @@ const config: CapacitorConfig = {
     // going to fix this; it needed to happen here.
     contentInset: 'automatic',
   },
+  // Matches --color-bg from index.css exactly. Without this, whatever's
+  // natively behind the webview (white, by default) shows through in the
+  // safe-area regions -- the "white bar" Hunter saw once content scrolled up
+  // into that space.
+  backgroundColor: '#141c29',
 };
 
 export default config;

@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import type { MarketKey, RosterSlotState, SlotPosition, WagerStatus, WeekId, WeeklyRoster } from '../types';
+import type { MarketKey, RosterSlotState, SlotPosition, WagerStatus, WeekId } from '../types';
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -82,10 +82,19 @@ interface RosterRow {
 
 /** Loads every team's roster/wagers for one week of a league — used to populate
  * league.rostersByTeamWeek from the real source of truth (on entering the
- * Lineup/MarketBrowser screens, and after placing a wager). Teams with no wagers
- * yet simply won't appear in the result; the UI already falls back to
- * buildEmptyRoster() for those, so no special-casing needed here. */
-export async function fetchLeagueRostersForWeek(leagueId: string, week: WeekId): Promise<ServiceResult<{ rosters: Record<string, WeeklyRoster> }>> {
+ * Lineup/MarketBrowser screens, and after placing a wager). Returns each team's
+ * raw wager rows rather than a fully-built WeeklyRoster: this function has no
+ * access to the league's lineupSlots config, so it can't know how many total
+ * slots a team should have or what the unfilled ones should look like -- the
+ * caller (useAppStore, which does have that config) is responsible for merging
+ * these wagers onto a buildEmptyRoster()-based full roster. Building `slots`
+ * directly from `row.wagers` here was the bug: a team with 1 of 8 slots filled
+ * (the normal case for most of a season, not an edge case) would get a roster
+ * with only 1 slot total, silently dropping the other 7 the instant this ran. */
+export async function fetchLeagueRostersForWeek(
+  leagueId: string,
+  week: WeekId,
+): Promise<ServiceResult<{ wagersByTeam: Record<string, { wagers: RosterSlotState[]; submitted: boolean }> }>> {
   const { data, error } = await supabase
     .from('weekly_rosters')
     .select(
@@ -95,9 +104,9 @@ export async function fetchLeagueRostersForWeek(leagueId: string, week: WeekId):
     .eq('week', week);
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load rosters.' };
 
-  const rosters: Record<string, WeeklyRoster> = {};
+  const wagersByTeam: Record<string, { wagers: RosterSlotState[]; submitted: boolean }> = {};
   for (const row of data as unknown as RosterRow[]) {
-    const slots: RosterSlotState[] = row.wagers.map((w) => ({
+    const wagers: RosterSlotState[] = row.wagers.map((w) => ({
       slotId: w.slot_id,
       position: positionFromSlotId(w.slot_id),
       wager: {
@@ -116,7 +125,7 @@ export async function fetchLeagueRostersForWeek(leagueId: string, week: WeekId):
         settledProfit: w.settled_profit,
       },
     }));
-    rosters[`${row.team_id}:${week}`] = { week, teamId: row.team_id, slots, submitted: row.submitted };
+    wagersByTeam[row.team_id] = { wagers, submitted: row.submitted };
   }
-  return { ok: true, rosters };
+  return { ok: true, wagersByTeam };
 }

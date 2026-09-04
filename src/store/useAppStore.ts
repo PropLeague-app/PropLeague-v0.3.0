@@ -382,10 +382,21 @@ export const useAppStore = create<AppState>()(
         const result = await fetchLeagueRostersForWeek(leagueId, week);
         if (!result.ok) return;
         set((state) =>
-          updateLeague(state, leagueId, (league) => ({
-            ...league,
-            rostersByTeamWeek: { ...league.rostersByTeamWeek, ...result.rosters },
-          })),
+          updateLeague(state, leagueId, (league) => {
+            const rostersByTeamWeek = { ...league.rostersByTeamWeek };
+            for (const [teamId, { wagers, submitted }] of Object.entries(result.wagersByTeam)) {
+              // Merge fetched wagers onto a full, correctly-sized roster
+              // (buildEmptyRoster) rather than treating the fetched wagers as
+              // the whole roster -- a team with only some slots filled (the
+              // normal case for most of a season, not an edge case) would
+              // otherwise lose every empty slot the instant this ran.
+              const base = buildEmptyRoster(teamId, week, league.settings.lineupSlots);
+              const wagerBySlotId = new Map(wagers.map((w) => [w.slotId, w.wager]));
+              const slots = base.slots.map((slot) => ({ ...slot, wager: wagerBySlotId.get(slot.slotId) ?? null }));
+              rostersByTeamWeek[rosterKey(teamId, week)] = { ...base, slots, submitted };
+            }
+            return { ...league, rostersByTeamWeek };
+          }),
         );
       },
 
