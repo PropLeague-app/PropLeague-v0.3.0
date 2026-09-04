@@ -89,7 +89,10 @@ export function Auth() {
 
   return (
     <div className="min-h-screen bg-bg flex justify-center">
-      <div className="w-full max-w-md min-h-screen flex flex-col px-6 py-10 gap-5 border-x border-border">
+      <div
+        className="w-full max-w-md min-h-screen flex flex-col px-6 py-10 gap-5 border-x border-border"
+        style={{ paddingTop: 'calc(2.5rem + env(safe-area-inset-top))', paddingBottom: 'calc(2.5rem + env(safe-area-inset-bottom))' }}
+      >
         <button onClick={() => goBack(navigate, '/welcome')} className="text-text-muted flex items-center gap-0.5 -ml-1 -mb-2 self-start">
           <span className="text-xl leading-none">‹</span>
           <span className="text-sm">Back</span>

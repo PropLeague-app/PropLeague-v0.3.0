@@ -16,7 +16,10 @@ export function Welcome() {
 
   return (
     <div className="min-h-screen bg-bg flex justify-center">
-      <div className="w-full max-w-md min-h-screen flex flex-col items-center justify-center px-6 gap-8 border-x border-border">
+      <div
+        className="w-full max-w-md min-h-screen flex flex-col items-center justify-center px-6 gap-8 border-x border-border"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <div className="flex flex-col items-center gap-3">
           <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-5xl shadow-lg">
             🏆

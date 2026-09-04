@@ -31,7 +31,10 @@ export function InviteScreen() {
 
   return (
     <div className="min-h-screen bg-bg flex justify-center">
-      <div className="w-full max-w-md min-h-screen flex flex-col items-center justify-center px-6 gap-6 border-x border-border text-center">
+      <div
+        className="w-full max-w-md min-h-screen flex flex-col items-center justify-center px-6 gap-6 border-x border-border text-center"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <span className="text-5xl">✅</span>
         <div className="flex items-center gap-2.5">
           <LeagueLogo league={league} size="md" />

@@ -105,7 +105,10 @@ export function CreateLeague() {
 
   return (
     <div className="min-h-screen bg-bg flex justify-center">
-      <div className="w-full max-w-md min-h-screen flex flex-col px-6 py-8 gap-5 border-x border-border">
+      <div
+        className="w-full max-w-md min-h-screen flex flex-col px-6 py-8 gap-5 border-x border-border"
+        style={{ paddingTop: 'calc(2rem + env(safe-area-inset-top))', paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
+      >
         {profile && (
           <button
             onClick={() => goBack(navigate, '/settings')}
