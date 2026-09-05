@@ -24,16 +24,25 @@ function LineCell({
   if (price == null) {
     return <div className="w-16 shrink-0 py-1.5 text-center text-text-muted text-xs">—</div>;
   }
+  // Moneyline has no point value (no "number line" the way Spread/Total do), so
+  // rather than reserve an empty line for it like before -- which left the odds
+  // looking small and pushed toward the bottom -- it centers within the same
+  // overall box height (min-h-11) and renders larger, since it's the only thing
+  // in the box.
+  const hasPoint = point !== '';
   return (
     <button
       onClick={onSelect}
       disabled={!onSelect}
-      className={`w-16 shrink-0 flex flex-col items-center py-1.5 rounded-lg border ${
+      className={`w-16 shrink-0 min-h-11 flex flex-col items-center justify-center py-1.5 rounded-lg border ${
         blocked ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
       } disabled:opacity-60`}
     >
-      {point && <span className={`text-xs font-semibold ${blocked ? 'line-through text-loss' : ''}`}>{point}</span>}
-      <OddsDisplay odds={price} className={`text-[11px] ${blocked ? 'text-loss' : 'text-primary'}`} />
+      {hasPoint && <span className={`text-xs font-semibold ${blocked ? 'line-through text-loss' : ''}`}>{point}</span>}
+      <OddsDisplay
+        odds={price}
+        className={`${hasPoint ? 'text-[11px]' : 'text-xs font-medium'} ${blocked ? 'text-loss' : 'text-primary'}`}
+      />
     </button>
   );
 }
@@ -99,7 +108,9 @@ export function GameLinesTable({
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-1.5 min-w-0">
             <TeamMark team={away} size="sm" />
-            <span className="text-xs font-medium truncate">{away.name}</span>
+            <span className="text-xs font-medium leading-tight">
+              {away.city} {away.name}
+            </span>
           </div>
           <LineCell
             point={formatSpreadPoint(awaySpread?.point)}
@@ -119,7 +130,9 @@ export function GameLinesTable({
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-1.5 min-w-0">
             <TeamMark team={home} size="sm" />
-            <span className="text-xs font-medium truncate">{home.name}</span>
+            <span className="text-xs font-medium leading-tight">
+              {home.city} {home.name}
+            </span>
           </div>
           <LineCell
             point={formatSpreadPoint(homeSpread?.point)}

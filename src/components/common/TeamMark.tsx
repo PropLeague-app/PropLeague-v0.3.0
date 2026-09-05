@@ -2,7 +2,7 @@ import type { NFLTeam } from '../../types';
 
 const SIZES = {
   xs: 'w-4 h-4 text-[8px]',
-  sm: 'w-5 h-5 text-[9px]',
+  sm: 'w-6 h-6 text-[10px]',
   md: 'w-7 h-7 text-[10px]',
 } as const;
 

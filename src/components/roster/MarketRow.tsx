@@ -89,6 +89,12 @@ export function MarketRow({
           {outcomes.map((outcome) => {
             const reason = checkBlocked?.(outcome) ?? null;
             const claimStatus = !reason ? (checkClaimStatus?.(outcome) ?? null) : null;
+            // A single-outcome market (Anytime TD) doesn't have a second column to
+            // sit next to -- right-aligning one w-16 button left it looking like it
+            // belonged under "Under" specifically, rather than being its own thing.
+            // Spanning the full combined width of both standard columns (64px +
+            // 6px gap + 64px) instead reads as one deliberate, full-width row.
+            const widthClass = outcomes.length === 1 ? 'w-[134px]' : 'w-16';
             return (
               <button
                 key={outcome.name}
@@ -101,7 +107,7 @@ export function MarketRow({
                   setTappedReason(null);
                   onSelect(outcome);
                 }}
-                className={`flex flex-col items-center border rounded-lg px-1.5 py-1 w-16 shrink-0 disabled:opacity-40 ${
+                className={`flex flex-col items-center border rounded-lg px-1.5 py-1 ${widthClass} shrink-0 disabled:opacity-40 ${
                   reason ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
                 }`}
               >
