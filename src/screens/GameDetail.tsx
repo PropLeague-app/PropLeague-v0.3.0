@@ -1,27 +1,30 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
-import { getGame, getGameMarkets, getPlayerPropGroups } from '../services/oddsService';
+import { getGame, getPlayerPropGroups } from '../services/oddsService';
 import { nflTeamById } from '../data/nflTeams';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { activeMultipliers } from '../engine/prizePool';
-import { MarketRow } from '../components/roster/MarketRow';
+import { GameLinesTable } from '../components/roster/GameLinesTable';
 import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { StatusPill } from '../components/common/StatusPill';
+import { TeamMark } from '../components/common/TeamMark';
 import { BackHeader } from '../components/layout/BackHeader';
 import type { OddsMarket, OddsOutcome, Position } from '../types';
+
+const POSITION_TABS: ('All' | Position)[] = ['All', 'QB', 'RB', 'WR', 'TE', 'K'];
 
 export function GameDetail() {
   const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
-  const setGameOverride = useAppStore((s) => s.setGameOverride);
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [positionFilter, setPositionFilter] = useState<'All' | Position>('All');
 
   // Same real-first, simulated-fallback pattern already used in Lineup.tsx --
   // without this, a game reached from the (now real-data) NFL Slate screen
@@ -39,7 +42,7 @@ export function GameDetail() {
   if (!game) {
     return (
       <div className="flex flex-col">
-        <BackHeader title="Game Detail" fallback="/slate" />
+        <BackHeader title="Game Details" fallback="/slate" />
         <div className="p-4 text-text-muted text-sm">Game not found.</div>
       </div>
     );
@@ -47,8 +50,7 @@ export function GameDetail() {
 
   const home = nflTeamById(game.homeTeamId);
   const away = nflTeamById(game.awayTeamId);
-  const { h2h, spreads, totals } = getGameMarkets(game);
-  const playerGroups = getPlayerPropGroups(game);
+  const playerGroups = getPlayerPropGroups(game).filter((g) => positionFilter === 'All' || g.position === positionFilter);
   const userTeam = league?.teams.find((t) => t.isUser);
 
   function tryOpenBetSlip(marketKey: OddsMarket['key'], outcome: OddsOutcome, position: Position | 'ML', playerId?: string, playerName?: string, label?: string) {
@@ -93,94 +95,85 @@ export function GameDetail() {
 
   return (
     <div className="flex flex-col">
-      <BackHeader title="Game Detail" fallback="/slate" />
+      <BackHeader title="Game Details" fallback="/slate" />
       <div className="p-4 space-y-4">
-      <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-2">
+          <div className="min-w-0">
+            {/* Nicknames (not full city + name) plus a fixed truncate fallback --
+             * between the two, this can't spill onto a second line regardless of
+             * how long the two team names are. */}
+            <p className="font-bold flex items-center gap-1.5 truncate">
+              <TeamMark team={away} size="sm" />
+              <span className="truncate">{away.name}</span>
+              <span className="text-text-muted shrink-0">@</span>
+              <TeamMark team={home} size="sm" />
+              <span className="truncate">{home.name}</span>
+            </p>
+            <p className="text-xs text-text-muted">
+              {new Date(game.kickoff).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </p>
+          </div>
+          <StatusPill status={game.status} />
+        </div>
+
+        {notice && <p className="text-xs bg-loss/10 text-loss rounded-lg px-3 py-2">{notice}</p>}
+
+        <div className="bg-bg-card border border-border rounded-xl p-3">
+          <p className="font-semibold text-sm mb-2">Game Markets</p>
+          <GameLinesTable
+            game={game}
+            showTotal
+            onSelectSpread={(o) => tryOpenBetSlip('spreads', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
+            onSelectMoneyline={(o) => tryOpenBetSlip('h2h', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
+          />
+        </div>
+
         <div>
-          <p className="font-bold">{away.city} {away.name} @ {home.city} {home.name}</p>
-          <p className="text-xs text-text-muted">
-            {new Date(game.kickoff).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' })}
-          </p>
+          <p className="font-semibold text-sm mb-2">Player Props</p>
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-1">
+            {POSITION_TABS.map((pos) => (
+              <button
+                key={pos}
+                onClick={() => setPositionFilter(pos)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 ${
+                  positionFilter === pos ? 'bg-primary text-white' : 'bg-bg-card text-text-muted border border-border'
+                }`}
+              >
+                {pos}
+              </button>
+            ))}
+          </div>
+          <div className="bg-bg-card border border-border rounded-xl p-3 space-y-2">
+            {playerGroups.length === 0 ? (
+              <p className="text-xs text-text-muted text-center py-3">No {positionFilter === 'All' ? '' : positionFilter} props for this game.</p>
+            ) : (
+              playerGroups.map((group) => (
+                <PlayerPropsCard
+                  key={group.playerId}
+                  group={group}
+                  altLinesEnabled={league?.settings.altLinesEnabled}
+                  onSelect={(market, o) => tryOpenBetSlip(market.key, o, group.position, group.playerId, group.playerName)}
+                />
+              ))
+            )}
+          </div>
         </div>
-        <StatusPill status={game.status} />
-      </div>
 
-      {league && game.week === league.currentWeek && game.status !== 'final' && (
-        <div className="flex gap-2 bg-bg-card border border-border rounded-lg p-2">
-          <p className="text-[11px] text-text-muted flex-1 self-center">Dev: game stepper</p>
-          {game.status === 'upcoming' && (
-            <button
-              onClick={() => setGameOverride(league.id, game.id, 'live')}
-              className="text-xs font-semibold text-loss border border-loss/40 rounded-lg px-2.5 py-1"
-            >
-              Go Live
-            </button>
-          )}
-          <button
-            onClick={() => setGameOverride(league.id, game.id, 'final')}
-            className="text-xs font-semibold text-primary border border-primary/40 rounded-lg px-2.5 py-1"
-          >
-            Go Final
-          </button>
-        </div>
-      )}
-
-      {notice && <p className="text-xs bg-loss/10 text-loss rounded-lg px-3 py-2">{notice}</p>}
-
-      <div className="bg-bg-card border border-border rounded-xl p-3">
-        <p className="font-semibold text-sm mb-1">Game Markets</p>
-        {h2h && (
-          <MarketRow
-            label="Moneyline"
-            market={h2h}
-            onSelect={(o) => tryOpenBetSlip('h2h', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
+        {target && league && (
+          <BetSlipSheet
+            target={target}
+            settings={league.settings}
+            remainingBudget={remainingBudget}
+            pool={league.prizePool}
+            teamCount={league.teams.length}
+            multiplier={userTeam ? (activeMultipliers(league)[userTeam.id] ?? 1) : 1}
+            onClose={() => setTarget(null)}
+            onConfirmed={() => {
+              setTarget(null);
+              navigate('/lineup');
+            }}
           />
         )}
-        {spreads && (
-          <MarketRow
-            label="Spread"
-            market={spreads}
-            onSelect={(o) => tryOpenBetSlip('spreads', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
-          />
-        )}
-        {totals && <MarketRow label="Total" market={totals} onSelect={() => setNotice('Totals are informational only in v0.01.')} disabled />}
-      </div>
-
-      <div>
-        <p className="font-semibold text-sm mb-2">Player Props</p>
-        <div className="space-y-3">
-          {[away.id, home.id].map((teamId) => (
-            <div key={teamId} className="bg-bg-card border border-border rounded-xl p-3 space-y-2">
-              {playerGroups
-                .filter((g) => g.teamId === teamId)
-                .map((group) => (
-                  <PlayerPropsCard
-                    key={group.playerId}
-                    group={group}
-                    altLinesEnabled={league?.settings.altLinesEnabled}
-                    onSelect={(market, o) => tryOpenBetSlip(market.key, o, group.position, group.playerId, group.playerName)}
-                  />
-                ))}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {target && league && (
-        <BetSlipSheet
-          target={target}
-          settings={league.settings}
-          remainingBudget={remainingBudget}
-          pool={league.prizePool}
-          teamCount={league.teams.length}
-          multiplier={userTeam ? (activeMultipliers(league)[userTeam.id] ?? 1) : 1}
-          onClose={() => setTarget(null)}
-          onConfirmed={() => {
-            setTarget(null);
-            navigate('/lineup');
-          }}
-        />
-      )}
       </div>
     </div>
   );
