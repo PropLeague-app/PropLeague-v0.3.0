@@ -23,6 +23,15 @@ function formatSignedPoint(point: number): string {
   return point > 0 ? `+${point}` : `${point}`;
 }
 
+/** "Matthew Stafford" -> "M. Stafford" -- applied to every player-prop title,
+ * not just when a name would otherwise overflow, for a consistent look across
+ * every card rather than some names abbreviated and others not. */
+function abbreviatePlayerName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+}
+
 /** For an ML/Spread wager, `wager.side` is the team's name as it was stored at
  * placement -- full name for real data ("Green Bay Packers"), abbreviation for
  * simulated data ("GB") -- so this checks both conventions against the actual
@@ -90,12 +99,13 @@ export function RosterSlotCard({
   const potentialProfit = profitForStake(wager.stake, wager.oddsAtPlacement);
   const marketLabel = MARKET_LABELS[wager.marketKey];
   const nickname = wager.marketKey === 'h2h' || wager.marketKey === 'spreads' ? mlTeamNickname(wager, game) : null;
+  const displayName = wager.playerName ? abbreviatePlayerName(wager.playerName) : null;
 
   // "Packers +1.5" for a Spread pick, just "Packers" for a Moneyline pick (no
-  // point value to show) -- versus the existing player-prop title, unchanged.
+  // point value to show); "M. Stafford Over 1.5" for a player prop.
   const titleLine = nickname
     ? `${nickname}${wager.point != null ? ` ${formatSignedPoint(wager.point)}` : ''}`
-    : `${wager.playerName ?? marketLabel} ${wager.point != null ? `${wager.side} ${wager.point}` : wager.side}`;
+    : `${displayName ?? marketLabel} ${wager.point != null ? `${wager.side} ${wager.point}` : wager.side}`;
 
   const showMovement = !locked && settings?.lineMovementEnabled && currentWeek != null && wager.status === 'pending';
   const liveOdds = showMovement
@@ -109,48 +119,51 @@ export function RosterSlotCard({
         invalid ? 'border-loss bg-loss/5' : `${fill.borderLit} ${fill.bgLit}`
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-1.5 min-w-0">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
           <PositionBadge position={slot.position} />
           {invalid && validation!.reasons.length > 0 && (
             <button
               onClick={() => setReasonsOpen((v) => !v)}
               title="Tap for details"
-              className="w-4 h-4 shrink-0 rounded-full bg-loss text-white text-[10px] font-bold flex items-center justify-center leading-none mt-0.5"
+              className="w-4 h-4 shrink-0 rounded-full bg-loss text-white text-[10px] font-bold flex items-center justify-center leading-none"
             >
               !
             </button>
           )}
-          <div className="min-w-0">
-            <p className="font-semibold text-sm leading-tight">{titleLine}</p>
-            <p className="text-[11px] text-text-muted leading-tight">
-              {marketLabel}
-              {game && ` · ${gameInfo(game)}`}
-            </p>
-          </div>
         </div>
-        <div className="flex flex-col items-end gap-0.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {wager.status !== 'pending' ? (
+            <StatusPill status={wager.status === 'won' || wager.status === 'lost' || wager.status === 'push' || wager.status === 'voided' ? wager.status : 'pending'} />
+          ) : (
+            <StatusPill status={locked ? 'live' : 'pending'} />
+          )}
           {locked ? (
             <span title="Locked" className="text-text-muted"><Lock size={14} /></span>
           ) : (
             <button onClick={onRemove} className="text-text-muted text-xs">✕</button>
           )}
-          <div className="flex items-center gap-1">
-            <OddsDisplay odds={wager.oddsAtPlacement} className="text-sm font-semibold" />
-            {movement && (
-              <span
-                title={`Line moved from ${wager.oddsAtPlacement} to ${liveOdds} since you placed this`}
-                className={`text-xs ${movement === 'up' ? 'text-profit' : 'text-loss'}`}
-              >
-                {movement === 'up' ? '↑' : '↓'}
-              </span>
-            )}
-          </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border/50">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-sm font-semibold leading-tight">{titleLine}</p>
+        <div className="flex items-center gap-1 shrink-0">
+          <OddsDisplay odds={wager.oddsAtPlacement} className="text-xs text-text-muted" />
+          {movement && (
+            <span
+              title={`Line moved from ${wager.oddsAtPlacement} to ${liveOdds} since you placed this`}
+              className={`text-xs ${movement === 'up' ? 'text-profit' : 'text-loss'}`}
+            >
+              {movement === 'up' ? '↑' : '↓'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-text-muted leading-tight min-w-0">{marketLabel}</p>
+        <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-text-muted text-xs">$</span>
           <NumberInput
             min={0}
@@ -158,25 +171,21 @@ export function RosterSlotCard({
             disabled={locked}
             value={wager.stake}
             onChange={onStakeChange}
-            className="w-16 bg-bg-raised rounded px-1.5 py-1 text-sm disabled:opacity-60"
+            className="w-[68px] bg-bg-raised rounded px-1.5 py-1 text-xs disabled:opacity-60"
           />
+          <span className="text-text-muted text-xs">→</span>
+          <span className="w-14 shrink-0 text-right text-sm font-semibold text-profit">{formatCents(potentialProfit)}</span>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] text-text-muted leading-none">To win</p>
-          <p className="text-sm font-semibold text-profit leading-tight">{formatCents(potentialProfit)}</p>
-          {settings?.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
-            <p className="text-[10px] text-text-muted leading-none">
-              {formatCents(realDollarAmount(wager.stake, settings.weeklyCredits, pool.current, teamCount) * multiplier)} real
-              {multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}
-            </p>
-          )}
-        </div>
-        {wager.status !== 'pending' ? (
-          <StatusPill status={wager.status === 'won' || wager.status === 'lost' || wager.status === 'push' || wager.status === 'voided' ? wager.status : 'pending'} />
-        ) : (
-          <StatusPill status={locked ? 'live' : 'pending'} />
-        )}
       </div>
+
+      {game && <p className="text-xs text-text-muted leading-tight">{gameInfo(game)}</p>}
+
+      {settings?.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
+        <p className="text-[10px] text-text-muted text-right leading-tight mt-0.5">
+          {formatCents(realDollarAmount(wager.stake, settings.weeklyCredits, pool.current, teamCount) * multiplier)} real
+          {multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}
+        </p>
+      )}
 
       {invalid && reasonsOpen && validation!.reasons.length > 0 && (
         <p className="text-loss text-xs mt-1.5">{validation!.reasons.join(' · ')}</p>
