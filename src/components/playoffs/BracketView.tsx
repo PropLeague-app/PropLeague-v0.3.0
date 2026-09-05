@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trophy, ChevronUp, ChevronDown } from 'lucide-react';
 import type { BracketMatch, League, MatchSource, PlayoffBracket } from '../../types';
 import { formatCents } from '../../engine/oddsMath';
 import { weekLabel } from '../../types';
@@ -127,7 +128,7 @@ function RoundGroups({ league, bracket, groups, byes }: { league: League; bracke
               className="w-full flex items-center justify-between mb-2"
             >
               <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">{group.label}</p>
-              <span className="text-text-muted text-xs">{isOpen ? '▲' : '▼'}</span>
+              <span className="text-text-muted">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
             </button>
             {isOpen && (
               <div className="space-y-2">
@@ -162,7 +163,7 @@ export function BracketView({ league, bracket }: { league: League; bracket: Play
     <div className="space-y-5">
       {champion && (
         <div className="bg-gradient-to-br from-primary/20 to-accent/20 border border-primary rounded-xl p-4 text-center space-y-1">
-          <p className="text-3xl">🏆</p>
+          <Trophy size={32} className="mx-auto" />
           <p className="font-bold">{champion.teamName}</p>
           <p className="text-xs text-text-muted">PropLeague Champions</p>
         </div>

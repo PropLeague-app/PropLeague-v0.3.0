@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trophy, ChevronDown, Hourglass } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { getSlate } from '../services/oddsService';
@@ -34,7 +35,7 @@ export function LeagueHome() {
   if (!league) {
     return (
       <div className="p-4">
-        <EmptyState icon="🏈" title="No league yet" subtitle="Create or join a league from the welcome screen to get started." />
+        <EmptyState icon={<Trophy size={36} strokeWidth={1.5} />} title="No league yet" subtitle="Create or join a league from the welcome screen to get started." />
       </div>
     );
   }
@@ -50,13 +51,13 @@ export function LeagueHome() {
     <>
       <button
         onClick={() => setSwitcherOpen(true)}
-        className="flex items-center gap-2.5 text-left w-full p-4 pb-2 sticky top-0 bg-bg z-10"
+        className="flex items-center gap-2.5 text-left w-full p-4 pb-2 sticky top-0 bg-bg-raised z-10"
       >
         <LeagueLogo league={league} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="text-text-muted text-sm truncate flex items-center gap-1">
             {league.name}
-            <span className="text-[10px]">▾</span>
+            <ChevronDown size={12} />
           </p>
           <div className="flex items-baseline justify-between">
             <h1 className="text-2xl font-bold">{weekLabel(league.currentWeek)}</h1>
@@ -84,14 +85,14 @@ export function LeagueHome() {
       <div className="px-4 pb-4 space-y-4">
         {league.seasonPhase === 'complete' ? (
           <EmptyState
-            icon="🏆"
+            icon={<Trophy size={36} strokeWidth={1.5} />}
             title={`${league.teams.find((t) => t.id === league.bracket?.championId)?.teamName ?? 'A team'} won it all!`}
             subtitle="Check the Playoff Bracket in Settings to relive the run, or reset the season from the dev panel."
           />
         ) : userMatchup ? (
           <MatchupCard league={league} matchup={userMatchup} highlightTeamId={userTeam?.id} />
         ) : (
-          <EmptyState icon="⏳" title="No matchup this week" subtitle="Your team may have been eliminated from the playoffs." />
+          <EmptyState icon={<Hourglass size={36} strokeWidth={1.5} />} title="No matchup this week" subtitle="Your team may have been eliminated from the playoffs." />
         )}
 
         {otherMatchups.length > 0 && (

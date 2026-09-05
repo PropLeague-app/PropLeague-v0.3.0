@@ -20,16 +20,32 @@ import { initialsFromLeagueName } from '../components/common/LeagueLogo';
 import { CorrelationRulesEditor } from '../components/settings/CorrelationRulesEditor';
 import { PayoutSplitEditor } from '../components/settings/PayoutSplitEditor';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
+import {
+  ChartColumn,
+  Calendar,
+  Users,
+  Trophy,
+  Ticket,
+  DollarSign,
+  TrendingUp,
+  Medal,
+  KeyRound,
+  Plus,
+  DoorOpen,
+  Lock,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react';
 
 const MORE_LINKS = [
-  { to: '/standings', label: 'Full Standings', icon: '📊' },
-  { to: '/schedule', label: 'Season Schedule', icon: '🗓️' },
-  { to: '/members', label: 'League Members', icon: '👥' },
-  { to: '/bracket', label: 'Playoff Bracket', icon: '🏆' },
-  { to: '/bet-history', label: 'My Bets', icon: '🎟️' },
-  { to: '/prize-pool', label: 'Prize Pool', icon: '💰' },
-  { to: '/my-stats', label: 'My Stats', icon: '📈' },
-  { to: '/leaderboards', label: 'Leaderboards', icon: '🥇' },
+  { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
+  { to: '/schedule', label: 'Season Schedule', icon: <Calendar size={18} /> },
+  { to: '/members', label: 'League Members', icon: <Users size={18} /> },
+  { to: '/bracket', label: 'Playoff Bracket', icon: <Trophy size={18} /> },
+  { to: '/bet-history', label: 'My Bets', icon: <Ticket size={18} /> },
+  { to: '/prize-pool', label: 'Prize Pool', icon: <DollarSign size={18} /> },
+  { to: '/my-stats', label: 'My Stats', icon: <TrendingUp size={18} /> },
+  { to: '/leaderboards', label: 'Leaderboards', icon: <Medal size={18} /> },
 ];
 
 const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
@@ -91,7 +107,7 @@ function ChangePasswordRow() {
         }}
         className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left"
       >
-        <span>🔑</span> Change Password
+        <KeyRound size={16} /> Change Password
       </button>
     );
   }
@@ -176,10 +192,11 @@ export function SettingsHome() {
   }
 
   return (
-    <div className="p-4 space-y-5">
-      <h1 className="text-xl font-bold">Profile & Settings</h1>
+    <>
+      <h1 className="text-xl font-bold p-4 pb-3 sticky top-0 bg-bg-raised z-10">Profile & Settings</h1>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="px-4 pb-5 space-y-5">
+        <div className="grid grid-cols-2 gap-2">
         {MORE_LINKS.map((link) => (
           <button
             key={link.to}
@@ -476,7 +493,7 @@ export function SettingsHome() {
             className="w-full flex items-center justify-between bg-bg-card border border-border rounded-xl px-3 py-3"
           >
             <span className="font-semibold text-sm">Advanced Settings</span>
-            <span className="text-text-muted">{advancedOpen ? '▲' : '▼'}</span>
+            <span className="text-text-muted">{advancedOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
           </button>
 
           {advancedOpen && (
@@ -850,17 +867,17 @@ export function SettingsHome() {
       <SectionHeader>League</SectionHeader>
       <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
         <button onClick={() => goTo('/create-league')} className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left">
-          <span>➕</span> Create a League
+          <Plus size={16} /> Create a League
         </button>
         <button onClick={() => goTo('/join-league')} className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left">
-          <span>🔑</span> Join a League
+          <KeyRound size={16} /> Join a League
         </button>
         {league && userTeam && (
           <button
             onClick={() => setLeaveSheetOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left text-loss"
           >
-            <span>🚪</span> Leave This League
+            <DoorOpen size={16} /> Leave This League
           </button>
         )}
       </div>
@@ -875,7 +892,7 @@ export function SettingsHome() {
           }}
           className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left text-loss"
         >
-          <span>🔒</span> Log Out
+          <Lock size={16} /> Log Out
         </button>
       </div>
       {/* manual v0.2.0 §4 #10: was anchored bottom-24 left-4, which clipped off the left
@@ -906,7 +923,8 @@ export function SettingsHome() {
           onClose={() => setLeaveSheetOpen(false)}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -26,6 +26,11 @@ html,
 body,
 #root {
   height: 100%;
+  /* Prevents the page-level bounce/rubber-band effect from displacing sticky
+   * headers/footers on overscroll (scrolling past the very top or bottom) --
+   * this app is a native shell, not a browser tab, so there's no page-level
+   * "pull to see the address bar" behavior worth preserving here. */
+  overscroll-behavior: none;
 }
 
 /* iOS Safari/WebKit automatically zooms the whole page when a text input's

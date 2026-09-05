@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox } from 'lucide-react';
 import type { ActivityItem, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
@@ -7,11 +8,11 @@ import { TeamLogo } from '../common/TeamLogo';
 import { LeagueLogo } from '../common/LeagueLogo';
 import { PositionBadge } from '../common/PositionBadge';
 
-const ICONS: Record<ActivityItem['type'], string> = {
-  announcement: '📣',
-  reminder: '⏰',
-  settled: '💰',
-  moment: '✨',
+const ICONS: Record<ActivityItem['type'], ReactNode> = {
+  announcement: <Megaphone size={16} />,
+  reminder: <Bell size={16} />,
+  settled: <DollarSign size={16} />,
+  moment: <Sparkles size={16} />,
 };
 
 const QUICK_REACTIONS = ['🔥', '😂', '💀', '👏'];
@@ -91,7 +92,7 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
       <p className="text-sm font-bold truncate">{item.momentDisplayName ?? item.message}</p>
 
       <div className="flex items-center gap-2">
-        {team ? <TeamLogo team={team} size="md" /> : <span className="text-xl">✨</span>}
+        {team ? <TeamLogo team={team} size="md" /> : <Sparkles size={20} />}
         {team && <p className="text-base font-bold truncate">{team.teamName}</p>}
         {item.momentPosition && <PositionBadge position={item.momentPosition} />}
       </div>
@@ -141,7 +142,7 @@ export function ActivityFeed({ league, items, onReact }: { league: League; items
   const [tab, setTab] = useState<FeedTab>('all');
 
   if (items.length === 0) {
-    return <EmptyState icon="📭" title="No activity yet" subtitle="League announcements and bet alerts will show up here." />;
+    return <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No activity yet" subtitle="League announcements and bet alerts will show up here." />;
   }
 
   const sorted = [...items].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
@@ -176,7 +177,7 @@ export function ActivityFeed({ league, items, onReact }: { league: League; items
 
       {tab === 'moments' &&
         (moments.length === 0 ? (
-          <EmptyState icon="✨" title="No moments yet" subtitle="Weekly awards show up here once a week fully settles." />
+          <EmptyState icon={<Sparkles size={36} strokeWidth={1.5} />} title="No moments yet" subtitle="Weekly awards show up here once a week fully settles." />
         ) : (
           <div className="space-y-4">
             {groupMomentsByWeek(moments).map((group) => (
@@ -195,7 +196,7 @@ export function ActivityFeed({ league, items, onReact }: { league: League; items
       {tab === 'news' && (
         <div className="space-y-2">
           {news.length === 0 ? (
-            <EmptyState icon="📭" title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
+            <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
             news.slice(0, 8).map((item) => <NewsCard key={item.id} league={league} item={item} onReact={onReact} />)
           )}

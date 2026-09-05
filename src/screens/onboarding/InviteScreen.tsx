@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { CircleCheck } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { LeagueLogo } from '../../components/common/LeagueLogo';
 
@@ -35,7 +36,7 @@ export function InviteScreen() {
         className="w-full max-w-md min-h-screen flex flex-col items-center justify-center px-6 gap-6 border-x border-border text-center"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <span className="text-5xl">✅</span>
+        <CircleCheck size={48} className="text-profit" />
         <div className="flex items-center gap-2.5">
           <LeagueLogo league={league} size="md" />
           <h1 className="text-2xl font-bold">{league.name} is ready</h1>

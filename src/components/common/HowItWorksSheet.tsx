@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
+import { Trophy, CreditCard, Target, ChartColumn, Swords, DollarSign } from 'lucide-react';
 import type { LeagueSettings, Position } from '../../types';
 
 interface ExplainerSection {
-  icon: string;
+  icon: ReactNode;
   title: string;
   body: string[];
 }
@@ -39,21 +41,21 @@ function buildSections(settings: LeagueSettings | null): ExplainerSection[] {
 
   const sections: ExplainerSection[] = [
     {
-      icon: '🏈',
+      icon: <Trophy size={18} />,
       title: 'What PropLeague is',
       body: [
         'PropLeague is fantasy football meets sports betting: instead of drafting players, you build a weekly portfolio of real NFL player props and go head-to-head against another team in your league every week.',
       ],
     },
     {
-      icon: '💳',
+      icon: <CreditCard size={18} />,
       title: 'Your weekly credits',
       body: [
         `Every week you get a budget of betting credits to allocate across your lineup — $${credits}${byDefault}${commissionerNote}. Unused credits count against you, so the goal is to allocate the full budget every week.`,
       ],
     },
     {
-      icon: '🎯',
+      icon: <Target size={18} />,
       title: 'Building a lineup',
       body: [
         `Your lineup has ${slotTotal} slots${byDefault}: ${slots}. Each slot is filled with a real prop bet — passing yards, receptions, anytime TD, and more — at real sportsbook-style odds, except the moneyline/spread slot, which is a pick on an actual game outcome.`,
@@ -61,7 +63,7 @@ function buildSections(settings: LeagueSettings | null): ExplainerSection[] {
       ],
     },
     {
-      icon: '📊',
+      icon: <ChartColumn size={18} />,
       title: 'How scoring works',
       body: [
         'Once games kick off, your picks settle to a win, loss, or push based on the real result. Your weekly score is the total profit or loss across your whole lineup — win more than you lose, and you post a positive score for the week.',
@@ -69,14 +71,14 @@ function buildSections(settings: LeagueSettings | null): ExplainerSection[] {
       ],
     },
     {
-      icon: '⚔️',
+      icon: <Swords size={18} />,
       title: 'Head-to-head & standings',
       body: [
         "Your team's weekly score goes up against one opponent's — whoever profits more wins the matchup, same as a regular fantasy week. Standings rank by record first, then season-long profit/loss, then a few tiebreakers if it's still close.",
       ],
     },
     {
-      icon: '🏆',
+      icon: <Trophy size={18} />,
       title: 'Playoffs',
       body: [
         `The top ${playoffTeams} teams make the playoffs${byDefault}, seeded by regular-season standings and aligned with the real NFL postseason schedule so your championship lands on Conference Championship week.`,
@@ -100,7 +102,7 @@ function buildSections(settings: LeagueSettings | null): ExplainerSection[] {
         "This league also scales how much each team's wagers move the pool, based on standing — a team ranked higher moves the pool a bit more, one ranked lower a bit less. One team's boost always comes out of the others' shares, so the pool's total exposure is never changed by this, just whose picks move it more.",
       );
     }
-    sections.push({ icon: '💰', title: 'Buy-in & prize pool', body });
+    sections.push({ icon: <DollarSign size={18} />, title: 'Buy-in & prize pool', body });
   }
 
   return sections;
@@ -116,7 +118,7 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
     <div className="fixed inset-0 z-[60] bg-bg flex justify-center">
       <div className="w-full max-w-md min-h-screen flex flex-col border-x border-border">
         <div
-          className="flex justify-between items-center p-4 sticky top-0 bg-bg z-10 border-b border-border"
+          className="flex justify-between items-center p-4 sticky top-0 bg-bg-raised z-10 border-b border-border"
           style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
         >
           <h1 className="text-lg font-bold">How PropLeague Works</h1>

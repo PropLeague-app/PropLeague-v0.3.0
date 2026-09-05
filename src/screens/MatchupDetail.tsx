@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { rosterKey, buildEmptyRoster } from '../engine/rosterSlots';
 import { getGame } from '../services/oddsService';
@@ -137,7 +138,7 @@ function SlotMini({
   if (shouldHide) {
     return (
       <div className={`bg-bg-card border border-border rounded-lg p-2 text-[11px] text-text-muted flex items-center justify-center gap-1 ${reverse ? 'flex-row-reverse' : ''}`}>
-        🔒 Hidden
+        <Lock size={12} /> Hidden
       </div>
     );
   }

@@ -1,14 +1,19 @@
 import { NavLink } from 'react-router-dom';
+import { House, ClipboardList, CalendarDays, Settings } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
 import { validateLineup } from '../../engine/validation';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 
+// Simple, uniform line icons rather than emoji -- lucide-react has no
+// dedicated American football icon, so NFL Slate uses a calendar instead,
+// matching what that screen actually is (a weekly game schedule to browse),
+// rather than forcing a sports-ball shape that doesn't exist in this set.
 const TABS = [
-  { to: '/home', label: 'League Home', icon: '🏠' },
-  { to: '/lineup', label: 'Lineup', icon: '📋' },
-  { to: '/slate', label: 'NFL Slate', icon: '🏈' },
-  { to: '/settings', label: 'Profile', icon: '⚙️' },
+  { to: '/home', label: 'League Home', Icon: House },
+  { to: '/lineup', label: 'Lineup', Icon: ClipboardList },
+  { to: '/slate', label: 'NFL Slate', Icon: CalendarDays },
+  { to: '/settings', label: 'Profile', Icon: Settings },
 ];
 
 // Explicit height (rather than intrinsic content height from py-2.5) so any other
@@ -66,8 +71,8 @@ export function BottomTabBar() {
             }`
           }
         >
-          <span className="relative text-lg leading-none">
-            {tab.icon}
+          <span className="relative">
+            <tab.Icon size={22} strokeWidth={2} />
             {tab.to === '/lineup' && lineupIncomplete && (
               <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
                 !

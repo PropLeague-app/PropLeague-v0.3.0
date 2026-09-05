@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import { Trophy, Medal, DollarSign } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { computePayouts, championAndRunnerUp, activeMultipliers } from '../engine/prizePool';
@@ -12,10 +14,25 @@ const MULTIPLIER_BASIS_LABELS = { rank: 'standings', record: 'win-loss record', 
 /** manual v0.3.0 §4: places 1-3 get the familiar medal treatment; everything past that
  * is always a plain "Nth Place" in this app (the playoff field caps at 16 teams, so
  * the 11th/12th/13th "th" exceptions never collide with a 1st/2nd/3rd digit). */
-function placeLabel(place: number): string {
-  if (place === 1) return '🏆 Champion';
-  if (place === 2) return '🥈 Runner-up';
-  if (place === 3) return '🥉 3rd Place';
+function placeLabel(place: number): ReactNode {
+  if (place === 1)
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Trophy size={14} /> Champion
+      </span>
+    );
+  if (place === 2)
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Medal size={14} /> Runner-up
+      </span>
+    );
+  if (place === 3)
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Medal size={14} /> 3rd Place
+      </span>
+    );
   return `${place}th Place`;
 }
 
@@ -61,7 +78,7 @@ export function PrizePool() {
         <BackHeader title="Prize Pool" fallback="/home" />
         <div className="p-4">
           <EmptyState
-            icon="💰"
+            icon={<DollarSign size={36} strokeWidth={1.5} />}
             title="Buy-ins are off"
             subtitle="Turn on Buy-in & Prize Pool in League Settings to start tracking a virtual pool."
           />

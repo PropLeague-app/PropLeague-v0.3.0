@@ -54,7 +54,7 @@ export function NFLSlate() {
 
   return (
     <>
-      <div className="p-4 pb-3 space-y-3 sticky top-0 bg-bg z-10">
+      <div className="p-4 pb-3 space-y-3 sticky top-0 bg-bg-raised z-10">
         <h1 className="text-xl font-bold">NFL Slate</h1>
         <WeekSelector value={activeWeek} onChange={changeWeek} />
       </div>

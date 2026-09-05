@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Calendar } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { BracketView } from '../components/playoffs/BracketView';
 import { EmptyState } from '../components/common/EmptyState';
@@ -26,7 +27,7 @@ export function PlayoffBracket() {
           <BracketView league={league} bracket={league.bracket} />
         ) : (
           <EmptyState
-            icon="🗓️"
+            icon={<Calendar size={36} strokeWidth={1.5} />}
             title="Bracket not set yet"
             subtitle="The top 4 teams are seeded once the 18-week regular season wraps up."
           />

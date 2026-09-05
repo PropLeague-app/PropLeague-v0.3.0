@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { getSlate, getPlayerPropGroups, getGameMarkets } from '../services/oddsService';
@@ -140,7 +141,7 @@ export function MarketBrowser() {
 
   return (
     <div className="flex flex-col">
-      <div className="p-4 pb-2 sticky top-0 bg-bg z-10 border-b border-border">
+      <div className="p-4 pb-2 sticky top-0 bg-bg-raised z-10 border-b border-border">
         <div className="flex items-center gap-2 mb-3">
           <button onClick={() => goBack(navigate, '/lineup')} className="text-text-muted flex items-center gap-0.5">
             <span className="text-xl leading-none">‹</span>
@@ -196,7 +197,7 @@ export function MarketBrowser() {
 
       <div className="px-4 py-2 space-y-3">
         {filteredGames.length === 0 && (
-          <EmptyState icon="🔍" title="No games available" subtitle="Every game for this week has already kicked off." />
+          <EmptyState icon={<Search size={36} strokeWidth={1.5} />} title="No games available" subtitle="Every game for this week has already kicked off." />
         )}
 
         {slot.position === 'ML'

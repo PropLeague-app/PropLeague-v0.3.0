@@ -19,7 +19,7 @@ export const BACK_HEADER_HEIGHT = 52;
 export function BackHeader({ title, fallback = '/home' }: { title: string; fallback?: string }) {
   const navigate = useNavigate();
   return (
-    <div className="sticky top-0 z-10 bg-bg/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-2">
+    <div className="sticky top-0 z-10 bg-bg-raised/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-2">
       <button
         onClick={() => goBack(navigate, fallback)}
         className="flex items-center gap-0.5 text-text-muted -ml-1 pl-1 pr-2 py-1 shrink-0"

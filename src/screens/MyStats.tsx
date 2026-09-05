@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TrendingUp } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { computeIndividualStats, collectTeamBets, computeTeamStreak, type RecordPL } from '../engine/stats';
 import { getGame } from '../services/oddsService';
@@ -53,7 +54,7 @@ export function MyStats() {
         <BackHeader title={title} fallback="/bet-history" />
         <div className="p-4 space-y-3">
           <MemberSelector teams={league.teams} selectedTeamId={viewedTeam.id} onSelect={setSelectedTeamId} />
-          <EmptyState icon="📈" title="No settled bets yet" subtitle={isOwnTeam ? 'Advanced stats show up once your picks start settling.' : "This team's advanced stats show up once their picks start settling."} />
+          <EmptyState icon={<TrendingUp size={36} strokeWidth={1.5} />} title="No settled bets yet" subtitle={isOwnTeam ? 'Advanced stats show up once your picks start settling.' : "This team's advanced stats show up once their picks start settling."} />
         </div>
       </div>
     );

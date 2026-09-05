@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Ticket } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { isWagerVisibleToViewer } from '../engine/stats';
@@ -190,7 +191,7 @@ export function BetHistory() {
 
         {bets.length === 0 ? (
           <EmptyState
-            icon="🎟️"
+            icon={<Ticket size={36} strokeWidth={1.5} />}
             title={anyFilterActive ? 'No bets match those filters' : 'No bets yet'}
             subtitle={anyFilterActive ? 'Try clearing a filter or two.' : 'Wagers you place will show up here with full ticket detail.'}
           />

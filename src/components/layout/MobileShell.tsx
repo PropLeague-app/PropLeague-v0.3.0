@@ -16,7 +16,10 @@ export function MobileShell({ children }: { children: ReactNode }) {
         className="w-full max-w-md min-h-screen bg-bg relative flex flex-col border-x border-border"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+        <div
+          className="flex-1 overflow-y-auto overscroll-contain"
+          style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+        >
           {children}
         </div>
         <BottomTabBar />

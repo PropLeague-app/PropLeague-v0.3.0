@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId } from '../../types';
 import { nflTeamById } from '../../data/nflTeams';
 import { Card } from '../common/Card';
@@ -101,7 +102,7 @@ export function RosterSlotCard({
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           {locked ? (
-            <span title="Locked" className="text-text-muted">🔒</span>
+            <span title="Locked" className="text-text-muted"><Lock size={14} /></span>
           ) : (
             <button onClick={onRemove} className="text-text-muted text-xs">✕</button>
           )}
