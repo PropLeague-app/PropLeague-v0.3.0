@@ -3,17 +3,33 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
-import { getSlate, getPlayerPropGroups, getGameMarkets } from '../services/oddsService';
+import { getSlate, getPlayerPropGroups } from '../services/oddsService';
 import { refreshPlayerProps } from '../services/supabaseOdds';
 import { nflTeamById } from '../data/nflTeams';
 import { MARKETS_BY_POSITION, MARKET_LABELS } from '../data/propsGenerator';
-import { MarketRow } from '../components/roster/MarketRow';
+import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
+import { GameLinesTable } from '../components/roster/GameLinesTable';
+import { TeamMark } from '../components/common/TeamMark';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { EmptyState } from '../components/common/EmptyState';
 import { goBack } from '../components/layout/BackHeader';
 import { findClaimingTeam, claimBlockReason, claimHolders } from '../engine/duplicatePicks';
 import { activeMultipliers } from '../engine/prizePool';
-import type { LeagueTeam, MarketKey, OddsOutcome } from '../types';
+import type { LeagueTeam, MarketKey, NFLTeam, OddsOutcome } from '../types';
+
+/** Matches a search query against a team's city, nickname, full name, or
+ * abbreviation -- so "Kans", "Chie", "KC", "Kansas City Chiefs", or the
+ * completed individual words all find the Kansas City Chiefs,
+ * case-insensitively. */
+function teamMatchesSearch(team: NFLTeam, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return (
+    team.city.toLowerCase().includes(q) ||
+    team.name.toLowerCase().includes(q) ||
+    team.abbrev.toLowerCase().includes(q) ||
+    `${team.city} ${team.name}`.toLowerCase().includes(q)
+  );
+}
 
 export function MarketBrowser() {
   const { slotId } = useParams<{ slotId: string }>();
@@ -81,7 +97,12 @@ export function MarketBrowser() {
     return getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled).filter((g) => g.status === 'upcoming');
   }, [league, realGamesForWeek]);
 
-  const filteredGames = gameFilter === 'all' ? games : games.filter((g) => g.id === gameFilter);
+  const filteredGames =
+    (gameFilter === 'all' ? games : games.filter((g) => g.id === gameFilter)).filter((g) =>
+      slot?.position === 'ML' && search.trim()
+        ? teamMatchesSearch(nflTeamById(g.homeTeamId), search) || teamMatchesSearch(nflTeamById(g.awayTeamId), search)
+        : true,
+    );
   const validMarketKeys = slot?.position === 'ML' ? (['h2h', 'spreads'] as MarketKey[]) : MARKETS_BY_POSITION[slot?.position as keyof typeof MARKETS_BY_POSITION] ?? [];
   const propTypeOptions = propTypeFilter === 'all' ? validMarketKeys : [propTypeFilter];
 
@@ -157,41 +178,41 @@ export function MarketBrowser() {
           </button>
         </div>
         {refreshMessage && <p className="text-xs text-text-muted mb-2">{refreshMessage}</p>}
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <select
-            value={gameFilter}
-            onChange={(e) => setGameFilter(e.target.value)}
-            className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
-          >
-            <option value="all">All games</option>
-            {games.map((g) => (
-              <option key={g.id} value={g.id}>
-                {nflTeamById(g.awayTeamId).abbrev} @ {nflTeamById(g.homeTeamId).abbrev}
-              </option>
-            ))}
-          </select>
-          {slot.position !== 'ML' && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
             <select
-              value={propTypeFilter}
-              onChange={(e) => setPropTypeFilter(e.target.value as MarketKey | 'all')}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
+              value={gameFilter}
+              onChange={(e) => setGameFilter(e.target.value)}
+              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0"
             >
-              <option value="all">All prop types</option>
-              {validMarketKeys.map((key) => (
-                <option key={key} value={key}>
-                  {MARKET_LABELS[key]}
+              <option value="all">All games</option>
+              {games.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {nflTeamById(g.awayTeamId).abbrev} @ {nflTeamById(g.homeTeamId).abbrev}
                 </option>
               ))}
             </select>
-          )}
-          {slot.position !== 'ML' && (
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search player"
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[100px]"
-            />
-          )}
+            {slot.position !== 'ML' && (
+              <select
+                value={propTypeFilter}
+                onChange={(e) => setPropTypeFilter(e.target.value as MarketKey | 'all')}
+                className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0"
+              >
+                <option value="all">All prop types</option>
+                {validMarketKeys.map((key) => (
+                  <option key={key} value={key}>
+                    {MARKET_LABELS[key]}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={slot.position === 'ML' ? 'Search team (name, city, or abbreviation)' : 'Search player'}
+            className="w-full bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs"
+          />
         </div>
       </div>
 
@@ -202,109 +223,90 @@ export function MarketBrowser() {
 
         {slot.position === 'ML'
           ? filteredGames.map((game) => {
-              const { h2h, spreads } = getGameMarkets(game);
-              const home = nflTeamById(game.homeTeamId);
               const away = nflTeamById(game.awayTeamId);
+              const home = nflTeamById(game.homeTeamId);
               return (
                 <div key={game.id} className="bg-bg-card border border-border rounded-xl p-3">
-                  <p className="text-xs text-text-muted mb-1">
-                    {away.abbrev} @ {home.abbrev}
-                  </p>
-                  {h2h && propTypeOptions.includes('h2h') && (
-                    <MarketRow
-                      label="Moneyline"
-                      market={h2h}
-                      checkBlocked={checkBlockedFor(game.id, 'h2h', undefined)}
-                      checkClaimStatus={checkClaimStatusFor(game.id, 'h2h', undefined)}
-                      onSelect={(outcome) =>
-                        setTarget({
-                          leagueId: league.id,
-                          teamId: userTeam.id,
-                          week: league.currentWeek,
-                          slotId: slot.slotId,
-                          slotPosition: slot.position,
-                          gameId: game.id,
-                          marketKey: 'h2h',
-                          outcome,
-                          label: `${away.abbrev} @ ${home.abbrev}`,
-                        })
-                      }
-                    />
-                  )}
-                  {spreads && propTypeOptions.includes('spreads') && (
-                    <MarketRow
-                      label="Spread"
-                      market={spreads}
-                      checkBlocked={checkBlockedFor(game.id, 'spreads', undefined)}
-                      checkClaimStatus={checkClaimStatusFor(game.id, 'spreads', undefined)}
-                      onSelect={(outcome) =>
-                        setTarget({
-                          leagueId: league.id,
-                          teamId: userTeam.id,
-                          week: league.currentWeek,
-                          slotId: slot.slotId,
-                          slotPosition: slot.position,
-                          gameId: game.id,
-                          marketKey: 'spreads',
-                          outcome,
-                          label: `${away.abbrev} @ ${home.abbrev}`,
-                        })
-                      }
-                    />
-                  )}
+                  <GameLinesTable
+                    game={game}
+                    checkBlocked={(marketKey, outcome) => checkBlockedFor(game.id, marketKey, undefined)(outcome)}
+                    onSelectSpread={
+                      propTypeOptions.includes('spreads')
+                        ? (outcome) =>
+                            setTarget({
+                              leagueId: league.id,
+                              teamId: userTeam.id,
+                              week: league.currentWeek,
+                              slotId: slot.slotId,
+                              slotPosition: slot.position,
+                              gameId: game.id,
+                              marketKey: 'spreads',
+                              outcome,
+                              label: `${away.abbrev} @ ${home.abbrev}`,
+                            })
+                        : undefined
+                    }
+                    onSelectMoneyline={
+                      propTypeOptions.includes('h2h')
+                        ? (outcome) =>
+                            setTarget({
+                              leagueId: league.id,
+                              teamId: userTeam.id,
+                              week: league.currentWeek,
+                              slotId: slot.slotId,
+                              slotPosition: slot.position,
+                              gameId: game.id,
+                              marketKey: 'h2h',
+                              outcome,
+                              label: `${away.abbrev} @ ${home.abbrev}`,
+                            })
+                        : undefined
+                    }
+                  />
                 </div>
               );
             })
           : filteredGames.map((game) => {
               const groups = getPlayerPropGroups(game)
                 .filter((g) => g.position === slot.position)
-                .filter((g) => g.playerName.toLowerCase().includes(search.toLowerCase()));
+                .filter((g) => g.playerName.toLowerCase().includes(search.toLowerCase()))
+                .map((g) => ({ ...g, markets: g.markets.filter((m) => propTypeOptions.includes(m.key)) }))
+                .filter((g) => g.markets.length > 0);
               if (groups.length === 0) return null;
               const home = nflTeamById(game.homeTeamId);
               const away = nflTeamById(game.awayTeamId);
               return (
-                <div key={game.id} className="bg-bg-card border border-border rounded-xl p-3">
-                  <p className="text-xs text-text-muted mb-1">
-                    {away.abbrev} @ {home.abbrev}
-                  </p>
+                <div key={game.id} className="bg-bg-card border border-border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                    <TeamMark team={away} size="xs" />
+                    <span>{away.abbrev}</span>
+                    <span>@</span>
+                    <TeamMark team={home} size="xs" />
+                    <span>{home.abbrev}</span>
+                  </div>
                   {groups.map((group) => (
-                    <div key={group.playerId} className="mb-1 last:mb-0">
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <p className="text-sm font-semibold">{group.playerName}</p>
-                        {group.injury && (
-                          <span className="text-[10px] font-bold text-loss border border-loss rounded px-1">
-                            {group.injury}
-                          </span>
-                        )}
-                      </div>
-                      {group.markets
-                        .filter((m) => propTypeOptions.includes(m.key))
-                        .map((market, idx) => (
-                          <MarketRow
-                            key={`${market.key}-${idx}`}
-                            label={group.playerName}
-                            market={market}
-                            altLinesEnabled={league.settings.altLinesEnabled}
-                            checkBlocked={checkBlockedFor(game.id, market.key, group.playerId)}
-                            checkClaimStatus={checkClaimStatusFor(game.id, market.key, group.playerId)}
-                            onSelect={(outcome) =>
-                              setTarget({
-                                leagueId: league.id,
-                                teamId: userTeam.id,
-                                week: league.currentWeek,
-                                slotId: slot.slotId,
-                                slotPosition: slot.position,
-                                gameId: game.id,
-                                marketKey: market.key,
-                                outcome,
-                                playerId: group.playerId,
-                                playerName: group.playerName,
-                                label: group.playerName,
-                              })
-                            }
-                          />
-                        ))}
-                    </div>
+                    <PlayerPropsCard
+                      key={group.playerId}
+                      group={group}
+                      altLinesEnabled={league.settings.altLinesEnabled}
+                      checkBlocked={(market, outcome) => checkBlockedFor(game.id, market.key, group.playerId)(outcome)}
+                      checkClaimStatus={(market, outcome) => checkClaimStatusFor(game.id, market.key, group.playerId)(outcome)}
+                      onSelect={(market, outcome) =>
+                        setTarget({
+                          leagueId: league.id,
+                          teamId: userTeam.id,
+                          week: league.currentWeek,
+                          slotId: slot.slotId,
+                          slotPosition: slot.position,
+                          gameId: game.id,
+                          marketKey: market.key,
+                          outcome,
+                          playerId: group.playerId,
+                          playerName: group.playerName,
+                          label: group.playerName,
+                        })
+                      }
+                    />
                   ))}
                 </div>
               );

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import type { LeagueTeam, OddsMarket, OddsOutcome } from '../../types';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { TeamLogo } from '../common/TeamLogo';
-import { MARKET_LABELS } from '../../data/propsGenerator';
 
 /** manual v0.2.0 §3 #4: mini claimant logos + progress dots toward the cap, shown on a
  * still-pickable outcome once at least one other team already holds it. Distinct from
@@ -25,12 +24,21 @@ function ClaimProgress({ holderTeams, cap }: { holderTeams: LeagueTeam[]; cap: n
   );
 }
 
+/** Now used exclusively for player-prop markets (game-level h2h/spreads moved to
+ * GameLinesTable) -- label is the market type itself ("Passing Yards"), not the
+ * player's name, since that's shown once by the caller's PlayerPropsCard header
+ * instead of repeating on every one of a player's rows. The label column and each
+ * outcome button both use a fixed width (rather than the previous min-width/flex
+ * mix) specifically so every row's odds boxes land in the same place regardless of
+ * how long that row's label text is. Label wraps instead of truncating -- a fixed
+ * width alone doesn't help if the text still gets cut off inside it. */
 export function MarketRow({
   label,
   market,
   onSelect,
   disabled,
   altLinesEnabled = true,
+  hideOutcomeNames = false,
   checkBlocked,
   checkClaimStatus,
 }: {
@@ -39,6 +47,10 @@ export function MarketRow({
   onSelect: (outcome: OddsOutcome) => void;
   disabled?: boolean;
   altLinesEnabled?: boolean;
+  /** Omits the outcome name ("Over"/"Under") from inside each box -- used when a
+   * shared column header above (see PlayerPropsCard) already provides that
+   * context, so the box only needs to show the line + odds and can be narrower. */
+  hideOutcomeNames?: boolean;
   /** Returns a short reason ("Claimed by [team]") when this exact outcome is
    * unavailable (manual v0.1.1 §3 #7), or null when it's free to pick. */
   checkBlocked?: (outcome: OddsOutcome) => string | null;
@@ -50,7 +62,9 @@ export function MarketRow({
   const [tappedReason, setTappedReason] = useState<string | null>(null);
   const showStepper = altLinesEnabled && !!market.altLines;
   const active = step === -1 ? market.altLines?.[0] : step === 1 ? market.altLines?.[1] : market;
-  const outcomes = active?.outcomes ?? market.outcomes;
+  // "Over" sorted before "Under" regardless of the source order, so it always
+  // lines up under whichever header column PlayerPropsCard rendered as "Over".
+  const outcomes = [...(active?.outcomes ?? market.outcomes)].sort((a, b) => (a.name === 'Over' ? -1 : b.name === 'Over' ? 1 : 0));
 
   function changeStep(next: number) {
     setStep(next);
@@ -58,13 +72,10 @@ export function MarketRow({
   }
 
   return (
-    <div className="py-2.5 border-b border-border last:border-b-0">
-      <div className="flex items-center justify-between">
-        <div className="min-w-0 pr-2">
-          <p className="text-sm font-medium truncate">{label}</p>
-          <p className="text-xs text-text-muted">{MARKET_LABELS[market.key]}</p>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+    <div className="py-1 border-b border-border last:border-b-0">
+      <div className="flex items-center">
+        <p className="w-28 shrink-0 text-xs font-medium leading-tight pr-2">{label}</p>
+        <div className="flex-1 flex items-center justify-end gap-1.5">
           {showStepper && (
             <button
               disabled={disabled}
@@ -90,13 +101,13 @@ export function MarketRow({
                   setTappedReason(null);
                   onSelect(outcome);
                 }}
-                className={`flex flex-col items-center border rounded-lg px-2.5 py-1.5 min-w-[64px] disabled:opacity-40 ${
+                className={`flex flex-col items-center border rounded-lg px-1.5 py-1 w-16 shrink-0 disabled:opacity-40 ${
                   reason ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
                 }`}
               >
                 <span className={`text-xs font-semibold ${reason ? 'line-through text-loss' : ''}`}>
-                  {outcome.name}
-                  {outcome.point != null ? ` ${outcome.point}` : ''}
+                  {hideOutcomeNames ? '' : outcome.name}
+                  {outcome.point != null ? `${hideOutcomeNames ? '' : ' '}${outcome.point}` : ''}
                 </span>
                 <OddsDisplay odds={outcome.price} className={`text-xs ${reason ? 'text-loss' : 'text-primary'}`} />
                 {claimStatus && <ClaimProgress holderTeams={claimStatus.holderTeams} cap={claimStatus.cap} />}

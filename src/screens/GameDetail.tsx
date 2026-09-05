@@ -6,6 +6,7 @@ import { nflTeamById } from '../data/nflTeams';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { activeMultipliers } from '../engine/prizePool';
 import { MarketRow } from '../components/roster/MarketRow';
+import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { StatusPill } from '../components/common/StatusPill';
 import { BackHeader } from '../components/layout/BackHeader';
@@ -149,28 +150,16 @@ export function GameDetail() {
         <p className="font-semibold text-sm mb-2">Player Props</p>
         <div className="space-y-3">
           {[away.id, home.id].map((teamId) => (
-            <div key={teamId} className="bg-bg-card border border-border rounded-xl p-3">
-              <p className="text-xs text-text-muted mb-1">{nflTeamById(teamId).abbrev}</p>
+            <div key={teamId} className="bg-bg-card border border-border rounded-xl p-3 space-y-2">
               {playerGroups
                 .filter((g) => g.teamId === teamId)
                 .map((group) => (
-                  <div key={group.playerId} className="mb-1 last:mb-0">
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <p className="text-sm font-semibold">{group.playerName}</p>
-                      {group.injury && (
-                        <span className="text-[10px] font-bold text-loss border border-loss rounded px-1">{group.injury}</span>
-                      )}
-                    </div>
-                    {group.markets.map((market, idx) => (
-                      <MarketRow
-                        key={`${market.key}-${idx}`}
-                        label={group.playerName}
-                        market={market}
-                        altLinesEnabled={league?.settings.altLinesEnabled}
-                        onSelect={(o) => tryOpenBetSlip(market.key, o, group.position, group.playerId, group.playerName)}
-                      />
-                    ))}
-                  </div>
+                  <PlayerPropsCard
+                    key={group.playerId}
+                    group={group}
+                    altLinesEnabled={league?.settings.altLinesEnabled}
+                    onSelect={(market, o) => tryOpenBetSlip(market.key, o, group.position, group.playerId, group.playerName)}
+                  />
                 ))}
             </div>
           ))}

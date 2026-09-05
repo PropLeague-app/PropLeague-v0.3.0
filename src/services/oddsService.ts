@@ -161,3 +161,17 @@ export function getGameMarkets(game: NFLGame): { h2h: OddsMarket | undefined; sp
     totals: all.find((m) => m.key === 'totals'),
   };
 }
+
+/** Finds a game-level market outcome (h2h/spreads) belonging to a specific team.
+ * Real data (from the Odds API) names outcomes with the full team name ("Seattle
+ * Seahawks"); simulated data (propsGenerator.ts) names them with the abbreviation
+ * ("SEA") -- confirmed by checking both sources directly rather than assuming one
+ * convention. Checking both here, in one place, is what actually fixes the "Spread
+ * shows -- for every real game" bug: the previous code (GameCard.tsx) only checked
+ * the abbreviation, which is why it happened to work for simulated games and
+ * silently failed for every real one. */
+export function findTeamOutcome(outcomes: OddsOutcome[] | undefined, team: { abbrev: string; city: string; name: string }): OddsOutcome | undefined {
+  if (!outcomes) return undefined;
+  const fullName = `${team.city} ${team.name}`;
+  return outcomes.find((o) => o.name === team.abbrev || o.name === fullName);
+}
