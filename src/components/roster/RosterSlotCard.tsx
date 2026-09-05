@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
-import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId } from '../../types';
+import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId, Wager } from '../../types';
 import { nflTeamById } from '../../data/nflTeams';
-import { Card } from '../common/Card';
-import { PositionBadge, positionBorderClass } from '../common/PositionBadge';
+import { PositionBadge, positionFillClasses } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { StatusPill } from '../common/StatusPill';
 import { MARKET_LABELS } from '../../data/propsGenerator';
@@ -18,6 +17,24 @@ function gameInfo(game: NFLGame): string {
   const away = nflTeamById(game.awayTeamId).abbrev;
   const day = new Date(game.kickoff).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   return `${away} @ ${home} · ${day}`;
+}
+
+function formatSignedPoint(point: number): string {
+  return point > 0 ? `+${point}` : `${point}`;
+}
+
+/** For an ML/Spread wager, `wager.side` is the team's name as it was stored at
+ * placement -- full name for real data ("Green Bay Packers"), abbreviation for
+ * simulated data ("GB") -- so this checks both conventions against the actual
+ * game's two teams, the same way findTeamOutcome does for market outcomes, to
+ * resolve back to just the nickname ("Packers") for a concise title line. */
+function mlTeamNickname(wager: Wager, game: NFLGame | undefined): string | null {
+  if (!game) return null;
+  const home = nflTeamById(game.homeTeamId);
+  const away = nflTeamById(game.awayTeamId);
+  if (wager.side === `${home.city} ${home.name}` || wager.side === home.abbrev) return home.name;
+  if (wager.side === `${away.city} ${away.name}` || wager.side === away.abbrev) return away.name;
+  return null;
 }
 
 export function RosterSlotCard({
@@ -52,25 +69,33 @@ export function RosterSlotCard({
   // manual v0.2.0 §3 #6: reasons stay hidden behind the "!" badge until tapped, rather
   // than always rendered inline — keeps a lineup with several flagged slots scannable.
   const [reasonsOpen, setReasonsOpen] = useState(false);
+  const fill = positionFillClasses(slot.position);
 
   if (!slot.wager) {
     return (
-      <Card
+      <div
         onClick={() => navigate(`/lineup/market/${slot.slotId}`)}
-        className={`border-l-4 border-dashed ${positionBorderClass(slot.position)} flex items-center justify-between`}
+        className={`rounded-xl p-2.5 border ${fill.borderSubtle} ${fill.bgSubtle} flex items-center justify-between cursor-pointer active:opacity-80`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <PositionBadge position={slot.position} />
           <span className="text-text-muted text-sm">Add your {slot.position} prop</span>
         </div>
         <span className="text-primary text-xl">+</span>
-      </Card>
+      </div>
     );
   }
 
   const wager = slot.wager;
   const potentialProfit = profitForStake(wager.stake, wager.oddsAtPlacement);
   const marketLabel = MARKET_LABELS[wager.marketKey];
+  const nickname = wager.marketKey === 'h2h' || wager.marketKey === 'spreads' ? mlTeamNickname(wager, game) : null;
+
+  // "Packers +1.5" for a Spread pick, just "Packers" for a Moneyline pick (no
+  // point value to show) -- versus the existing player-prop title, unchanged.
+  const titleLine = nickname
+    ? `${nickname}${wager.point != null ? ` ${formatSignedPoint(wager.point)}` : ''}`
+    : `${wager.playerName ?? marketLabel} ${wager.point != null ? `${wager.side} ${wager.point}` : wager.side}`;
 
   const showMovement = !locked && settings?.lineMovementEnabled && currentWeek != null && wager.status === 'pending';
   const liveOdds = showMovement
@@ -79,9 +104,13 @@ export function RosterSlotCard({
   const movement = liveOdds != null && liveOdds !== wager.oddsAtPlacement ? (liveOdds > wager.oddsAtPlacement ? 'up' : 'down') : null;
 
   return (
-    <Card className={`border-l-4 ${invalid ? 'border-l-loss' : positionBorderClass(slot.position)} ${invalid ? 'ring-1 ring-loss' : ''}`}>
+    <div
+      className={`rounded-xl p-2.5 border-2 ${
+        invalid ? 'border-loss bg-loss/5' : `${fill.borderLit} ${fill.bgLit}`
+      }`}
+    >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-2 min-w-0">
+        <div className="flex items-start gap-1.5 min-w-0">
           <PositionBadge position={slot.position} />
           {invalid && validation!.reasons.length > 0 && (
             <button
@@ -93,14 +122,14 @@ export function RosterSlotCard({
             </button>
           )}
           <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">
-              {wager.playerName ?? marketLabel} {wager.point != null ? `${wager.side} ${wager.point}` : wager.side}
+            <p className="font-semibold text-sm leading-tight">{titleLine}</p>
+            <p className="text-[11px] text-text-muted leading-tight">
+              {marketLabel}
+              {game && ` · ${gameInfo(game)}`}
             </p>
-            <p className="text-xs text-text-muted truncate">{marketLabel}</p>
-            {game && <p className="text-xs text-text-muted truncate">{gameInfo(game)}</p>}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
           {locked ? (
             <span title="Locked" className="text-text-muted"><Lock size={14} /></span>
           ) : (
@@ -120,7 +149,7 @@ export function RosterSlotCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border/50">
         <div className="flex items-center gap-1">
           <span className="text-text-muted text-xs">$</span>
           <NumberInput
@@ -133,10 +162,10 @@ export function RosterSlotCard({
           />
         </div>
         <div className="text-right">
-          <p className="text-[11px] text-text-muted">To win</p>
-          <p className="text-sm font-semibold text-profit">{formatCents(potentialProfit)}</p>
+          <p className="text-[10px] text-text-muted leading-none">To win</p>
+          <p className="text-sm font-semibold text-profit leading-tight">{formatCents(potentialProfit)}</p>
           {settings?.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
-            <p className="text-[10px] text-text-muted">
+            <p className="text-[10px] text-text-muted leading-none">
               {formatCents(realDollarAmount(wager.stake, settings.weeklyCredits, pool.current, teamCount) * multiplier)} real
               {multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}
             </p>
@@ -152,6 +181,6 @@ export function RosterSlotCard({
       {invalid && reasonsOpen && validation!.reasons.length > 0 && (
         <p className="text-loss text-xs mt-1.5">{validation!.reasons.join(' · ')}</p>
       )}
-    </Card>
+    </div>
   );
 }
