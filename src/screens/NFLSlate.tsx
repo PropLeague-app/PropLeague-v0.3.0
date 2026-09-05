@@ -70,7 +70,10 @@ export function NFLSlate() {
           <div className="space-y-4">
             {grouped.map(({ day, games: dayGames }) => (
               <div key={day}>
-                <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">{DAY_LABELS[day]}</p>
+                <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">
+                  {DAY_LABELS[day]}
+                  {dayGames[0] && ` · ${new Date(dayGames[0].kickoff).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                </p>
                 <div className="space-y-2">
                   {dayGames.map((game) => (
                     <GameCard key={game.id} game={game} />
