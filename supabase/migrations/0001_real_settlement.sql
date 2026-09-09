@@ -1,0 +1,13 @@
+-- Originally tried to create real_player_stats from scratch. Turns out it
+-- already exists in this DB with a different (better) shape than assumed:
+--   id, season, week, player_name, recent_team, position,
+--   passing_yards, passing_tds, passing_interceptions,
+--   rushing_yards, rushing_tds, rushing_attempts,
+--   receiving_yards, receiving_tds, receptions,
+--   field_goals_made, kicking_points, updated_at
+-- No game_id/player_id columns -- rows are matched by season+week+recent_team
+-- (and player_name) instead of a foreign key. settle-week and
+-- realGameResult.ts have been rewritten to match this real shape. Nothing to
+-- run here -- this file is now just a record of what the table actually
+-- looks like, kept so the next migration in this repo doesn't start from a
+-- wrong assumption again.
