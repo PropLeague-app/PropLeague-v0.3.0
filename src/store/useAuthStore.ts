@@ -36,6 +36,12 @@ interface AuthState {
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   completeProfileSetup: (username: string, avatarEmoji: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Re-editing username/avatar from Settings, after onboarding is already done
+   * (see chat: SettingsHome's "My Profile" card used to call the app-store-local
+   * updateProfile only, which never reached Supabase -- reverted on every
+   * sign-out). Shares completeProfileSetup's write path but leaves `onboarded`
+   * alone and only patches whichever field was actually passed. */
+  updateProfile: (partial: { username?: string; avatarEmoji?: string }) => Promise<{ ok: boolean; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ ok: boolean; error?: string }>;
   updatePassword: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
 }
@@ -164,6 +170,29 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       redirectTo: `${window.location.origin}/reset-password`,
     });
     if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+
+  updateProfile: async (partial) => {
+    const userId = get().user?.id;
+    if (!userId) return { ok: false, error: 'Not signed in.' };
+    const patch: { username?: string; avatar_emoji?: string } = {};
+    if (partial.username !== undefined) patch.username = partial.username;
+    if (partial.avatarEmoji !== undefined) patch.avatar_emoji = partial.avatarEmoji;
+    if (Object.keys(patch).length === 0) return { ok: true };
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(patch)
+      .eq('id', userId)
+      .select('id, username, avatar_emoji, odds_format, onboarded')
+      .single();
+    if (error || !data) {
+      const message = error?.code === '23505' ? 'That username is taken.' : (error?.message ?? 'Something went wrong.');
+      return { ok: false, error: message };
+    }
+    const profile = rowToProfile(data as ProfileRow);
+    syncAppStoreProfile(profile);
+    set({ profile });
     return { ok: true };
   },
 

@@ -10,7 +10,16 @@ import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
-import { addSimulatedTeamRemote, fetchLeagueTeams, fetchMyLeagueMemberships, fetchLeagueMeta, updateLeagueSettingsRemote } from '../services/supabaseLeague';
+import {
+  addSimulatedTeamRemote,
+  fetchLeagueTeams,
+  fetchMyLeagueMemberships,
+  fetchLeagueMeta,
+  updateLeagueSettingsRemote,
+  updateTeamIdentityRemote,
+  updateLeagueIdentityRemote,
+  updateTeamConferenceRemote,
+} from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
@@ -65,6 +74,11 @@ interface AppState {
 
   addLeague: (league: League) => void;
   fillWithSimulatedTeams: (leagueId: string, teamCount: number) => Promise<{ ok: boolean; error?: string }>;
+  /** Commissioner-triggered, works with whatever teams already exist (real-only,
+   * sim-only, or a mix) -- doesn't require the league to ever have gone through
+   * fillWithSimulatedTeams. See chat: this is the fix for leagues that filled up
+   * with real invite-code joins and had no way left to ever get a schedule. */
+  startSeason: (leagueId: string) => Promise<{ ok: boolean; error?: string }>;
   updateTargetTeamCount: (leagueId: string, count: number) => void;
   setCurrentLeague: (leagueId: string) => void;
   updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => void;
@@ -118,6 +132,28 @@ async function syncNewActivity(leagueId: string, prev: ActivityItem[], next: Act
   }
 }
 
+/** Pushes a freshly-generated season -- matchups for every week, initial
+ * standings, and any conference assignment -- to Supabase. This is the write-
+ * side gap that meant settle-week's cron automation had nothing to grade against
+ * until a schedule was actually synced server-side (see chat: neither
+ * fillWithSimulatedTeams nor the old dev-panel-only advanceWeek ever did this for
+ * the *initial* schedule, only for week-by-week results afterward). Shared by
+ * fillWithSimulatedTeams and startSeason, since both end by calling
+ * leagueService.startSeason. */
+async function pushSeasonStart(leagueId: string, league: League) {
+  for (const matchups of Object.values(league.matchupsByWeek)) {
+    for (const m of matchups) {
+      await upsertMatchupRemote(leagueId, String(m.week), m.teamAId, m.teamBId, m.teamAScore, m.teamBScore, m.winnerId, m.isTie);
+    }
+  }
+  for (const standing of league.standings) {
+    await upsertStandingRemote(standing);
+  }
+  for (const team of league.teams) {
+    if (team.conferenceId) await updateTeamConferenceRemote(team.id, team.conferenceId);
+  }
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -133,22 +169,34 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ profile: state.profile ? { ...state.profile, ...partial } : state.profile })),
       setOddsFormat: (format) =>
         set((state) => ({ profile: state.profile ? { ...state.profile, oddsFormat: format } : state.profile })),
-      updateUserTeam: (leagueId, partial) =>
+      // Local set is immediate/optimistic; the remote push is fire-and-forget
+      // (same pattern as updateSettings) -- was 100% local-only before (see chat),
+      // which is why a team rename/logo change always reverted on the next
+      // sign-out (factoryReset wipes local state, and re-hydration re-reads
+      // whatever Supabase actually has).
+      updateUserTeam: (leagueId, partial) => {
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             teams: league.teams.map((t) => (t.isUser ? { ...t, ...partial } : t)),
           })),
-        ),
-      updateLeagueLogo: (leagueId, partial) =>
-        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, ...partial }))),
-      setTeamConference: (leagueId, teamId, conferenceId) =>
+        );
+        const team = get().leagues[leagueId]?.teams.find((t) => t.isUser);
+        if (team) void updateTeamIdentityRemote(team.id, partial);
+      },
+      updateLeagueLogo: (leagueId, partial) => {
+        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, ...partial })));
+        void updateLeagueIdentityRemote(leagueId, partial);
+      },
+      setTeamConference: (leagueId, teamId, conferenceId) => {
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             teams: league.teams.map((t) => (t.id === teamId ? { ...t, conferenceId } : t)),
           })),
-        ),
+        );
+        void updateTeamConferenceRemote(teamId, conferenceId);
+      },
 
       addLeague: (league) => set((state) => ({ leagues: { ...state.leagues, [league.id]: league }, currentLeagueId: league.id })),
 
@@ -167,6 +215,25 @@ export const useAppStore = create<AppState>()(
         }
 
         const updatedLeague = leagueService.fillWithSimulatedTeams(league, withIds);
+        await pushSeasonStart(leagueId, updatedLeague);
+        set((state) => updateLeague(state, leagueId, () => updatedLeague));
+        await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
+        return { ok: true };
+      },
+
+      // Commissioner-only "Start Season" (SettingsHome) -- works from whatever
+      // teams already exist, real or simulated, without requiring the league to
+      // ever have gone through fillWithSimulatedTeams (see chat: a league that
+      // filled up entirely with real invite-code joins had no path left to ever
+      // get a schedule).
+      startSeason: async (leagueId) => {
+        const league = get().leagues[leagueId];
+        if (!league) return { ok: false, error: 'League not found.' };
+        if (league.teams.length < 2) return { ok: false, error: 'Need at least 2 teams to start the season.' };
+        if (Object.keys(league.matchupsByWeek).length > 0) return { ok: false, error: 'This season has already started.' };
+
+        const updatedLeague = leagueService.startSeason(league);
+        await pushSeasonStart(leagueId, updatedLeague);
         set((state) => updateLeague(state, leagueId, () => updatedLeague));
         await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
@@ -465,21 +532,36 @@ export const useAppStore = create<AppState>()(
                   .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
                   .slice(0, 40)
               : league.activity;
-            // Narrow merge: only picks up a real uploaded logo for teams that already
-            // exist locally — this isn't a general team-roster sync (name/color edits
-            // made in Settings still aren't pushed to Supabase at all, a pre-existing
-            // gap from before this step, not something Step 8 attempts to fix).
+            // Full identity sync now (see chat: name/abbrev/logo edits are pushed to
+            // Supabase as of this step, so a fresh fetch here is the real, current
+            // value -- from this device or any other member's). An uploaded image
+            // still wins over a plain color/emoji choice, same as before.
             const teams = teamsResult.ok
               ? league.teams.map((localTeam) => {
                   const fresh = teamsResult.teams.find((t) => t.id === localTeam.id);
-                  if (!fresh?.logoStoragePath) return localTeam;
-                  return { ...localTeam, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(fresh.logoStoragePath) };
+                  if (!fresh) return localTeam;
+                  if (fresh.logoStoragePath) {
+                    return { ...localTeam, teamName: fresh.teamName, abbrev: fresh.abbrev, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(fresh.logoStoragePath) };
+                  }
+                  return {
+                    ...localTeam,
+                    teamName: fresh.teamName,
+                    abbrev: fresh.abbrev,
+                    logoMode: (fresh.logoMode as LeagueTeam['logoMode']) ?? localTeam.logoMode,
+                    logoEmoji: fresh.logoEmoji ?? localTeam.logoEmoji,
+                    logoColor: fresh.logoColor,
+                  };
                 })
               : league.teams;
-            const leagueLogo =
-              progressResult.ok && progressResult.logoStoragePath
+            const leagueLogo = !progressResult.ok
+              ? {}
+              : progressResult.logoStoragePath
                 ? { logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(progressResult.logoStoragePath) }
-                : {};
+                : {
+                    ...(progressResult.logoMode ? { logoMode: progressResult.logoMode as League['logoMode'] } : {}),
+                    ...(progressResult.logoEmoji ? { logoEmoji: progressResult.logoEmoji } : {}),
+                    ...(progressResult.logoColor ? { logoColor: progressResult.logoColor } : {}),
+                  };
             return {
               ...league,
               matchupsByWeek: matchupsResult.ok ? { ...league.matchupsByWeek, ...matchupsResult.matchupsByWeek } : league.matchupsByWeek,

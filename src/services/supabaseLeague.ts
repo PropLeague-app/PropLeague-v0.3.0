@@ -22,6 +22,8 @@ export interface RealLeagueTeam {
   abbrev: string;
   ownerName: string; // real username, or 'Simulated' for AI-controlled teams
   isSimulated: boolean;
+  logoMode: string | null;
+  logoEmoji: string | null;
   logoColor: string;
   logoStoragePath: string | null;
   conferenceId: string | null;
@@ -36,6 +38,8 @@ interface TeamRow {
   team_name: string;
   abbrev: string;
   is_simulated: boolean;
+  logo_mode: string | null;
+  logo_emoji: string | null;
   logo_color: string;
   logo_storage_path: string | null;
   conference_id: string | null;
@@ -157,7 +161,7 @@ export async function updateLeagueSettingsRemote(leagueId: string, settings: Lea
 export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<{ teams: RealLeagueTeam[] }>> {
   const { data, error } = await supabase
     .from('teams')
-    .select('id, team_name, abbrev, is_simulated, logo_color, logo_storage_path, conference_id, league_memberships(profiles(username))')
+    .select('id, team_name, abbrev, is_simulated, logo_mode, logo_emoji, logo_color, logo_storage_path, conference_id, league_memberships(profiles(username))')
     .eq('league_id', leagueId)
     .order('created_at', { ascending: true });
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load teams.' };
@@ -168,6 +172,8 @@ export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<
     abbrev: row.abbrev,
     ownerName: row.league_memberships?.profiles?.username ?? 'Simulated',
     isSimulated: row.is_simulated,
+    logoMode: row.logo_mode,
+    logoEmoji: row.logo_emoji,
     logoColor: row.logo_color,
     logoStoragePath: row.logo_storage_path,
     conferenceId: row.conference_id,
@@ -189,4 +195,47 @@ export async function addSimulatedTeamRemote(
   });
   if (error || !teamId) return { ok: false, error: error?.message ?? 'Could not add a simulated team.' };
   return { ok: true, teamId };
+}
+/** Direct table update rather than a new RPC -- consistent with the existing
+ * uploadTeamLogo/uploadLeagueLogo pattern (see chat: this codebase's RLS
+ * already permits an authenticated client to update its own team/league rows
+ * this way; a stricter "must own this team" check is part of the still-open
+ * RPC/RLS security lockdown, not something this step attempts). Only send the
+ * fields that actually changed -- callers pass a partial patch. */
+export async function updateTeamIdentityRemote(
+  teamId: string,
+  partial: Partial<{ teamName: string; abbrev: string; logoMode: string; logoEmoji: string; logoColor: string }>,
+): Promise<ServiceResult<object>> {
+  const patch: Record<string, string> = {};
+  if (partial.teamName !== undefined) patch.team_name = partial.teamName;
+  if (partial.abbrev !== undefined) patch.abbrev = partial.abbrev;
+  if (partial.logoMode !== undefined) patch.logo_mode = partial.logoMode;
+  if (partial.logoEmoji !== undefined) patch.logo_emoji = partial.logoEmoji;
+  if (partial.logoColor !== undefined) patch.logo_color = partial.logoColor;
+  if (Object.keys(patch).length === 0) return { ok: true };
+  const { error } = await supabase.from('teams').update(patch).eq('id', teamId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateLeagueIdentityRemote(
+  leagueId: string,
+  partial: Partial<{ logoMode: string; logoEmoji: string; logoColor: string }>,
+): Promise<ServiceResult<object>> {
+  const patch: Record<string, string> = {};
+  if (partial.logoMode !== undefined) patch.logo_mode = partial.logoMode;
+  if (partial.logoEmoji !== undefined) patch.logo_emoji = partial.logoEmoji;
+  if (partial.logoColor !== undefined) patch.logo_color = partial.logoColor;
+  if (Object.keys(patch).length === 0) return { ok: true };
+  const { error } = await supabase.from('leagues').update(patch).eq('id', leagueId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Commissioner drag-team-between-conferences (SettingsHome) -- was local-only
+ * before (see chat), so it reverted on every sign-out. */
+export async function updateTeamConferenceRemote(teamId: string, conferenceId: string): Promise<ServiceResult<object>> {
+  const { error } = await supabase.from('teams').update({ conference_id: conferenceId }).eq('id', teamId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }

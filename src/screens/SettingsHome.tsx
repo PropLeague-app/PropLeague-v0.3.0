@@ -151,7 +151,6 @@ function ChangePasswordRow() {
 export function SettingsHome() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
-  const updateProfile = useAppStore((s) => s.updateProfile);
   const setOddsFormat = useAppStore((s) => s.setOddsFormat);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
@@ -161,6 +160,8 @@ export function SettingsHome() {
   const updateTargetTeamCount = useAppStore((s) => s.updateTargetTeamCount);
   const transferCommissioner = useAppStore((s) => s.transferCommissioner);
   const leaveLeague = useAppStore((s) => s.leaveLeague);
+  const startSeason = useAppStore((s) => s.startSeason);
+  const authUpdateProfile = useAuthStore((s) => s.updateProfile);
 
   const [notifLineup, setNotifLineup] = useState(true);
   const [notifSettled, setNotifSettled] = useState(true);
@@ -177,16 +178,82 @@ export function SettingsHome() {
   // before that, availability is decided per-option by structureAvailable below.
   const bracketLocked = !!league?.bracket;
 
+  // Explicit-save drafts for username/avatar and team name/abbrev (see chat: these
+  // used to commit on every keystroke straight to local-only state, which is why
+  // they always reverted after a sign-out -- factoryReset wipes local state, and
+  // nothing was ever pushed to Supabase to re-hydrate from). Re-seeded whenever the
+  // underlying saved value actually changes (a real save completing, or a fresh
+  // fetch from another device); left alone otherwise so an in-progress edit is
+  // never silently overwritten mid-type.
+  const [usernameDraft, setUsernameDraft] = useState(profile?.username ?? '');
+  const [avatarDraft, setAvatarDraft] = useState(profile?.avatarEmoji ?? '');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  useEffect(() => {
+    setUsernameDraft(profile?.username ?? '');
+    setAvatarDraft(profile?.avatarEmoji ?? '');
+  }, [profile?.username, profile?.avatarEmoji]);
+  const profileDirty = usernameDraft.trim() !== (profile?.username ?? '') || avatarDraft !== (profile?.avatarEmoji ?? '');
+
+  const [teamNameDraft, setTeamNameDraft] = useState(userTeam?.teamName ?? '');
+  const [abbrevDraft, setAbbrevDraft] = useState(userTeam?.abbrev ?? '');
+  useEffect(() => {
+    setTeamNameDraft(userTeam?.teamName ?? '');
+    setAbbrevDraft(userTeam?.abbrev ?? '');
+  }, [userTeam?.teamName, userTeam?.abbrev]);
+  const teamNameDirty = !!userTeam && (teamNameDraft.trim() !== userTeam.teamName || abbrevDraft.trim().toUpperCase() !== userTeam.abbrev);
+
+  const [startSeasonBusy, setStartSeasonBusy] = useState(false);
+  const [startSeasonError, setStartSeasonError] = useState<string | null>(null);
+  const isCommissioner = !!league && !!userTeam && userTeam.id === league.commissionerTeamId;
+  const seasonNotStarted = !!league && Object.keys(league.matchupsByWeek).length === 0;
+
+  async function handleSaveProfile() {
+    const trimmed = usernameDraft.trim();
+    if (!trimmed) {
+      setProfileError('Username cannot be empty.');
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError(null);
+    const result = await authUpdateProfile({ username: trimmed, avatarEmoji: avatarDraft });
+    setProfileSaving(false);
+    if (!result.ok) {
+      setProfileError(result.error ?? 'Something went wrong.');
+      return;
+    }
+    setUsernameDraft(trimmed);
+  }
+
+  function handleSaveTeam() {
+    if (!league || !userTeam) return;
+    const trimmedName = teamNameDraft.trim() || profile?.username || 'My Team';
+    const trimmedAbbrev = (abbrevDraft.trim() || abbrevFromName(trimmedName)).toUpperCase().slice(0, 4);
+    updateUserTeam(league.id, { teamName: trimmedName, abbrev: trimmedAbbrev });
+    setTeamNameDraft(trimmedName);
+    setAbbrevDraft(trimmedAbbrev);
+  }
+
+  async function handleStartSeason() {
+    if (!league) return;
+    setStartSeasonBusy(true);
+    setStartSeasonError(null);
+    const result = await startSeason(league.id);
+    setStartSeasonBusy(false);
+    if (!result.ok) setStartSeasonError(result.error ?? 'Something went wrong.');
+  }
+
   // Drives the bottom tab bar's discard-on-leave confirm (manual v0.1.1 §2 #4) — reset
   // on unmount too, as a safety net against a stale "dirty" flag surviving a route change.
   const setHasUnsavedChanges = useUIStore((s) => s.setHasUnsavedChanges);
+  const anyDirty = teamIdentityDirty || leagueIdentityDirty || profileDirty || teamNameDirty;
   useEffect(() => {
-    setHasUnsavedChanges(teamIdentityDirty || leagueIdentityDirty);
-  }, [teamIdentityDirty, leagueIdentityDirty, setHasUnsavedChanges]);
+    setHasUnsavedChanges(anyDirty);
+  }, [anyDirty, setHasUnsavedChanges]);
   useEffect(() => () => setHasUnsavedChanges(false), [setHasUnsavedChanges]);
 
   function goTo(link: string) {
-    if ((teamIdentityDirty || leagueIdentityDirty) && !confirm('You have unsaved changes. Discard them?')) return;
+    if (anyDirty && !confirm('You have unsaved changes. Discard them?')) return;
     setHasUnsavedChanges(false);
     navigate(link);
   }
@@ -212,12 +279,15 @@ export function SettingsHome() {
       <SectionHeader>My Profile</SectionHeader>
       {profile && (
         <div className="bg-bg-card border border-border rounded-xl p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            {profileDirty && <span className="text-[10px] text-accent font-semibold">Unsaved changes</span>}
+          </div>
           <div>
             <label className="text-xs text-text-muted mb-1 block">Username</label>
             <NameInput
-              value={profile.username}
+              value={usernameDraft}
               fallback="Commissioner"
-              onChange={(v) => updateProfile({ username: v })}
+              onChange={setUsernameDraft}
               className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -227,9 +297,9 @@ export function SettingsHome() {
               {AVATARS.map((emoji) => (
                 <button
                   key={emoji}
-                  onClick={() => updateProfile({ avatarEmoji: emoji })}
+                  onClick={() => setAvatarDraft(emoji)}
                   className={`text-xl aspect-square rounded-lg border flex items-center justify-center ${
-                    profile.avatarEmoji === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
+                    avatarDraft === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
                   }`}
                 >
                   {emoji}
@@ -237,18 +307,43 @@ export function SettingsHome() {
               ))}
             </div>
           </div>
+          {profileError && <p className="text-loss text-xs">{profileError}</p>}
+          <div className="flex items-center gap-2 pt-1 border-t border-border">
+            <button
+              disabled={!profileDirty || profileSaving}
+              onClick={handleSaveProfile}
+              className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+            >
+              {profileSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+            {profileDirty && (
+              <button
+                onClick={() => {
+                  setUsernameDraft(profile.username);
+                  setAvatarDraft(profile.avatarEmoji);
+                  setProfileError(null);
+                }}
+                className="text-xs text-text-muted px-2"
+              >
+                Discard
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {league && userTeam && (
         <div className="bg-bg-card border border-border rounded-xl p-3 space-y-3">
-          <p className="text-xs text-text-muted">Team (this league)</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-text-muted">Team (this league)</p>
+            {teamNameDirty && <span className="text-[10px] text-accent font-semibold">Unsaved changes</span>}
+          </div>
           <div>
             <label className="text-xs text-text-muted mb-1 block">Team name</label>
             <NameInput
-              value={userTeam.teamName}
+              value={teamNameDraft}
               fallback={profile?.username ?? 'My Team'}
-              onChange={(v) => updateUserTeam(league.id, { teamName: v })}
+              onChange={setTeamNameDraft}
               className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -256,13 +351,52 @@ export function SettingsHome() {
             <label className="text-xs text-text-muted mb-1 block">Abbreviation</label>
             <NameInput
               maxLength={4}
-              value={userTeam.abbrev}
-              fallback={abbrevFromName(userTeam.teamName)}
-              onChange={(v) => updateUserTeam(league.id, { abbrev: v.toUpperCase() })}
+              value={abbrevDraft}
+              fallback={abbrevFromName(teamNameDraft)}
+              onChange={(v) => setAbbrevDraft(v.toUpperCase())}
               className="w-24 bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm uppercase"
             />
           </div>
+          <div className="flex items-center gap-2 pt-1 border-t border-border">
+            <button
+              disabled={!teamNameDirty}
+              onClick={handleSaveTeam}
+              className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+            >
+              Save Changes
+            </button>
+            {teamNameDirty && (
+              <button
+                onClick={() => {
+                  setTeamNameDraft(userTeam.teamName);
+                  setAbbrevDraft(userTeam.abbrev);
+                }}
+                className="text-xs text-text-muted px-2"
+              >
+                Discard
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
+      {isCommissioner && seasonNotStarted && (
+        <div className="bg-bg-card border border-dashed border-primary rounded-xl p-3 space-y-2">
+          <p className="text-sm font-semibold">Start the season</p>
+          <p className="text-xs text-text-muted">
+            Generates Week 1 matchups for the {league.teams.length} team{league.teams.length === 1 ? '' : 's'} currently in the league
+            and locks conferences (if enabled). You can still add simulated teams first from the invite screen, or start now with
+            whoever has joined so far — either way, this is the one thing that actually kicks the season off.
+          </p>
+          {startSeasonError && <p className="text-loss text-xs">{startSeasonError}</p>}
+          <button
+            disabled={startSeasonBusy || league.teams.length < 2}
+            onClick={handleStartSeason}
+            className="w-full bg-primary text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-40"
+          >
+            {startSeasonBusy ? 'Starting…' : 'Start Season'}
+          </button>
+          {league.teams.length < 2 && <p className="text-[11px] text-text-muted">Need at least 2 teams first.</p>}
         </div>
       )}
 

@@ -134,6 +134,8 @@ export interface RealTeamInput {
   abbrev: string;
   ownerName: string;
   isSimulated: boolean;
+  logoMode: string | null;
+  logoEmoji: string | null;
   logoColor: string;
   conferenceId: string | null;
 }
@@ -158,8 +160,11 @@ export function buildLeagueFromRealTeams(params: {
     ownerName: t.ownerName,
     teamName: t.teamName,
     abbrev: t.abbrev,
-    logoMode: 'initials',
-    logoEmoji: TEAM_LOGO_EMOJIS[0],
+    // logo_mode/logo_emoji are nullable on older rows (see chat: added alongside
+    // the identity-persistence fix) -- fall back to the same defaults this always
+    // used, rather than forcing every existing team to re-pick a logo.
+    logoMode: (t.logoMode as LeagueTeam['logoMode']) ?? 'initials',
+    logoEmoji: t.logoEmoji ?? TEAM_LOGO_EMOJIS[0],
     logoColor: t.logoColor,
     isUser: false, // caller overwrites this for whichever team is actually theirs
     isSimulated: t.isSimulated,
@@ -238,26 +243,14 @@ export function generateSimulatedTeamIdentities(seed: string, count: number): Si
   });
 }
 
-/** Adds already-identified simulated teams (real ids already assigned by the
- * caller, from the real Supabase rows) into the league, generates the season's H2H
- * schedule, and auto-submits their Week 1 lineups. */
-export function fillWithSimulatedTeams(league: League, simIdentities: (SimulatedTeamIdentity & { id: string })[]): League {
-  const slotsToFill = simIdentities.length;
-  const simTeams: LeagueTeam[] = simIdentities.map((t) => ({
-    id: t.id,
-    ownerName: t.ownerName,
-    teamName: t.teamName,
-    abbrev: t.abbrev,
-    logoMode: t.logoMode,
-    logoEmoji: t.logoEmoji,
-    logoColor: t.logoColor,
-    isUser: false,
-    isSimulated: true,
-    conferenceId: null,
-    logoDataUrl: null,
-  }));
-
-  let teams = [...league.teams, ...simTeams];
+/** Builds the season — schedule, conference lock, standings, and Week 1 bot
+ * lineups — from whatever teams already exist on `league.teams` right now. This
+ * is the one place a schedule is ever generated, whether the roster is all real
+ * teams, all simulated, or a mix. Callers must only invoke it once per league
+ * (both call sites below guard on `matchupsByWeek` being empty first) -- calling
+ * it twice regenerates a fresh schedule from Week 1. */
+export function startSeason(league: League): League {
+  let teams = league.teams;
 
   // Conference assignment happens once, right here, when the full roster is first
   // known — this is the "locked at season start" moment (manual §3.1). Auto-random
@@ -275,7 +268,7 @@ export function fillWithSimulatedTeams(league: League, simIdentities: (Simulated
   const week1Games = gamesForWeek(1);
   const rostersByTeamWeek = { ...league.rostersByTeamWeek };
   const claims = new ClaimTracker(league, 1);
-  for (const team of simTeams) {
+  for (const team of teams.filter((t) => t.isSimulated)) {
     const roster = generateAutoLineup(team.id, 1, league.settings, week1Games, (g, m, p, s, pt) => claims.isTaken(g, m, p, s, pt));
     claims.claimRoster(roster);
     rostersByTeamWeek[rosterKey(team.id, 1)] = roster;
@@ -291,14 +284,35 @@ export function fillWithSimulatedTeams(league: League, simIdentities: (Simulated
     standings,
     activity: [
       {
-        id: `filled-${league.id}`,
+        id: `season-started-${league.id}`,
         ts: new Date().toISOString(),
         type: 'announcement',
-        message: `${slotsToFill} simulated teams joined the league. Build your Week 1 lineup!`,
+        message: `The season is underway! Week 1 matchups are set.`,
       },
       ...league.activity,
     ],
   };
+}
+
+/** Adds already-identified simulated teams (real ids already assigned by the
+ * caller, from the real Supabase rows) into the league, then calls `startSeason`
+ * to build the schedule/lineups/standings around the full (real + sim) roster. */
+export function fillWithSimulatedTeams(league: League, simIdentities: (SimulatedTeamIdentity & { id: string })[]): League {
+  const simTeams: LeagueTeam[] = simIdentities.map((t) => ({
+    id: t.id,
+    ownerName: t.ownerName,
+    teamName: t.teamName,
+    abbrev: t.abbrev,
+    logoMode: t.logoMode,
+    logoEmoji: t.logoEmoji,
+    logoColor: t.logoColor,
+    isUser: false,
+    isSimulated: true,
+    conferenceId: null,
+    logoDataUrl: null,
+  }));
+
+  return startSeason({ ...league, teams: [...league.teams, ...simTeams] });
 }
 
 /** manual v0.2.0 §3 #7: `ensurePool` was previously only ever called lazily from

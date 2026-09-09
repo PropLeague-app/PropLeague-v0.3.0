@@ -139,8 +139,23 @@ export async function fetchLeagueStandings(leagueId: string): Promise<ServiceRes
   return { ok: true, standings };
 }
 
-export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null; prizePool: PrizePool | null; logoStoragePath: string | null }>> {
-  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket, prize_pool, logo_storage_path').eq('id', leagueId).single();
+export async function fetchLeagueProgress(leagueId: string): Promise<
+  ServiceResult<{
+    currentWeek: WeekId;
+    seasonPhase: string;
+    bracket: PlayoffBracket | null;
+    prizePool: PrizePool | null;
+    logoStoragePath: string | null;
+    logoMode: string | null;
+    logoEmoji: string | null;
+    logoColor: string | null;
+  }>
+> {
+  const { data, error } = await supabase
+    .from('leagues')
+    .select('current_week, season_phase, bracket, prize_pool, logo_storage_path, logo_mode, logo_emoji, logo_color')
+    .eq('id', leagueId)
+    .single();
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load league.' };
   return {
     ok: true,
@@ -149,5 +164,8 @@ export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResu
     bracket: data.bracket,
     prizePool: data.prize_pool ?? null,
     logoStoragePath: data.logo_storage_path,
+    logoMode: data.logo_mode,
+    logoEmoji: data.logo_emoji,
+    logoColor: data.logo_color,
   };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Trophy, ChevronDown, Hourglass } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Trophy, ChevronDown, Hourglass, Rocket } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { getSlate } from '../services/oddsService';
@@ -13,6 +14,7 @@ import { LeagueLogo } from '../components/common/LeagueLogo';
 import { LeagueSwitcherSheet } from '../components/home/LeagueSwitcherSheet';
 
 export function LeagueHome() {
+  const navigate = useNavigate();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const allLeagues = useAppStore((s) => s.leagues);
@@ -44,6 +46,12 @@ export function LeagueHome() {
   const weekMatchups = league.matchupsByWeek[String(league.currentWeek)] ?? [];
   const userMatchup = weekMatchups.find((m) => m.teamAId === userTeam?.id || m.teamBId === userTeam?.id);
   const otherMatchups = weekMatchups.filter((m) => m.id !== userMatchup?.id);
+  // No matchup this week is ambiguous on its own -- could mean "eliminated from
+  // the playoffs" or "nobody has ever started the season" (see chat: a league
+  // that filled up entirely with real invite-code joins used to have no path to
+  // ever get a schedule at all). Distinguish by whether *any* week has matchups.
+  const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
+  const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
   const slate = getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
   const firstKickoff = slate.length > 0 ? slate.reduce((min, g) => (g.kickoff < min ? g.kickoff : min), slate[0].kickoff) : null;
 
@@ -87,10 +95,27 @@ export function LeagueHome() {
           <EmptyState
             icon={<Trophy size={36} strokeWidth={1.5} />}
             title={`${league.teams.find((t) => t.id === league.bracket?.championId)?.teamName ?? 'A team'} won it all!`}
-            subtitle="Check the Playoff Bracket in Settings to relive the run, or reset the season from the dev panel."
+            subtitle="Check the Playoff Bracket in Settings to relive the run."
           />
         ) : userMatchup ? (
           <MatchupCard league={league} matchup={userMatchup} highlightTeamId={userTeam?.id} />
+        ) : seasonNotStarted ? (
+          <EmptyState
+            icon={<Rocket size={36} strokeWidth={1.5} />}
+            title="Season hasn't started yet"
+            subtitle={
+              isCommissioner
+                ? 'Head to Settings to fill the league with simulated teams or start the season with whoever has joined so far.'
+                : "The commissioner hasn't started the season yet."
+            }
+            action={
+              isCommissioner ? (
+                <button onClick={() => navigate('/settings')} className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg">
+                  Go to Settings
+                </button>
+              ) : undefined
+            }
+          />
         ) : (
           <EmptyState icon={<Hourglass size={36} strokeWidth={1.5} />} title="No matchup this week" subtitle="Your team may have been eliminated from the playoffs." />
         )}
