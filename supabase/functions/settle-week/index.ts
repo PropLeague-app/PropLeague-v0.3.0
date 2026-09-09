@@ -1,34 +1,55 @@
-// Server-side settlement for one real, finished NFL week: grades every pending
-// wager against real results, scores this week's matchups, and recomputes
-// league standings, using the service role key so no client has to be trusted
-// to compute (let alone report) its own result.
+// Server-side settlement + full automatic season progression for real NFL
+// weeks. Cron-triggered, no request body required (auto-discovers every week
+// that has a league currently sitting on it) -- this is what lets the app
+// "just work on its own" per Hunter's explicit ask: no DevPanel, no
+// commissioner button, no client action of any kind. A `week`/`season` body
+// still works for manual/testing invocation, same as before.
 //
-// Rewritten after finding the real schema (this comment left in place as a
-// record, since it's the second version of this file): real_games has no
-// bookmakers-derived id/game linkage issue to worry about, and grading needs
-// no bookmakers jsonb parsing at all. Every wager already stores its own
-// frozen `side`/`point` from placement time, so a wager is graded directly
-// against the real final score (for h2h/spreads/totals) or a real
-// `real_player_stats` row matched by player name (for props). real_player_stats
-// has no game_id/player_id -- rows are matched by week (+ season, optional)
-// and player_name.
+// Per league, per pass:
+//   1. Grade every pending wager whose game is now final (unchanged from the
+//      previous version of this file).
+//   2. Score this week's matchups + recompute season standings from scratch
+//      (unchanged).
+//   3. NEW: if every real_games row for this week is final, decide whether to
+//      advance the league -- regular season -> next regular week, regular
+//      season -> playoffs (builds + seeds the bracket), or one playoff round
+//      -> the next (using supabase/functions/_shared/playoffLogic.ts, a
+//      deliberate copy of src/engine/playoffs.ts -- see that file's header).
+//   4. NEW: advances the league's real-dollar prize pool for the week the
+//      same way (also ported from src/engine/prizePool.ts).
 //
-// SCOPE, on purpose: settles wagers, scores this week's matchups, recomputes
-// standings. Does NOT advance current_week/season_phase, touch the playoff
-// bracket, or run prize-pool/moments logic -- those still live in
-// engine/simulateWeek.ts's advanceLeagueWeek, a separate follow-up once this
-// is verified. Trigger this (via cron, once a week's real_games are all
-// status='final') before whatever still calls advanceWeek for that week.
+// NOT done here: Weekly Moments (src/engine/moments.ts). That needs per-wager
+// roster data in a shape real settlement doesn't have a working equivalent
+// for yet -- explicitly deferred, flagged in chat, not a bug.
 //
-// KNOWN GAP: computeIncompleteLineupPenalty (engine/scoring.ts) isn't applied
-// here yet -- needs each league's weeklyCredits/lineupSlots settings, not
-// wired in until you confirm where those live in your schema.
+// KNOWN GAP (carried over): computeIncompleteLineupPenalty isn't applied --
+// needs each league's weeklyCredits/lineupSlots, which now technically *are*
+// available via the new `settings` column, but wiring that penalty in is a
+// separate follow-up, not attempted in this pass.
 //
 // Grading logic mirrors src/engine/realGameResult.ts + engine/settlement.ts's
 // settleWager -- duplicated rather than imported, to avoid a cross-directory
 // import surprise on `supabase functions deploy`. Keep the two in sync.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  type PlayoffFieldSize,
+  type PlayoffBracket,
+  type PrizePool,
+  type StandingLine,
+  type MatchupLine,
+  type WeekId,
+  buildBracket,
+  buildConferenceBracket,
+  conferenceBracketSupported,
+  advanceBracket,
+  sortStandings,
+  computeStandingMultipliers,
+  advancePoolForWeek,
+  lockPool,
+  regularSeasonWeeksFor,
+  playoffWeekSequence,
+} from '../_shared/playoffLogic.ts';
 
 type MarketKey =
   | 'h2h' | 'spreads' | 'totals'
@@ -65,6 +86,52 @@ interface WagerRow {
   odds_at_placement: number; stake: number; status: string; settled_profit: number | null;
 }
 
+/** Minimal shape of LeagueSettings that this function actually reads. Everything
+ * else on the real client type is irrelevant here. A league with `settings: null`
+ * (not yet saved by the client -- see chat) falls back to these app-wide defaults
+ * so older/unconfigured leagues don't get stuck mid-season. */
+interface SettingsSlice {
+  weeklyCredits: number;
+  playoffTeams: number;
+  eliminationType: 'single' | 'double';
+  conferencesEnabled: boolean;
+  buyInEnabled: boolean;
+  buyInAmount: number;
+  poolMultipliers: { enabled: boolean; basis: 'rank' | 'record' | 'seasonPL'; spread: number };
+}
+
+const DEFAULT_SETTINGS: SettingsSlice = {
+  weeklyCredits: 100,
+  playoffTeams: 4,
+  eliminationType: 'single',
+  conferencesEnabled: false,
+  buyInEnabled: false,
+  buyInAmount: 0,
+  poolMultipliers: { enabled: false, basis: 'rank', spread: 0 },
+};
+
+function settingsFrom(raw: unknown): SettingsSlice {
+  if (!raw || typeof raw !== 'object') return DEFAULT_SETTINGS;
+  const r = raw as Partial<SettingsSlice> & { poolMultipliers?: Partial<SettingsSlice['poolMultipliers']> };
+  return {
+    weeklyCredits: r.weeklyCredits ?? DEFAULT_SETTINGS.weeklyCredits,
+    playoffTeams: r.playoffTeams ?? DEFAULT_SETTINGS.playoffTeams,
+    eliminationType: r.eliminationType ?? DEFAULT_SETTINGS.eliminationType,
+    conferencesEnabled: r.conferencesEnabled ?? DEFAULT_SETTINGS.conferencesEnabled,
+    buyInEnabled: r.buyInEnabled ?? DEFAULT_SETTINGS.buyInEnabled,
+    buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
+    poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...(r.poolMultipliers ?? {}) },
+  };
+}
+
+function fieldSizeFor(settings: SettingsSlice): PlayoffFieldSize {
+  return (([2, 4, 6, 8, 16] as const).includes(settings.playoffTeams as PlayoffFieldSize) ? settings.playoffTeams : 4) as PlayoffFieldSize;
+}
+
+function parseWeekId(raw: string): WeekId {
+  return raw === 'WC' || raw === 'DIV' || raw === 'CONF' ? raw : Number(raw);
+}
+
 /** Mirrors src/engine/realGameResult.ts's buildRealGameResult + engine/settlement.ts's
  * settleWager, collapsed into one step since the edge function only ever needs the
  * final status/profit, not the intermediate GameResult shape. */
@@ -94,7 +161,6 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
     result = diff === 0 ? 'push' : diff > 0 ? 'over' : 'under';
   }
 
-  // Same win/lose/push decision as engine/settlement.ts's settleWager.
   let outcome: 'win' | 'lose' | 'push';
   if (result === 'push') outcome = 'push';
   else if (result === 'yes' || result === 'no') outcome = result === 'yes' ? 'win' : 'lose';
@@ -109,136 +175,252 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
 }
 
 Deno.serve(async (req) => {
-  const { week, season } = await req.json();
-  if (week == null) return new Response(JSON.stringify({ ok: false, error: 'missing week' }), { status: 400 });
+  let body: { week?: string | number; season?: number } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // Cron invocations send no body at all -- that's the normal case now.
+  }
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const weekStr = String(week);
 
-  const { data: games, error: gamesErr } = await supabase
-    .from('real_games')
-    .select('id, home_team, away_team, home_score, away_score, status')
-    .eq('week', weekStr)
-    .eq('status', 'final');
-  if (gamesErr) return new Response(JSON.stringify({ ok: false, error: gamesErr.message }), { status: 500 });
-  if (!games || games.length === 0) {
-    return new Response(JSON.stringify({ ok: true, note: `no final real_games for week ${weekStr} yet` }));
+  // Auto-discover every week currently "live" for at least one league, unless
+  // the caller explicitly asked for one (manual/testing invocation).
+  let weeksToProcess: string[];
+  if (body.week != null) {
+    weeksToProcess = [String(body.week)];
+  } else {
+    const { data: activeLeagues, error: activeErr } = await supabase
+      .from('leagues')
+      .select('current_week')
+      .in('season_phase', ['regular', 'playoffs']);
+    if (activeErr) return new Response(JSON.stringify({ ok: false, error: activeErr.message }), { status: 500 });
+    weeksToProcess = [...new Set((activeLeagues ?? []).map((l) => String(l.current_week)))];
   }
-  const gameById = new Map((games as RealGame[]).map((g) => [g.id, g]));
 
-  let statsQuery = supabase.from('real_player_stats').select('*').eq('week', weekStr);
-  if (season != null) statsQuery = statsQuery.eq('season', season);
-  const { data: statRows } = await statsQuery;
-  const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [r.player_name.trim().toLowerCase(), r]));
-
-  const { data: leagues, error: leaguesErr } = await supabase
-    .from('leagues')
-    .select('id')
-    .eq('current_week', weekStr)
-    .in('season_phase', ['regular', 'playoffs']);
-  if (leaguesErr) return new Response(JSON.stringify({ ok: false, error: leaguesErr.message }), { status: 500 });
-
+  const season = body.season ?? null;
   const summary: Record<string, unknown>[] = [];
 
-  for (const league of leagues ?? []) {
-    const leagueId = league.id;
-
-    const { data: rosterRows } = await supabase
-      .from('weekly_rosters')
-      .select('team_id, wagers(id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, status, settled_profit), teams!inner(league_id)')
-      .eq('teams.league_id', leagueId)
+  for (const weekStr of weeksToProcess) {
+    const { data: games, error: gamesErr } = await supabase
+      .from('real_games')
+      .select('id, home_team, away_team, home_score, away_score, status')
       .eq('week', weekStr);
+    if (gamesErr) {
+      summary.push({ week: weekStr, error: gamesErr.message });
+      continue;
+    }
+    const finalGames = (games ?? []).filter((g) => g.status === 'final') as RealGame[];
+    const weekComplete = (games ?? []).length > 0 && finalGames.length === (games ?? []).length;
+    if (finalGames.length === 0) {
+      summary.push({ week: weekStr, note: 'no final real_games for this week yet' });
+      continue;
+    }
+    const gameById = new Map(finalGames.map((g) => [g.id, g]));
 
-    const weeklyScoreByTeam = new Map<string, number>();
-    let gradedCount = 0;
-    for (const row of rosterRows ?? []) {
-      let teamTotal = 0;
-      for (const wager of (row as any).wagers ?? []) {
-        if (wager.status !== 'pending') {
-          teamTotal += wager.settled_profit ?? 0;
-          continue;
+    let statsQuery = supabase.from('real_player_stats').select('*').eq('week', weekStr);
+    if (season != null) statsQuery = statsQuery.eq('season', season);
+    const { data: statRows } = await statsQuery;
+    const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [r.player_name.trim().toLowerCase(), r]));
+
+    const { data: leagues, error: leaguesErr } = await supabase
+      .from('leagues')
+      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count')
+      .eq('current_week', weekStr)
+      .in('season_phase', ['regular', 'playoffs']);
+    if (leaguesErr) {
+      summary.push({ week: weekStr, error: leaguesErr.message });
+      continue;
+    }
+
+    for (const league of leagues ?? []) {
+      const leagueId = league.id as string;
+      const settings = settingsFrom(league.settings);
+      const fieldSize = fieldSizeFor(settings);
+
+      const { data: rosterRows } = await supabase
+        .from('weekly_rosters')
+        .select('team_id, wagers(id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, status, settled_profit), teams!inner(league_id)')
+        .eq('teams.league_id', leagueId)
+        .eq('week', weekStr);
+
+      const weeklyScoreByTeam = new Map<string, number>();
+      let gradedCount = 0;
+      for (const row of rosterRows ?? []) {
+        let teamTotal = 0;
+        for (const wager of (row as any).wagers ?? []) {
+          if (wager.status !== 'pending') {
+            teamTotal += wager.settled_profit ?? 0;
+            continue;
+          }
+          const game = gameById.get(wager.game_id);
+          if (!game) continue; // this wager's game isn't final yet -- leave pending
+          const stat = wager.player_name ? statByPlayerName.get(String(wager.player_name).trim().toLowerCase()) : undefined;
+          const { status, profit } = gradeWager(wager, game, stat);
+          await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
+          teamTotal += profit;
+          gradedCount++;
         }
-        const game = gameById.get(wager.game_id);
-        if (!game) continue; // this wager's game isn't final yet -- leave pending
-        const stat = wager.player_name ? statByPlayerName.get(String(wager.player_name).trim().toLowerCase()) : undefined;
-        const { status, profit } = gradeWager(wager, game, stat);
-        await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
-        teamTotal += profit;
-        gradedCount++;
+        weeklyScoreByTeam.set((row as any).team_id, teamTotal);
       }
-      weeklyScoreByTeam.set((row as any).team_id, teamTotal);
-      // NOTE: computeIncompleteLineupPenalty isn't applied -- see file-level comment.
-    }
 
-    const { data: weekMatchups } = await supabase
-      .from('matchups')
-      .select('team_a_id, team_b_id')
-      .eq('league_id', leagueId)
-      .eq('week', weekStr);
+      const { data: weekMatchups } = await supabase
+        .from('matchups')
+        .select('team_a_id, team_b_id')
+        .eq('league_id', leagueId)
+        .eq('week', weekStr);
 
-    for (const m of weekMatchups ?? []) {
-      const aScore = weeklyScoreByTeam.get(m.team_a_id);
-      const bScore = weeklyScoreByTeam.get(m.team_b_id);
-      if (aScore == null || bScore == null) continue;
-      const isTie = aScore === bScore;
-      const winnerId = isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id;
-      await supabase.rpc('upsert_matchup', {
-        p_league_id: leagueId, p_week: weekStr,
-        p_team_a_id: m.team_a_id, p_team_b_id: m.team_b_id,
-        p_team_a_score: aScore, p_team_b_score: bScore,
-        p_winner_id: winnerId, p_is_tie: isTie,
-      });
-    }
-
-    // Recompute standings from scratch across the whole season, same design as
-    // engine/standings.ts's computeStandings -- upsert_standing takes the full
-    // recomputed line, not a delta.
-    const { data: teams } = await supabase.from('teams').select('id').eq('league_id', leagueId);
-    const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
-    const { data: allRosterRows } = await supabase
-      .from('weekly_rosters')
-      .select('team_id, wagers(status), teams!inner(league_id)')
-      .eq('teams.league_id', leagueId);
-
-    const standings = new Map(
-      (teams ?? []).map((t) => [t.id, { wins: 0, losses: 0, ties: 0, totalPL: 0, betsWon: 0, betsLost: 0, betsPushed: 0, bestWeekPL: -Infinity, weeklyScores: {} as Record<string, number> }]),
-    );
-    for (const m of allMatchups ?? []) {
-      if (m.team_a_score == null || m.team_b_score == null) continue;
-      const a = standings.get(m.team_a_id);
-      const b = standings.get(m.team_b_id);
-      if (!a || !b) continue;
-      a.weeklyScores[m.week] = m.team_a_score;
-      b.weeklyScores[m.week] = m.team_b_score;
-      a.totalPL += m.team_a_score;
-      b.totalPL += m.team_b_score;
-      a.bestWeekPL = Math.max(a.bestWeekPL, m.team_a_score);
-      b.bestWeekPL = Math.max(b.bestWeekPL, m.team_b_score);
-      if (m.is_tie) { a.ties++; b.ties++; }
-      else if (m.winner_id === m.team_a_id) { a.wins++; b.losses++; }
-      else if (m.winner_id === m.team_b_id) { b.wins++; a.losses++; }
-    }
-    for (const row of allRosterRows ?? []) {
-      const s = standings.get((row as any).team_id);
-      if (!s) continue;
-      for (const w of (row as any).wagers ?? []) {
-        if (w.status === 'won') s.betsWon++;
-        else if (w.status === 'lost') s.betsLost++;
-        else if (w.status === 'push') s.betsPushed++;
+      for (const m of weekMatchups ?? []) {
+        const aScore = weeklyScoreByTeam.get(m.team_a_id);
+        const bScore = weeklyScoreByTeam.get(m.team_b_id);
+        if (aScore == null || bScore == null) continue;
+        const isTie = aScore === bScore;
+        const winnerId = isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id;
+        await supabase.rpc('upsert_matchup', {
+          p_league_id: leagueId, p_week: weekStr,
+          p_team_a_id: m.team_a_id, p_team_b_id: m.team_b_id,
+          p_team_a_score: aScore, p_team_b_score: bScore,
+          p_winner_id: winnerId, p_is_tie: isTie,
+        });
       }
-    }
-    for (const [teamId, s] of standings) {
-      await supabase.rpc('upsert_standing', {
-        p_team_id: teamId, p_wins: s.wins, p_losses: s.losses, p_ties: s.ties,
-        p_total_pl: s.totalPL, p_bets_won: s.betsWon, p_bets_lost: s.betsLost, p_bets_pushed: s.betsPushed,
-        p_best_week_pl: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL, p_weekly_scores: s.weeklyScores,
-      });
-    }
 
-    summary.push({ leagueId, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length });
+      // Recompute standings from scratch across the whole season.
+      const { data: teams } = await supabase.from('teams').select('id, conference_id').eq('league_id', leagueId);
+      const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
+      const { data: allRosterRows } = await supabase
+        .from('weekly_rosters')
+        .select('team_id, wagers(status), teams!inner(league_id)')
+        .eq('teams.league_id', leagueId);
+
+      const standingsMap = new Map(
+        (teams ?? []).map((t) => [t.id, { teamId: t.id, wins: 0, losses: 0, ties: 0, totalPL: 0, betsWon: 0, betsLost: 0, betsPushed: 0, bestWeekPL: -Infinity, weeklyScores: {} as Record<string, number> }]),
+      );
+      for (const m of allMatchups ?? []) {
+        if (m.team_a_score == null || m.team_b_score == null) continue;
+        const a = standingsMap.get(m.team_a_id);
+        const b = standingsMap.get(m.team_b_id);
+        if (!a || !b) continue;
+        a.weeklyScores[m.week] = m.team_a_score;
+        b.weeklyScores[m.week] = m.team_b_score;
+        a.totalPL += m.team_a_score;
+        b.totalPL += m.team_b_score;
+        a.bestWeekPL = Math.max(a.bestWeekPL, m.team_a_score);
+        b.bestWeekPL = Math.max(b.bestWeekPL, m.team_b_score);
+        if (m.is_tie) { a.ties++; b.ties++; }
+        else if (m.winner_id === m.team_a_id) { a.wins++; b.losses++; }
+        else if (m.winner_id === m.team_b_id) { b.wins++; a.losses++; }
+      }
+      for (const row of allRosterRows ?? []) {
+        const s = standingsMap.get((row as any).team_id);
+        if (!s) continue;
+        for (const w of (row as any).wagers ?? []) {
+          if (w.status === 'won') s.betsWon++;
+          else if (w.status === 'lost') s.betsLost++;
+          else if (w.status === 'push') s.betsPushed++;
+        }
+      }
+      for (const [teamId, s] of standingsMap) {
+        await supabase.rpc('upsert_standing', {
+          p_team_id: teamId, p_wins: s.wins, p_losses: s.losses, p_ties: s.ties,
+          p_total_pl: s.totalPL, p_bets_won: s.betsWon, p_bets_lost: s.betsLost, p_bets_pushed: s.betsPushed,
+          p_best_week_pl: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL, p_weekly_scores: s.weeklyScores,
+        });
+      }
+
+      // --- Automatic season progression (only once every real_games row for
+      // this week is final) -----------------------------------------------
+      let advancement: Record<string, unknown> | null = null;
+      if (weekComplete) {
+        const standingLines: StandingLine[] = [...standingsMap.values()].map((s) => ({
+          teamId: s.teamId, wins: s.wins, losses: s.losses, ties: s.ties, totalPL: s.totalPL,
+          betsWon: s.betsWon, betsLost: s.betsLost, bestWeekPL: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL,
+        }));
+        const matchupLines: MatchupLine[] = (allMatchups ?? []).map((m) => ({ teamAId: m.team_a_id, teamBId: m.team_b_id, winnerId: m.winner_id }));
+        const sorted = sortStandings(standingLines, matchupLines);
+        const teamCount = (teams ?? []).length || league.target_team_count || sorted.length;
+
+        let newWeek: string = weekStr;
+        let newPhase: string = league.season_phase;
+        let newBracket: PlayoffBracket | null = (league.bracket as PlayoffBracket | null) ?? null;
+        let seasonJustCompleted = false;
+
+        if (league.season_phase === 'regular') {
+          const regWeeks = regularSeasonWeeksFor(fieldSize, settings.eliminationType);
+          const currentWeekNum = Number(weekStr);
+          if (Number.isFinite(currentWeekNum) && currentWeekNum < regWeeks) {
+            newWeek = String(currentWeekNum + 1);
+            newPhase = 'regular';
+          } else {
+            // Regular season just ended -- build and seed the playoff bracket.
+            let bracket: PlayoffBracket;
+            const conferenceIds = new Set((teams ?? []).map((t: any) => t.conference_id).filter(Boolean));
+            if (settings.conferencesEnabled && conferenceIds.size === 2 && conferenceBracketSupported(fieldSize, settings.eliminationType, 2)) {
+              const [confA, confB] = [...conferenceIds];
+              const seedsA = sorted.filter((s) => (teams ?? []).find((t: any) => t.id === s.teamId)?.conference_id === confA).map((s) => s.teamId);
+              const seedsB = sorted.filter((s) => (teams ?? []).find((t: any) => t.id === s.teamId)?.conference_id === confB).map((s) => s.teamId);
+              bracket = buildConferenceBracket([seedsA, seedsB], fieldSize);
+            } else {
+              bracket = buildBracket(sorted.slice(0, fieldSize).map((s) => s.teamId), fieldSize, settings.eliminationType);
+            }
+            const firstPlayoffWeek = playoffWeekSequence(fieldSize, settings.eliminationType)[0] ?? 'WC';
+            bracket = advanceBracket(bracket, null, () => null, firstPlayoffWeek);
+            newWeek = String(firstPlayoffWeek);
+            newPhase = 'playoffs';
+            newBracket = bracket;
+          }
+        } else if (league.season_phase === 'playoffs' && newBracket) {
+          const sequence = playoffWeekSequence(fieldSize, settings.eliminationType);
+          const settledWeekId = parseWeekId(weekStr);
+          const currentIdx = sequence.findIndex((w) => String(w) === weekStr);
+          // Fallback for the rare bracket-reset round, which sits one week past
+          // the precomputed sequence (only reachable in double-elimination).
+          const nextWeekId: WeekId = currentIdx >= 0 && currentIdx + 1 < sequence.length
+            ? sequence[currentIdx + 1]
+            : (typeof settledWeekId === 'number' ? settledWeekId + 1 : 'CONF');
+          const scoresFor = (teamId: string): number | null => weeklyScoreByTeam.get(teamId) ?? null;
+          const advanced = advanceBracket(newBracket, settledWeekId, scoresFor, nextWeekId);
+          newBracket = advanced;
+          if (advanced.championId) {
+            newPhase = 'complete';
+            newWeek = weekStr; // season is over -- leave current_week as the final played week
+            seasonJustCompleted = true;
+          } else {
+            newPhase = 'playoffs';
+            newWeek = String(nextWeekId);
+          }
+        }
+
+        // Prize pool -- advances on every settled week, regular season or
+        // playoffs, same as the client engine did.
+        let pool = (league.prize_pool as PrizePool | null) ?? null;
+        if (!pool && settings.buyInEnabled) {
+          const initial = teamCount * settings.buyInAmount;
+          pool = { initial, current: initial, locked: false, history: [] };
+        }
+        if (pool && !pool.locked) {
+          const multipliers = settings.poolMultipliers.enabled && league.season_phase === 'regular'
+            ? computeStandingMultipliers(standingLines, settings.poolMultipliers.basis, settings.poolMultipliers.spread)
+            : Object.fromEntries(standingLines.map((s) => [s.teamId, 1]));
+          pool = advancePoolForWeek(pool, parseWeekId(weekStr), weeklyScoreByTeam, settings.weeklyCredits, teamCount, multipliers);
+          if (seasonJustCompleted) pool = lockPool(pool);
+        }
+
+        // Optimistic-concurrency guard: only write if this league is still
+        // where we started (protects against two overlapping cron runs).
+        const { error: updateErr } = await supabase
+          .from('leagues')
+          .update({ current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool })
+          .eq('id', leagueId)
+          .eq('current_week', weekStr)
+          .eq('season_phase', league.season_phase);
+        advancement = { from: `${league.season_phase} ${weekStr}`, to: `${newPhase} ${newWeek}`, updateErr: updateErr?.message ?? null };
+      }
+
+      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement });
+    }
   }
 
-  return new Response(JSON.stringify({ ok: true, week: weekStr, finalGames: games.length, leagues: summary }), {
+  return new Response(JSON.stringify({ ok: true, weeksProcessed: weeksToProcess, leagues: summary }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

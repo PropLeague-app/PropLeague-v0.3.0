@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import type { LeagueSettings } from '../types';
 
 export interface RealLeagueMeta {
   id: string;
@@ -7,6 +8,12 @@ export interface RealLeagueMeta {
   commissionerTeamId: string | null;
   targetTeamCount: number;
   isPublic: boolean;
+  /** Server-persisted LeagueSettings (see chat: previously 100% client-local,
+   * which blocked server-side automatic advancement from ever knowing a
+   * league's playoff/elimination/pool-multiplier configuration). Null for a
+   * league whose settings haven't been saved to Supabase yet -- callers fall
+   * back to DEFAULT_LEAGUE_SETTINGS the same way the edge functions do. */
+  settings: Partial<LeagueSettings> | null;
 }
 
 export interface RealLeagueTeam {
@@ -120,7 +127,7 @@ export async function joinRealLeague(params: {
 export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<RealLeagueMeta>> {
   const { data, error } = await supabase
     .from('leagues')
-    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public')
+    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings')
     .eq('id', leagueId)
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? 'League not found.' };
@@ -132,7 +139,19 @@ export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<R
     commissionerTeamId: data.commissioner_team_id,
     targetTeamCount: data.target_team_count,
     isPublic: data.is_public,
+    settings: data.settings ?? null,
   };
+}
+
+/** Persists a league's full settings object to Supabase -- the write-side of
+ * Step "persist league settings" (see chat). Called right after a league is
+ * created (CreateLeague.tsx) and on every commissioner Settings save
+ * (useAppStore's updateSettings), so settle-week and every other device
+ * always see the real configuration instead of guessing defaults. */
+export async function updateLeagueSettingsRemote(leagueId: string, settings: LeagueSettings): Promise<ServiceResult<object>> {
+  const { error } = await supabase.from('leagues').update({ settings }).eq('id', leagueId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<{ teams: RealLeagueTeam[] }>> {

@@ -21,6 +21,7 @@ const SPORT_KEY = 'americanfootball_nfl';
 interface OddsApiScoreEvent {
   id: string;
   completed: boolean;
+  commence_time: string;
   home_team: string;
   away_team: string;
   scores: { name: string; score: string }[] | null;
@@ -36,28 +37,41 @@ Deno.serve(async (_req) => {
   }
   const events = (await res.json()) as OddsApiScoreEvent[];
 
-  let updated = 0;
-  let completedCount = 0;
+  let finalCount = 0;
+  let liveCount = 0;
+  let completedCount = 0; // kept for the same response shape as before -- alias of finalCount
   let noMatchCount = 0;
   const errors: string[] = [];
   const noMatchSample: { id: string; home_team: string; away_team: string }[] = [];
+  const now = Date.now();
 
   for (const event of events) {
-    if (!event.completed || !event.scores) continue;
-    completedCount++;
-    const homeScoreRow = event.scores.find((s) => s.name === event.home_team);
-    const awayScoreRow = event.scores.find((s) => s.name === event.away_team);
-    if (!homeScoreRow || !awayScoreRow) continue;
+    const kickoff = new Date(event.commence_time).getTime();
+    if (Number.isNaN(kickoff) || kickoff > now) continue; // hasn't kicked off yet -- leave as 'upcoming'
 
-    const { data, error } = await supabase
-      .from('real_games')
-      .update({
-        status: 'final',
-        home_score: Number(homeScoreRow.score),
-        away_score: Number(awayScoreRow.score),
-      })
-      .eq('id', event.id)
-      .select('id');
+    let patch: Record<string, unknown>;
+    if (event.completed && event.scores) {
+      const homeScoreRow = event.scores.find((s) => s.name === event.home_team);
+      const awayScoreRow = event.scores.find((s) => s.name === event.away_team);
+      if (!homeScoreRow || !awayScoreRow) continue;
+      patch = { status: 'final', home_score: Number(homeScoreRow.score), away_score: Number(awayScoreRow.score) };
+      completedCount++;
+    } else {
+      // Kicked off, not completed yet -- mark live. If the API is already reporting
+      // a live score for it, carry that along too (UNVERIFIED here -- I couldn't
+      // confirm from where this was written whether The Odds API populates `scores`
+      // for in-progress games before `completed` flips true, or only once final.
+      // Harmless either way: home_score/away_score just won't update mid-game if it
+      // doesn't, status still correctly flips to 'live').
+      const homeScoreRow = event.scores?.find((s) => s.name === event.home_team);
+      const awayScoreRow = event.scores?.find((s) => s.name === event.away_team);
+      patch = { status: 'live' };
+      if (homeScoreRow) patch.home_score = Number(homeScoreRow.score);
+      if (awayScoreRow) patch.away_score = Number(awayScoreRow.score);
+      liveCount++;
+    }
+
+    const { data, error } = await supabase.from('real_games').update(patch).eq('id', event.id).select('id');
 
     if (error) {
       errors.push(`${event.id}: ${error.message}`);
@@ -66,8 +80,8 @@ Deno.serve(async (_req) => {
       // id-matching assumption flagged in the file header may be wrong.
       noMatchCount++;
       if (noMatchSample.length < 5) noMatchSample.push({ id: event.id, home_team: event.home_team, away_team: event.away_team });
-    } else {
-      updated++;
+    } else if (patch.status === 'final') {
+      finalCount++;
     }
   }
 
@@ -76,7 +90,8 @@ Deno.serve(async (_req) => {
       ok: errors.length === 0,
       eventsFromApi: events.length,
       completedEvents: completedCount,
-      updated,
+      updated: finalCount,
+      markedLive: liveCount,
       noMatchInRealGames: noMatchCount,
       noMatchSample,
       errors,

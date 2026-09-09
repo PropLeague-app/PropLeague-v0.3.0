@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { BottomTabBar } from './BottomTabBar';
-import { DevPanel } from '../dev/DevPanel';
 
 export function MobileShell({ children }: { children: ReactNode }) {
   return (
@@ -23,7 +22,6 @@ export function MobileShell({ children }: { children: ReactNode }) {
           {children}
         </div>
         <BottomTabBar />
-        <DevPanel />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import type { Matchup, PlayoffBracket, TeamStanding, WagerStatus, WeekId } from '../types';
+import type { Matchup, PlayoffBracket, PrizePool, TeamStanding, WagerStatus, WeekId } from '../types';
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -139,8 +139,15 @@ export async function fetchLeagueStandings(leagueId: string): Promise<ServiceRes
   return { ok: true, standings };
 }
 
-export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null; logoStoragePath: string | null }>> {
-  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket, logo_storage_path').eq('id', leagueId).single();
+export async function fetchLeagueProgress(leagueId: string): Promise<ServiceResult<{ currentWeek: WeekId; seasonPhase: string; bracket: PlayoffBracket | null; prizePool: PrizePool | null; logoStoragePath: string | null }>> {
+  const { data, error } = await supabase.from('leagues').select('current_week, season_phase, bracket, prize_pool, logo_storage_path').eq('id', leagueId).single();
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load league.' };
-  return { ok: true, currentWeek: parseWeekId(data.current_week), seasonPhase: data.season_phase, bracket: data.bracket, logoStoragePath: data.logo_storage_path };
+  return {
+    ok: true,
+    currentWeek: parseWeekId(data.current_week),
+    seasonPhase: data.season_phase,
+    bracket: data.bracket,
+    prizePool: data.prize_pool ?? null,
+    logoStoragePath: data.logo_storage_path,
+  };
 }

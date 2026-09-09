@@ -1,13 +1,13 @@
 import type { League } from '../types';
-import { advanceLeagueWeek } from '../engine/simulateWeek';
+import { advanceLeagueWeek, type AdvanceWeekOptions } from '../engine/simulateWeek';
 import { resetLeagueSeason } from './leagueService';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { ClaimTracker } from '../engine/duplicatePicks';
 import { rosterKey } from '../engine/rosterSlots';
 import { gamesForWeek } from '../data/seed';
 
-export function advanceWeek(league: League): League {
-  return advanceLeagueWeek(league);
+export function advanceWeek(league: League, options?: AdvanceWeekOptions): League {
+  return advanceLeagueWeek(league, options);
 }
 
 /** Multi-week dev jump (manual v0.03 §5 #10) — unlike a single Advance Week click,

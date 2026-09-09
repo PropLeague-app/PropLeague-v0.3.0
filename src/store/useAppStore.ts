@@ -10,7 +10,7 @@ import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { getGame } from '../services/oddsService';
-import { addSimulatedTeamRemote, fetchLeagueTeams, fetchMyLeagueMemberships, fetchLeagueMeta } from '../services/supabaseLeague';
+import { addSimulatedTeamRemote, fetchLeagueTeams, fetchMyLeagueMemberships, fetchLeagueMeta, updateLeagueSettingsRemote } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
@@ -198,7 +198,7 @@ export const useAppStore = create<AppState>()(
 
       setCurrentLeague: (leagueId) => set({ currentLeagueId: leagueId }),
 
-      updateSettings: (leagueId, partial) =>
+      updateSettings: (leagueId, partial) => {
         set((state) =>
           updateLeague(state, leagueId, (league) => {
             const updated = leagueService.updateLeagueSettings(league, partial);
@@ -207,7 +207,15 @@ export const useAppStore = create<AppState>()(
             // field in Settings is visibly effective everywhere, not just in settings.
             return partial.leagueName != null ? { ...updated, name: partial.leagueName } : updated;
           }),
-        ),
+        );
+        // Was local-only until now (see chat) -- every commissioner Settings save is the
+        // only place league settings change post-creation, so this is the one spot that
+        // needs to push them to Supabase for settle-week's automatic season progression
+        // (and every other member's device) to ever see the real values. Fire-and-forget:
+        // the local state above is already updated optimistically.
+        const updatedLeague = get().leagues[leagueId];
+        if (updatedLeague) void updateLeagueSettingsRemote(leagueId, updatedLeague.settings);
+      },
 
       // manual v0.2.0 §6 #12: the commissioner role must move to another team before
       // the current holder can leave — enforced by leaveLeague below refusing to
@@ -479,6 +487,7 @@ export const useAppStore = create<AppState>()(
               currentWeek: progressResult.ok ? progressResult.currentWeek : league.currentWeek,
               seasonPhase: progressResult.ok ? (progressResult.seasonPhase as League['seasonPhase']) : league.seasonPhase,
               bracket: progressResult.ok ? progressResult.bracket : league.bracket,
+              prizePool: progressResult.ok ? progressResult.prizePool : league.prizePool,
               activity,
               teams,
               ...leagueLogo,
@@ -646,6 +655,7 @@ export const useAppStore = create<AppState>()(
             targetTeamCount: metaResult.targetTeamCount,
             isPublic: metaResult.isPublic,
             teams: teamsResult.teams,
+            settingsOverrides: metaResult.settings,
           });
           builtLeagues[league.id] = {
             ...league,

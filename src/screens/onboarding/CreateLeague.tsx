@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import * as leagueService from '../../services/leagueService';
-import { createRealLeague } from '../../services/supabaseLeague';
+import { createRealLeague, updateLeagueSettingsRemote } from '../../services/supabaseLeague';
 import { postSystemActivityRemote } from '../../services/supabaseActivity';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { Toggle } from '../../components/common/Toggle';
@@ -95,6 +95,12 @@ export function CreateLeague() {
       userLogoColor,
     });
     addLeague(league);
+    // Settings were built entirely client-side above (leagueService.createLeague) and,
+    // until now, never left this device — every other member's app, and the server-side
+    // settle-week automation, saw only DEFAULT_LEAGUE_SETTINGS. Persist the real chosen
+    // settings right away so they're there before anyone else's hydrateMyLeagues reads
+    // this league, and before the season can ever need them (playoff field size, etc).
+    await updateLeagueSettingsRemote(result.leagueId, league.settings);
     // The welcome item already shows immediately (built into league.activity above);
     // this makes it visible to whoever joins later too, like a pinned channel intro.
     // (Join-time's own "Welcome to X!" stays local-only — see chat: it's just a

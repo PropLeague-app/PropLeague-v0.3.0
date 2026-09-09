@@ -146,6 +146,12 @@ export function buildLeagueFromRealTeams(params: {
   targetTeamCount: number;
   isPublic: boolean;
   teams: RealTeamInput[];
+  /** Server-persisted settings for this league, when available (see chat: settings
+   * are now written to Supabase at creation and on every commissioner save). Merged
+   * over DEFAULT_LEAGUE_SETTINGS the same way createLeague's settingsOverrides works,
+   * so a returning/new-device user sees the league's real configuration instead of
+   * always-default values. */
+  settingsOverrides?: Partial<LeagueSettings> | null;
 }): League {
   const teams: LeagueTeam[] = params.teams.map((t) => ({
     id: t.id,
@@ -163,6 +169,7 @@ export function buildLeagueFromRealTeams(params: {
 
   const settings: LeagueSettings = {
     ...DEFAULT_LEAGUE_SETTINGS,
+    ...(params.settingsOverrides ?? {}),
     leagueName: params.name,
     isPublic: params.isPublic,
   };

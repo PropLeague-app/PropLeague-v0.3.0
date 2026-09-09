@@ -860,10 +860,10 @@ export function SettingsHome() {
         </>
       )}
 
-      {/* manual v0.2.1 §5 #6: moved to the bottom of the page, below Advanced Settings,
-          as its own always-visible block — previously sat at the very top, easy to
-          confuse with a quick-navigation shortcut rather than the more consequential
-          league-membership actions it actually is. */}
+      {/* The "Advance Past Week" commissioner button that used to live here is gone --
+          season progression (week advance, live-game status, playoff bracket seeding,
+          prize pool) is now fully automatic server-side (settle-week's cron schedule),
+          per Hunter's explicit "everything should work on its own" call. See chat. */}
       <SectionHeader>League</SectionHeader>
       <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
         <button onClick={() => goTo('/create-league')} className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left">

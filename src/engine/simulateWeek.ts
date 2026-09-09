@@ -1,4 +1,4 @@
-import type { ActivityItem, League, Matchup, MomentCategory, PlayoffFieldSize, RosterSlotState, WeeklyRoster, WeekId } from '../types';
+import type { ActivityItem, League, Matchup, MomentCategory, PlayoffFieldSize, RosterSlotState, TeamStanding, WeeklyRoster, WeekId } from '../types';
 import { weekLabel } from '../types';
 import { resultForGame, gameById, gamesForWeek } from '../data/seed';
 import { settleWager, isWagerScratched } from './settlement';
@@ -71,6 +71,22 @@ export interface AdvanceWeekOptions {
    * (manual v0.03 §5 #10) — only ever passed true from the "Simulate to Week N"
    * multi-week dev jump, never from a single Advance Week click during normal play. */
   autoFillUser?: boolean;
+  /** SUPERSEDED -- kept only so this function's signature/behavior doesn't change
+   * out from under any caller that still passes it, but nothing in the app calls
+   * this with `realWeekResults` set anymore. Real-league season progression
+   * (wager grading, matchup scoring, standings, playoff bracket build/advance,
+   * prize pool) is now fully automatic and server-side, done directly against
+   * Supabase by the settle-week edge function on its own cron schedule -- see
+   * supabase/functions/settle-week/index.ts and
+   * supabase/functions/_shared/playoffLogic.ts. The client never runs this engine
+   * for a real league anymore; it just reads the results back via
+   * useAppStore.ts's loadLeagueResults. Weekly Moments (bet-specific awards) are
+   * the one piece NOT ported server-side yet -- real leagues simply won't show
+   * new Moments cards until that follow-up happens (see chat). */
+  realWeekResults?: {
+    matchupsByWeek: Record<string, Matchup[]>;
+    standings: TeamStanding[];
+  };
 }
 
 export function advanceLeagueWeek(league: League, options: AdvanceWeekOptions = {}): League {
@@ -78,29 +94,36 @@ export function advanceLeagueWeek(league: League, options: AdvanceWeekOptions = 
 
   const week = league.currentWeek;
   const activeTeamIds = activeTeamsForWeek(league, week);
+  const weekKey = String(week);
   const rostersByTeamWeek = { ...league.rostersByTeamWeek };
   const weeklyScores = new Map<string, number>();
-
-  for (const teamId of activeTeamIds) {
-    const key = rosterKey(teamId, week);
-    const existing = rostersByTeamWeek[key] ?? buildEmptyRoster(teamId, week, league.settings.lineupSlots);
-    const settled = settleRoster(existing);
-    rostersByTeamWeek[key] = settled;
-    weeklyScores.set(teamId, computeWeeklyScore(settled, league.settings));
-  }
-
-  const matchupsByWeek = { ...league.matchupsByWeek };
-  const weekKey = String(week);
-  if (league.seasonPhase === 'regular') {
-    matchupsByWeek[weekKey] = (matchupsByWeek[weekKey] ?? []).map((m) => scoreMatchup(m, weeklyScores));
-  }
-
+  let matchupsByWeek = { ...league.matchupsByWeek };
   let standings = league.standings;
-  if (league.seasonPhase === 'regular') {
-    standings = sortStandings(
-      computeStandings(league.teams.map((t) => t.id), matchupsByWeek, rostersByTeamWeek),
-      matchupsByWeek,
-    );
+
+  if (options.realWeekResults && league.seasonPhase === 'regular') {
+    // Real path -- see the doc comment on AdvanceWeekOptions.realWeekResults.
+    matchupsByWeek = options.realWeekResults.matchupsByWeek;
+    standings = options.realWeekResults.standings;
+    for (const m of matchupsByWeek[weekKey] ?? []) {
+      if (m.teamAScore != null) weeklyScores.set(m.teamAId, m.teamAScore);
+      if (m.teamBScore != null) weeklyScores.set(m.teamBId, m.teamBScore);
+    }
+  } else {
+    for (const teamId of activeTeamIds) {
+      const key = rosterKey(teamId, week);
+      const existing = rostersByTeamWeek[key] ?? buildEmptyRoster(teamId, week, league.settings.lineupSlots);
+      const settled = settleRoster(existing);
+      rostersByTeamWeek[key] = settled;
+      weeklyScores.set(teamId, computeWeeklyScore(settled, league.settings));
+    }
+
+    if (league.seasonPhase === 'regular') {
+      matchupsByWeek[weekKey] = (matchupsByWeek[weekKey] ?? []).map((m) => scoreMatchup(m, weeklyScores));
+      standings = sortStandings(
+        computeStandings(league.teams.map((t) => t.id), matchupsByWeek, rostersByTeamWeek),
+        matchupsByWeek,
+      );
+    }
   }
 
   let prizePool = ensurePool(league);
