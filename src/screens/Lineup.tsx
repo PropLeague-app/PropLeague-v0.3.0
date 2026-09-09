@@ -70,6 +70,9 @@ export function Lineup() {
         <div className="mt-3">
           <BudgetBar allocated={validation.totalAllocated} total={league.settings.weeklyCredits} />
         </div>
+        <p className="mt-1.5 text-[11px] text-text-muted">
+          Picks save instantly as you make them — no need to wait to submit.
+        </p>
       </div>
 
       <div className="flex flex-col gap-2.5 px-4 pb-32">
@@ -121,8 +124,14 @@ export function Lineup() {
           onClick={() => submitLineup(league.id, userTeam.id, league.currentWeek)}
           className="w-full bg-primary text-white font-semibold py-3 rounded-xl disabled:opacity-40"
         >
-          {roster.submitted && validation.valid ? 'Lineup Saved ✓' : 'Save Lineup'}
+          {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>
+        {!(roster.submitted && validation.valid) && (
+          <p className="text-[11px] text-text-muted text-center px-1">
+            Your picks are already saved — this just marks the roster complete once it's full and
+            in budget. Left incomplete at kickoff, any unused credits count as a loss.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -22,10 +22,14 @@
 // roster data in a shape real settlement doesn't have a working equivalent
 // for yet -- explicitly deferred, flagged in chat, not a bug.
 //
-// KNOWN GAP (carried over): computeIncompleteLineupPenalty isn't applied --
-// needs each league's weeklyCredits/lineupSlots, which now technically *are*
-// available via the new `settings` column, but wiring that penalty in is a
-// separate follow-up, not attempted in this pass.
+// Incomplete-lineup penalty (per Hunter's explicit choice in chat to port
+// the original spec's stricter behavior rather than leave it unenforced):
+// once a week is fully final, any team that left a roster slot empty or
+// never hit submit eats its unallocated weekly credits as a straight loss --
+// including a team that placed zero picks all week and has no
+// weekly_rosters row at all. Mirrors src/engine/scoring.ts's
+// computeIncompleteLineupPenalty; only assessed once weekComplete so a team
+// still filling in a later-week slot isn't penalized mid-week.
 //
 // Grading logic mirrors src/engine/realGameResult.ts + engine/settlement.ts's
 // settleWager -- duplicated rather than imported, to avoid a cross-directory
@@ -98,7 +102,13 @@ interface SettingsSlice {
   buyInEnabled: boolean;
   buyInAmount: number;
   poolMultipliers: { enabled: boolean; basis: 'rank' | 'record' | 'seasonPL'; spread: number };
+  /** Needed to know how many slots a full roster actually has, for the
+   * incomplete-lineup penalty (see chat: engine/scoring.ts's
+   * computeIncompleteLineupPenalty, ported into this function below). */
+  lineupSlots: Record<string, number>;
 }
+
+const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, ML: 1 };
 
 const DEFAULT_SETTINGS: SettingsSlice = {
   weeklyCredits: 100,
@@ -108,6 +118,7 @@ const DEFAULT_SETTINGS: SettingsSlice = {
   buyInEnabled: false,
   buyInAmount: 0,
   poolMultipliers: { enabled: false, basis: 'rank', spread: 0 },
+  lineupSlots: DEFAULT_LINEUP_SLOTS,
 };
 
 function settingsFrom(raw: unknown): SettingsSlice {
@@ -121,6 +132,7 @@ function settingsFrom(raw: unknown): SettingsSlice {
     buyInEnabled: r.buyInEnabled ?? DEFAULT_SETTINGS.buyInEnabled,
     buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
     poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...(r.poolMultipliers ?? {}) },
+    lineupSlots: r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_SETTINGS.lineupSlots,
   };
 }
 
@@ -238,9 +250,15 @@ Deno.serve(async (req) => {
       const settings = settingsFrom(league.settings);
       const fieldSize = fieldSizeFor(settings);
 
+      // Fetched up-front (not just later for standings) so a team that placed
+      // zero picks all week -- and thus has no weekly_rosters row at all -- can
+      // still be caught by the incomplete-lineup penalty below.
+      const { data: teams } = await supabase.from('teams').select('id, conference_id').eq('league_id', leagueId);
+      const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
+
       const { data: rosterRows } = await supabase
         .from('weekly_rosters')
-        .select('team_id, wagers(id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, status, settled_profit), teams!inner(league_id)')
+        .select('team_id, submitted, wagers(id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, status, settled_profit), teams!inner(league_id)')
         .eq('teams.league_id', leagueId)
         .eq('week', weekStr);
 
@@ -248,7 +266,8 @@ Deno.serve(async (req) => {
       let gradedCount = 0;
       for (const row of rosterRows ?? []) {
         let teamTotal = 0;
-        for (const wager of (row as any).wagers ?? []) {
+        const wagers = (row as any).wagers ?? [];
+        for (const wager of wagers) {
           if (wager.status !== 'pending') {
             teamTotal += wager.settled_profit ?? 0;
             continue;
@@ -261,7 +280,33 @@ Deno.serve(async (req) => {
           teamTotal += profit;
           gradedCount++;
         }
+        // Incomplete-lineup penalty, ported from engine/scoring.ts's
+        // computeIncompleteLineupPenalty (see chat): once the week is fully
+        // final, any weekly credits a team never allocated -- because it left
+        // a slot empty or never hit submit -- count as a straight loss,
+        // matching the original product spec. Gated on weekComplete so a
+        // team still filling in a later slot isn't penalized mid-week.
+        if (weekComplete) {
+          const allocated = wagers.reduce((sum: number, w: any) => sum + (w.stake ?? 0), 0);
+          const unallocated = Math.max(0, settings.weeklyCredits - allocated);
+          const hasEmptySlot = wagers.length < totalSlots;
+          if (!(row as any).submitted || hasEmptySlot) {
+            teamTotal -= unallocated;
+          }
+        }
         weeklyScoreByTeam.set((row as any).team_id, teamTotal);
+      }
+
+      if (weekComplete) {
+        // Teams with zero picks all week have no weekly_rosters row at all,
+        // so they never entered the loop above -- they still owe the full
+        // incomplete-lineup penalty once the week is final.
+        for (const t of teams ?? []) {
+          const teamId = (t as any).id as string;
+          if (!weeklyScoreByTeam.has(teamId)) {
+            weeklyScoreByTeam.set(teamId, -settings.weeklyCredits);
+          }
+        }
       }
 
       const { data: weekMatchups } = await supabase
@@ -285,7 +330,7 @@ Deno.serve(async (req) => {
       }
 
       // Recompute standings from scratch across the whole season.
-      const { data: teams } = await supabase.from('teams').select('id, conference_id').eq('league_id', leagueId);
+      // (teams was already fetched above, before the roster-grading loop.)
       const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
       const { data: allRosterRows } = await supabase
         .from('weekly_rosters')

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -18,12 +19,22 @@ export function MatchupDetail() {
   const { matchupId } = useParams<{ matchupId: string }>();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
+  const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+
+  const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
+
+  // Rosters for this matchup's week aren't guaranteed to already be in local state --
+  // previously this screen only ever read whatever Lineup.tsx happened to have loaded
+  // as a side effect of a completely separate visit, so a viewer who never opened the
+  // Lineup tab this session (the commissioner checking in on someone else's matchup,
+  // say) would see every slot on both sides as "Empty" and a fully-penalized score,
+  // even though the real picks were sitting in Supabase the whole time (see chat).
+  useEffect(() => {
+    if (league && matchup) loadWeekRosters(league.id, matchup.week);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league?.id, matchup?.week]);
 
   if (!league) return null;
-
-  const matchup = Object.values(league.matchupsByWeek)
-    .flat()
-    .find((m) => m.id === matchupId);
   if (!matchup) return <div className="p-4 text-text-muted text-sm">Matchup not found.</div>;
 
   const teamA = league.teams.find((t) => t.id === matchup.teamAId);
@@ -56,9 +67,11 @@ export function MatchupDetail() {
     <div className="flex flex-col">
       <BackHeader title="Matchup" fallback="/home" />
       <div className="p-4 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
           <TeamHeader team={teamA} score={scoreA} isFinal={isFinal} />
-          <span className="text-xs text-text-muted">{weekLabel(matchup.week)}</span>
+          <span className="inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-raised text-text-muted">
+            {weekLabel(matchup.week)}
+          </span>
           <TeamHeader team={teamB} score={scoreB} isFinal={isFinal} reverse />
         </div>
 
@@ -104,10 +117,10 @@ function TeamHeader({
   reverse?: boolean;
 }) {
   return (
-    <div className={`flex items-center gap-2 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
+    <div className={`flex items-center gap-2 min-w-0 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
       <TeamLogo team={team} size="sm" />
-      <div>
-        <p className="text-xs font-medium max-w-[90px] truncate">{team.teamName}</p>
+      <div className="min-w-0">
+        <p className="text-xs font-medium truncate">{team.teamName}</p>
         <p className={`text-sm font-bold ${score >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(score)}</p>
         <p className="text-[10px] text-text-muted">{isFinal ? 'Final' : 'Live'}</p>
       </div>

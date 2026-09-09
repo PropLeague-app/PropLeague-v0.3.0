@@ -42,8 +42,12 @@ export function positionFillClasses(position: SlotPosition) {
 
 export function PositionBadge({ position }: { position: SlotPosition }) {
   return (
+    // min-w keeps every badge the same footprint regardless of label length (K vs.
+    // QB/RB/WR/TE/ML) -- without it, a screen laying out one badge per row in its own
+    // grid (MatchupDetail.tsx's matchup rows, e.g.) ends up with visibly uneven row
+    // widths, since each row's "auto" badge column resolves to a different size.
     <span
-      className={`inline-flex items-center justify-center text-[11px] font-bold px-1.5 py-0.5 rounded border ${POSITION_CLASSES[position]}`}
+      className={`inline-flex items-center justify-center min-w-[32px] text-[11px] font-bold px-1.5 py-0.5 rounded border ${POSITION_CLASSES[position]}`}
     >
       {position}
     </span>

@@ -22,6 +22,7 @@ export function LeagueHome() {
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
+  const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
   const [showAll, setShowAll] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceText, setAnnounceText] = useState('');
@@ -33,6 +34,15 @@ export function LeagueHome() {
     if (currentLeagueId) loadLeagueResults(currentLeagueId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLeagueId]);
+
+  // MatchupCard needs each team's roster to compute a live in-progress score (see
+  // chat: MatchupDetail.tsx had the same gap) -- without this, whichever matchups
+  // are shown here fall back to a flat $0 live score for any team whose roster this
+  // account hasn't already loaded some other way this session.
+  useEffect(() => {
+    if (currentLeagueId && league) loadWeekRosters(currentLeagueId, league.currentWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLeagueId, league?.currentWeek]);
 
   if (!league) {
     return (
