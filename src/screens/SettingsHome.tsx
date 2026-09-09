@@ -380,26 +380,6 @@ export function SettingsHome() {
         </div>
       )}
 
-      {isCommissioner && seasonNotStarted && (
-        <div className="bg-bg-card border border-dashed border-primary rounded-xl p-3 space-y-2">
-          <p className="text-sm font-semibold">Start the season</p>
-          <p className="text-xs text-text-muted">
-            Generates Week 1 matchups for the {league.teams.length} team{league.teams.length === 1 ? '' : 's'} currently in the league
-            and locks conferences (if enabled). You can still add simulated teams first from the invite screen, or start now with
-            whoever has joined so far — either way, this is the one thing that actually kicks the season off.
-          </p>
-          {startSeasonError && <p className="text-loss text-xs">{startSeasonError}</p>}
-          <button
-            disabled={startSeasonBusy || league.teams.length < 2}
-            onClick={handleStartSeason}
-            className="w-full bg-primary text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            {startSeasonBusy ? 'Starting…' : 'Start Season'}
-          </button>
-          {league.teams.length < 2 && <p className="text-[11px] text-text-muted">Need at least 2 teams first.</p>}
-        </div>
-      )}
-
       {league && userTeam && (
         <IdentityPicker
           key={`team-${userTeam.id}`}
@@ -422,6 +402,26 @@ export function SettingsHome() {
         />
       )}
       {logoUploadError && <p className="text-loss text-xs px-1">{logoUploadError}</p>}
+
+      {isCommissioner && seasonNotStarted && (
+        <div className="bg-bg-card border border-dashed border-primary rounded-xl p-3 space-y-2">
+          <p className="text-sm font-semibold">Start the season</p>
+          <p className="text-xs text-text-muted">
+            Generates Week 1 matchups for the {league.teams.length} team{league.teams.length === 1 ? '' : 's'} currently in the league
+            and locks conferences (if enabled). You can still add simulated teams first from the invite screen, or start now with
+            whoever has joined so far — either way, this is the one thing that actually kicks the season off.
+          </p>
+          {startSeasonError && <p className="text-loss text-xs">{startSeasonError}</p>}
+          <button
+            disabled={startSeasonBusy || league.teams.length < 2}
+            onClick={handleStartSeason}
+            className="w-full bg-primary text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-40"
+          >
+            {startSeasonBusy ? 'Starting…' : 'Start Season'}
+          </button>
+          {league.teams.length < 2 && <p className="text-[11px] text-text-muted">Need at least 2 teams first.</p>}
+        </div>
+      )}
 
       <SectionHeader>App Preferences</SectionHeader>
       <div className="bg-bg-card border border-border rounded-xl p-3 space-y-3">
@@ -448,6 +448,17 @@ export function SettingsHome() {
       {league && settings && (
         <>
           <SectionHeader>League Settings — Basic</SectionHeader>
+          {!isCommissioner && (
+            <p className="text-[11px] text-text-muted -mt-3 px-1">
+              Only the commissioner can edit league settings — everyone else sees them read-only below.
+            </p>
+          )}
+          {/* Commissioner-gated (see chat): everything from here down was editable by
+              any league member, which was never intentional -- rather than duplicate
+              every single control's disabled logic, the whole settings block is dimmed
+              and inert for non-commissioners in one place. It stays visible on purpose
+              so members can still see what's configured. */}
+          <div className={isCommissioner ? 'space-y-5' : 'space-y-5 opacity-50 pointer-events-none'}>
           {/* manual v0.2.0 §4 #9: moved here from a standalone spot above App
               Preferences — the league logo is a basic league-identity setting, so it
               belongs alongside league name/credits/slots. Keeps its own Save Changes
@@ -537,7 +548,7 @@ export function SettingsHome() {
               </label>
               <div className="flex items-center gap-2">
                 <button
-                  disabled={league.teams.length > 1}
+                  disabled={!seasonNotStarted}
                   onClick={() => updateTargetTeamCount(league.id, league.targetTeamCount - 1)}
                   className="w-8 h-8 rounded-lg border border-border text-text-muted disabled:opacity-30"
                 >
@@ -545,7 +556,7 @@ export function SettingsHome() {
                 </button>
                 <span className="flex-1 text-center text-sm">{league.targetTeamCount}</span>
                 <button
-                  disabled={league.teams.length > 1}
+                  disabled={!seasonNotStarted}
                   onClick={() => updateTargetTeamCount(league.id, league.targetTeamCount + 1)}
                   className="w-8 h-8 rounded-lg border border-border text-text-muted disabled:opacity-30"
                 >
@@ -553,9 +564,9 @@ export function SettingsHome() {
                 </button>
               </div>
               <p className="text-[11px] text-text-muted mt-1">
-                {league.teams.length > 1
-                  ? 'Locked once simulated teams join — resizing after that would leave the schedule and rosters inconsistent.'
-                  : 'Resizing before the league fills may change which playoff fields are available.'}
+                {!seasonNotStarted
+                  ? 'Locked once the season starts — resizing after that would leave the schedule and rosters inconsistent.'
+                  : 'Resizing before the season starts may change which playoff fields are available.'}
               </p>
             </div>
             <div>
@@ -764,7 +775,7 @@ export function SettingsHome() {
               <div className="pt-1 border-t border-border">
                 {(() => {
                   const eligible = conferencesEligible(league.targetTeamCount);
-                  const locked = league.teams.length > 1;
+                  const locked = !seasonNotStarted;
                   return (
                     <>
                       <ToggleRow
@@ -775,7 +786,7 @@ export function SettingsHome() {
                           !eligible
                             ? 'Requires an even team count (4+)'
                             : locked
-                              ? 'Assignment locks once the league is filled — adjust members below.'
+                              ? 'Assignment locks once the season starts — adjust members below.'
                               : undefined
                         }
                         onChange={(v) =>
@@ -991,6 +1002,7 @@ export function SettingsHome() {
               </p>
             </div>
           )}
+          </div>
         </>
       )}
 

@@ -203,8 +203,21 @@ export const useAppStore = create<AppState>()(
       fillWithSimulatedTeams: async (leagueId, teamCount) => {
         const league = get().leagues[leagueId];
         if (!league) return { ok: false, error: 'League not found.' };
+        if (Object.keys(league.matchupsByWeek).length > 0) return { ok: true }; // already started
+
         const slotsToFill = Math.max(0, teamCount - league.teams.length);
-        if (slotsToFill === 0) return { ok: true };
+        if (slotsToFill === 0) {
+          // Real invite-code joins alone already reached the target count --
+          // still need to actually start the season, just with no bots to add
+          // (see chat: this used to silently no-op here, leaving a fully-real,
+          // fully-joined league with no schedule and the invite screen's button
+          // about to disappear behind "Continue to League" anyway).
+          const updatedLeague = leagueService.startSeason(league);
+          await pushSeasonStart(leagueId, updatedLeague);
+          set((state) => updateLeague(state, leagueId, () => updatedLeague));
+          await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
+          return { ok: true };
+        }
 
         const identities = leagueService.generateSimulatedTeamIdentities(`${leagueId}-simteams`, slotsToFill);
         const withIds: (leagueService.SimulatedTeamIdentity & { id: string })[] = [];
@@ -239,16 +252,20 @@ export const useAppStore = create<AppState>()(
         return { ok: true };
       },
 
-      // manual v0.2.0 §2 #3: team count can only be resized pre-season — once
-      // simulated members have joined, the schedule/rosters/standings built around the
-      // old count already exist, so this mirrors the same "not yet filled" gate the UI
-      // enforces (league.teams.length <= 1). Auto-corrects the playoff field/elim type
-      // the same way the Create League slider does, so settings can never end up
-      // invalid for the new (smaller) count.
+      // manual v0.2.0 §2 #3: team count can only be resized pre-season -- once
+      // startSeason has run, the schedule/rosters/standings built around the old
+      // count already exist, so this gates on the season actually having started
+      // (matchupsByWeek non-empty) rather than team count (see chat: the old
+      // `teams.length > 1` gate assumed a league could only ever fill up via
+      // fillWithSimulatedTeams, which stopped being true once real invite-code
+      // joins and the commissioner-triggered Start Season button could leave a
+      // multi-team, still-unstarted league). Auto-corrects the playoff field/elim
+      // type the same way the Create League slider does, so settings can never
+      // end up invalid for the new (smaller) count.
       updateTargetTeamCount: (leagueId, count) =>
         set((state) =>
           updateLeague(state, leagueId, (league) => {
-            if (league.teams.length > 1) return league;
+            if (Object.keys(league.matchupsByWeek).length > 0) return league;
             const clamped = Math.max(4, Math.min(32, count));
             const validFieldSizes = fieldSizeOptionsForTeamCount(clamped);
             const playoffTeams: PlayoffFieldSize = validFieldSizes.includes(league.settings.playoffTeams as PlayoffFieldSize)

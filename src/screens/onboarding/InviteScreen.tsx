@@ -14,7 +14,14 @@ export function InviteScreen() {
 
   if (!league) return null;
 
-  const alreadyFilled = league.teams.length > 1;
+  // Season-started, not team count, is the real "is there still something to do
+  // here" signal (see chat: the old `teams.length > 1` gate meant this button
+  // silently stopped offering to fill the league the moment a second real friend
+  // joined via invite code -- with no schedule ever generated and no path left
+  // to get one, since fillWithSimulatedTeams was the only thing that ever built
+  // one). Now it stays "Fill with simulated teams" until the season has actually
+  // started, however many real teams have joined by then.
+  const seasonStarted = Object.keys(league.matchupsByWeek).length > 0;
   const targetTeamCount = league.targetTeamCount;
 
   async function handleFill() {
@@ -48,13 +55,13 @@ export function InviteScreen() {
 
         {error && <p className="text-loss text-sm">{error}</p>}
         <button
-          onClick={alreadyFilled ? () => navigate('/home') : handleFill}
+          onClick={seasonStarted ? () => navigate('/home') : handleFill}
           disabled={filling}
           className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
         >
-          {filling ? 'Filling…' : alreadyFilled ? 'Continue to League' : 'Fill with simulated teams'}
+          {filling ? 'Filling…' : seasonStarted ? 'Continue to League' : 'Fill with simulated teams'}
         </button>
-        {!alreadyFilled && (
+        {!seasonStarted && (
           <>
             <p className="text-xs text-text-muted">
               Populates the league with AI-controlled teams so you can start Week 1 right away.
