@@ -264,6 +264,14 @@ Deno.serve(async (req) => {
 
       const weeklyScoreByTeam = new Map<string, number>();
       let gradedCount = 0;
+      // Previously this RPC call's result was never checked -- gradedCount and
+      // teamTotal got incremented unconditionally, so a failing write (RLS,
+      // a signature mismatch, settle_wager not existing at all -- this repo's
+      // RPCs are largely hand-created in the SQL editor, not migration-tracked,
+      // see chat) would silently report success while the wager's row in
+      // Supabase never actually changed. `errors` (shared with the two RPC
+      // calls below) surfaces that instead of swallowing it.
+      const errors: string[] = [];
       for (const row of rosterRows ?? []) {
         let teamTotal = 0;
         const wagers = (row as any).wagers ?? [];
@@ -276,7 +284,11 @@ Deno.serve(async (req) => {
           if (!game) continue; // this wager's game isn't final yet -- leave pending
           const stat = wager.player_name ? statByPlayerName.get(String(wager.player_name).trim().toLowerCase()) : undefined;
           const { status, profit } = gradeWager(wager, game, stat);
-          await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
+          const { error: settleErr } = await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
+          if (settleErr) {
+            errors.push(`wager ${wager.id}: ${settleErr.message}`);
+            continue; // don't count it as graded or fold its profit into the team's score -- it's still 'pending' in the DB
+          }
           teamTotal += profit;
           gradedCount++;
         }
@@ -321,12 +333,13 @@ Deno.serve(async (req) => {
         if (aScore == null || bScore == null) continue;
         const isTie = aScore === bScore;
         const winnerId = isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id;
-        await supabase.rpc('upsert_matchup', {
+        const { error: matchupErr } = await supabase.rpc('upsert_matchup', {
           p_league_id: leagueId, p_week: weekStr,
           p_team_a_id: m.team_a_id, p_team_b_id: m.team_b_id,
           p_team_a_score: aScore, p_team_b_score: bScore,
           p_winner_id: winnerId, p_is_tie: isTie,
         });
+        if (matchupErr) errors.push(`matchup ${m.team_a_id}/${m.team_b_id}: ${matchupErr.message}`);
       }
 
       // Recompute standings from scratch across the whole season.
@@ -365,11 +378,12 @@ Deno.serve(async (req) => {
         }
       }
       for (const [teamId, s] of standingsMap) {
-        await supabase.rpc('upsert_standing', {
+        const { error: standingErr } = await supabase.rpc('upsert_standing', {
           p_team_id: teamId, p_wins: s.wins, p_losses: s.losses, p_ties: s.ties,
           p_total_pl: s.totalPL, p_bets_won: s.betsWon, p_bets_lost: s.betsLost, p_bets_pushed: s.betsPushed,
           p_best_week_pl: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL, p_weekly_scores: s.weeklyScores,
         });
+        if (standingErr) errors.push(`standing ${teamId}: ${standingErr.message}`);
       }
 
       // --- Automatic season progression (only once every real_games row for
@@ -461,7 +475,7 @@ Deno.serve(async (req) => {
         advancement = { from: `${league.season_phase} ${weekStr}`, to: `${newPhase} ${newWeek}`, updateErr: updateErr?.message ?? null };
       }
 
-      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement });
+      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement, errors });
     }
   }
 
