@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
+import logo from '../../assets/logo-color.png';
 
 export function Welcome() {
   const navigate = useNavigate();
@@ -21,9 +22,7 @@ export function Welcome() {
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex flex-col items-center gap-3">
-          <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-5xl shadow-lg">
-            🏆
-          </div>
+          <img src={logo} alt="PropLeague" className="w-28 h-28 object-contain" />
           <h1 className="text-3xl font-bold tracking-tight">PropLeague</h1>
           <p className="text-text-muted text-center text-sm">Fantasy football meets the sportsbook.</p>
         </div>

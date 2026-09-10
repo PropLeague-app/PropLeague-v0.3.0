@@ -18,6 +18,7 @@ import { abbrevFromName } from '../data/simulatedTeamNames';
 import { HowItWorksSheet } from '../components/common/HowItWorksSheet';
 import { initialsFromLeagueName } from '../components/common/LeagueLogo';
 import { CorrelationRulesEditor } from '../components/settings/CorrelationRulesEditor';
+import logoMark from '../assets/logo-mono-muted.png';
 import { PayoutSplitEditor } from '../components/settings/PayoutSplitEditor';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
 import {
@@ -1040,6 +1041,10 @@ export function SettingsHome() {
         >
           <Lock size={16} /> Log Out
         </button>
+      </div>
+      <div className="flex flex-col items-center gap-1 pt-2 pb-1 text-text-muted">
+        <img src={logoMark} alt="" className="w-6 h-6 object-contain opacity-80" />
+        <p className="text-[11px]">PropLeague</p>
       </div>
       {/* manual v0.2.0 §4 #10: was anchored bottom-24 left-4, which clipped off the left
           edge of the centered mobile shell on wider viewports. Moved to the bottom-right,

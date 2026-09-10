@@ -4,6 +4,7 @@ import type { BracketMatch, League, MatchSource, PlayoffBracket } from '../../ty
 import { formatCents } from '../../engine/oddsMath';
 import { weekLabel } from '../../types';
 import { TeamLogo } from '../common/TeamLogo';
+import logoMark from '../../assets/logo-mono-muted.png';
 
 function MatchCard({ league, bracket, match }: { league: League; bracket: PlayoffBracket; match: BracketMatch }) {
   const teamA = league.teams.find((t) => t.id === match.teamAId);
@@ -165,7 +166,10 @@ export function BracketView({ league, bracket }: { league: League; bracket: Play
         <div className="bg-gradient-to-br from-primary/20 to-accent/20 border border-primary rounded-xl p-4 text-center space-y-1">
           <Trophy size={32} className="mx-auto" />
           <p className="font-bold">{champion.teamName}</p>
-          <p className="text-xs text-text-muted">PropLeague Champions</p>
+          <p className="text-xs text-text-muted flex items-center justify-center gap-1">
+            <img src={logoMark} alt="" className="w-3.5 h-3.5 object-contain" />
+            PropLeague Champions
+          </p>
         </div>
       )}
 

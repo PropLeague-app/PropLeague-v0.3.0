@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Trophy, CreditCard, Target, ChartColumn, Swords, DollarSign } from 'lucide-react';
 import type { LeagueSettings, Position } from '../../types';
+import logoMark from '../../assets/logo-mono-muted.png';
 
 interface ExplainerSection {
   icon: ReactNode;
@@ -121,7 +122,10 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
           className="flex justify-between items-center p-4 sticky top-0 bg-bg-raised z-10 border-b border-border"
           style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
         >
-          <h1 className="text-lg font-bold">How PropLeague Works</h1>
+          <h1 className="text-lg font-bold flex items-center gap-1.5">
+            <img src={logoMark} alt="" className="w-5 h-5 object-contain" />
+            How PropLeague Works
+          </h1>
           <button onClick={onClose} className="text-text-muted text-sm">
             Close
           </button>
