@@ -77,7 +77,7 @@ export function MatchupDetail() {
     <div className="flex flex-col">
       <BackHeader title="Matchup" fallback="/home" />
       <div className="p-4 space-y-4">
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
           <TeamHeader team={teamA} score={scoreA} isFinal={isFinal} />
           <span className="inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-raised text-text-muted">
             {weekLabel(matchup.week)}
@@ -89,7 +89,7 @@ export function MatchupDetail() {
           {rosterA.slots.map((slotA, idx) => {
             const slotB = rosterB.slots[idx];
             return (
-              <div key={slotA.slotId} className="grid grid-cols-[1fr_auto_1fr] gap-2 items-stretch">
+              <div key={slotA.slotId} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-stretch">
                 <SlotMini
                   slot={slotA}
                   league={league}
