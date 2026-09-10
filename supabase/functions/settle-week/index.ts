@@ -34,6 +34,16 @@
 // Grading logic mirrors src/engine/realGameResult.ts + engine/settlement.ts's
 // settleWager -- duplicated rather than imported, to avoid a cross-directory
 // import surprise on `supabase functions deploy`. Keep the two in sync.
+//
+// Player-prop wagers only get graded once a matching row exists in
+// real_player_stats (populated by fetch-balldontlie-player-stats, which only
+// writes rows for games balldontlie itself has marked final -- see that
+// file's header). No matching row means "not ingested yet", not "recorded a
+// zero" -- a wager in that state is left pending rather than defaulted to a
+// loss/win, which is what happened before this fix (see chat: the Mack
+// Hollins incident). balldontlie replaced an earlier SportsDataIO-based
+// version of this after SportsDataIO's trial key was confirmed to return
+// perturbed stat numbers, not real ones (see chat).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -283,6 +293,17 @@ Deno.serve(async (req) => {
           const game = gameById.get(wager.game_id);
           if (!game) continue; // this wager's game isn't final yet -- leave pending
           const stat = wager.player_name ? statByPlayerName.get(String(wager.player_name).trim().toLowerCase()) : undefined;
+          // A player-prop market with no matching stat row means the stats
+          // provider hasn't ingested this player's game yet -- NOT that they
+          // recorded a zero. gradeWager defaults a missing field to 0, which
+          // silently auto-lost every "Over" and auto-won every "Under" for any
+          // player not yet in real_player_stats (see chat: the Mack Hollins
+          // incident -- his real 51 receiving yards got graded as a loss
+          // because nflverse had no 2026 data at all). Game-level markets
+          // (h2h/spreads/totals) don't need a player stat row at all, so they
+          // aren't gated by this.
+          const isPlayerMarket = wager.market_key !== 'h2h' && wager.market_key !== 'spreads' && wager.market_key !== 'totals';
+          if (isPlayerMarket && !stat) continue; // stat not ingested yet -- leave pending
           const { status, profit } = gradeWager(wager, game, stat);
           const { error: settleErr } = await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
           if (settleErr) {
