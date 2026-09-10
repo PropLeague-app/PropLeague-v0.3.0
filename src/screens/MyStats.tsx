@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { computeIndividualStats, collectTeamBets, computeTeamStreak, type RecordPL } from '../engine/stats';
-import { getGame } from '../services/oddsService';
+import { resolveGame, gameHasStarted } from '../services/oddsService';
 import { formatCents } from '../engine/oddsMath';
 import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
@@ -31,20 +31,37 @@ export function MyStats() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
+  const realGamesById = useAppStore((s) => s.realGamesById);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
 
   // manual v0.3.0 §5: browse any league member's stats, defaulting to the signed-in
   // user's own team — same member-selector pattern as Season Schedule.
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const viewedTeamId = selectedTeamId ?? userTeam?.id;
+
+  // Same reasoning as BetHistory.tsx: stats span every past week this team has
+  // ever bet on, so every real game across the team's whole history needs to be
+  // loaded, or gameHasStarted silently falls back to "unknown" (see chat).
+  useEffect(() => {
+    if (!league || !viewedTeamId) return;
+    const gameIds = new Set<string>();
+    for (const roster of Object.values(league.rostersByTeamWeek)) {
+      if (roster.teamId !== viewedTeamId) continue;
+      for (const slot of roster.slots) if (slot.wager) gameIds.add(slot.wager.gameId);
+    }
+    for (const gameId of gameIds) if (!realGamesById[gameId]) loadRealGame(gameId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league, viewedTeamId]);
 
   if (!league || !userTeam) return null;
 
   const viewedTeam = league.teams.find((t) => t.id === selectedTeamId) ?? userTeam;
   const isOwnTeam = viewedTeam.id === userTeam.id;
-  const isGameStarted = (gameId: string) =>
-    getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)?.status !== 'upcoming';
+  const gameLookup = (gameId: string) => resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+  const isGameStarted = (gameId: string) => gameHasStarted(gameLookup(gameId));
 
   const bets = collectTeamBets(league, viewedTeam.id, { isOwnTeam, isGameStarted });
-  const stats = computeIndividualStats(bets, (gameId) => getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides));
+  const stats = computeIndividualStats(bets, gameLookup);
   const matchupStreak = computeTeamStreak(league, viewedTeam.id);
   const title = isOwnTeam ? 'My Stats' : `${viewedTeam.teamName}'s Stats`;
 

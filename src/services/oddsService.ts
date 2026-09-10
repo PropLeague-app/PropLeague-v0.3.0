@@ -153,6 +153,36 @@ export function currentOddsForWager(
   return null;
 }
 
+/** Prefers real game data (Supabase's real_games, already loaded into the store's
+ * realGamesById) over the local simulated dataset, falling back to getGame() only
+ * when a real row genuinely isn't loaded yet. A real wager's gameId is a real
+ * Odds-API event id the simulated data/seed.ts has never heard of, so getGame()
+ * alone always returned undefined for it -- and every call site that read `!game`
+ * as "hasn't started yet" was actually reading "this is a real game we don't have
+ * a simulated row for" as "already live" (see chat: this bit MatchupDetail first,
+ * then turned out to be the same root cause in LeagueHome, MatchupCard,
+ * BetHistory, MyStats, and Leaderboards too). Centralizing the fallback here means
+ * the fix only has to be right once, not independently re-derived at every call
+ * site -- use this (with gameHasStarted below) instead of calling getGame()
+ * directly wherever a wager's game might be real. */
+export function resolveGame(
+  gameId: string,
+  realGamesById: Record<string, NFLGame>,
+  currentWeek: WeekId,
+  lineMovementEnabled = true,
+  overrides?: Record<string, 'live' | 'final'>,
+): NFLGame | undefined {
+  return realGamesById[gameId] ?? getGame(gameId, currentWeek, lineMovementEnabled, overrides);
+}
+
+/** True only once we actually know a game has started -- an unresolved/not-yet-loaded
+ * game (undefined) is treated as NOT started, the safe default while real data is
+ * still in flight, rather than the old `!game` pattern which treated "unknown" the
+ * same as "already live" (see resolveGame's comment above). */
+export function gameHasStarted(game: NFLGame | undefined): boolean {
+  return !!game && game.status !== 'upcoming';
+}
+
 export function getGameMarkets(game: NFLGame): { h2h: OddsMarket | undefined; spreads: OddsMarket | undefined; totals: OddsMarket | undefined } {
   const all = game.bookmakers.flatMap((b) => b.markets);
   return {

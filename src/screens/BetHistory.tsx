@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ticket } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { isWagerVisibleToViewer } from '../engine/stats';
-import { getGame } from '../services/oddsService';
+import { resolveGame, gameHasStarted } from '../services/oddsService';
 import { OddsDisplay } from '../components/common/OddsDisplay';
 import { StatusPill } from '../components/common/StatusPill';
 import { PositionBadge } from '../components/common/PositionBadge';
@@ -41,12 +41,30 @@ export function BetHistory() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
+  const realGamesById = useAppStore((s) => s.realGamesById);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
 
   // manual v0.3.0 §5: browse any league member's bet history, defaulting to the
   // signed-in user's own team.
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const viewedTeam = league?.teams.find((t) => t.id === selectedTeamId) ?? userTeam;
   const isOwnTeam = !!viewedTeam && !!userTeam && viewedTeam.id === userTeam.id;
+
+  // A bet's game might span any past week, not just the current one -- unlike
+  // Lineup.tsx (which only ever needs the current week's wagered games), bet
+  // history needs every real game this team has ever bet on loaded, or gameStarted
+  // below silently falls back to "unknown" for every past-week real wager (see
+  // chat: resolveGame/gameHasStarted in oddsService.ts).
+  useEffect(() => {
+    if (!league || !viewedTeam) return;
+    const gameIds = new Set<string>();
+    for (const roster of Object.values(league.rostersByTeamWeek)) {
+      if (roster.teamId !== viewedTeam.id) continue;
+      for (const slot of roster.slots) if (slot.wager) gameIds.add(slot.wager.gameId);
+    }
+    for (const gameId of gameIds) if (!realGamesById[gameId]) loadRealGame(gameId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league, viewedTeam?.id]);
 
   const [weekFilter, setWeekFilter] = useState<'all' | string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -67,11 +85,11 @@ export function BetHistory() {
           wagerWeek: week,
           currentWeek: league.currentWeek,
           wagerStatus: slot.wager!.status,
-          gameStarted: getGame(slot.wager!.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)?.status !== 'upcoming',
+          gameStarted: gameHasStarted(resolveGame(slot.wager!.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
         }),
       )
       .sort((a, b) => (b.slot.wager!.placedAt > a.slot.wager!.placedAt ? 1 : -1));
-  }, [league, viewedTeam, isOwnTeam]);
+  }, [league, viewedTeam, isOwnTeam, realGamesById]);
 
   const weekOptions = useMemo(() => {
     const weeks = new Map<string, WeekId>();

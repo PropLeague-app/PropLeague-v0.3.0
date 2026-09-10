@@ -2,14 +2,20 @@ import { useNavigate } from 'react-router-dom';
 import type { League, LeagueTeam, Matchup } from '../../types';
 import { rosterKey } from '../../engine/rosterSlots';
 import { expectedWeeklyScore, winProbability, type DecidedGameLookup } from '../../engine/scoring';
-import { getGame } from '../../services/oddsService';
+import { resolveGame, gameHasStarted } from '../../services/oddsService';
 import { resultForGame } from '../../data/seed';
+import { useAppStore } from '../../store/useAppStore';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
 
 export function MatchupCard({ league, matchup, highlightTeamId }: { league: League; matchup: Matchup; highlightTeamId?: string }) {
   const navigate = useNavigate();
+  // Real games for this matchup's week -- LeagueHome (the only place this card
+  // is rendered) already loads them, this just reads what's there (see chat:
+  // getGame() alone can't see real games at all, which made every real,
+  // genuinely-upcoming game read as "decided").
+  const realGamesById = useAppStore((s) => s.realGamesById);
   const teamA = league.teams.find((t) => t.id === matchup.teamAId);
   const teamB = league.teams.find((t) => t.id === matchup.teamBId);
   if (!teamA || !teamB) return null;
@@ -19,7 +25,7 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
 
   const decided: DecidedGameLookup = {
     isDecided: (gameId) =>
-      getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)?.status !== 'upcoming',
+      gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
     resultFor: (gameId) => resultForGame(gameId),
   };
   const scoreA = matchup.teamAScore ?? (rosterA ? expectedWeeklyScore(rosterA, league.settings, decided) : 0);

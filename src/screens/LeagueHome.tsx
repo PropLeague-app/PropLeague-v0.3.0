@@ -23,6 +23,8 @@ export function LeagueHome() {
   const reactToActivity = useAppStore((s) => s.reactToActivity);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
+  const realGamesForWeek = useAppStore((s) => (league ? s.realGamesByWeek[String(league.currentWeek)] : undefined));
   const [showAll, setShowAll] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceText, setAnnounceText] = useState('');
@@ -44,6 +46,16 @@ export function LeagueHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLeagueId, league?.currentWeek]);
 
+  // The home slate/kickoff countdown was reading ONLY the simulated dataset --
+  // unlike MarketBrowser/NFLSlate (which already prefer real games when loaded),
+  // this screen showed a fake slate and a fake countdown even once a league was
+  // fully wired to real games elsewhere in the app (see chat). Loads the current
+  // week's real games the same way NFLSlate does.
+  useEffect(() => {
+    if (league) loadRealGamesForWeek(league.currentWeek);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league?.currentWeek]);
+
   if (!league) {
     return (
       <div className="p-4">
@@ -62,7 +74,13 @@ export function LeagueHome() {
   // ever get a schedule at all). Distinguish by whether *any* week has matchups.
   const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
   const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
-  const slate = getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+  // Real games take priority once loaded, same "only trust real rows with
+  // actual bookmaker data" filter MarketBrowser uses -- otherwise fall back to
+  // the simulated slate unchanged.
+  const realUpcoming = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
+  const slate = realUpcoming && realUpcoming.length > 0
+    ? realUpcoming
+    : getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
   const firstKickoff = slate.length > 0 ? slate.reduce((min, g) => (g.kickoff < min ? g.kickoff : min), slate[0].kickoff) : null;
 
   return (

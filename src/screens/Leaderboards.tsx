@@ -1,6 +1,7 @@
+import { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { computeLeagueLeaderboards } from '../engine/stats';
-import { getGame } from '../services/oddsService';
+import { resolveGame } from '../services/oddsService';
 import { formatCents } from '../engine/oddsMath';
 import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
@@ -20,13 +21,29 @@ function TeamName({ team }: { team: LeagueTeam | undefined }) {
 export function Leaderboards() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
+  const realGamesById = useAppStore((s) => s.realGamesById);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
 
   const userTeam = league?.teams.find((t) => t.isUser);
+
+  // Leaderboards span every team's entire bet history, not just one team's --
+  // same reasoning as BetHistory/MyStats, just unscoped by team (see chat:
+  // resolveGame in oddsService.ts).
+  useEffect(() => {
+    if (!league) return;
+    const gameIds = new Set<string>();
+    for (const roster of Object.values(league.rostersByTeamWeek)) {
+      for (const slot of roster.slots) if (slot.wager) gameIds.add(slot.wager.gameId);
+    }
+    for (const gameId of gameIds) if (!realGamesById[gameId]) loadRealGame(gameId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league]);
+
   if (!league) return null;
 
   const boards = computeLeagueLeaderboards(
     league,
-    (gameId) => getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides),
+    (gameId) => resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides),
     userTeam?.id,
   );
   const teamById = (id: string) => league.teams.find((t) => t.id === id);
