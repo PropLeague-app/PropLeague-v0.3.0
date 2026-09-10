@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { validateLineup } from '../engine/validation';
@@ -21,6 +21,30 @@ export function Lineup() {
   const realGamesById = useAppStore((s) => s.realGamesById);
 
   const userTeam = league?.teams.find((t) => t.isUser);
+
+  // The bottom footer's height is NOT fixed -- validation.overallReasons can
+  // render anywhere from zero lines up to one per distinct issue (budget,
+  // min-games, correlation, duplicate player x N, empty slots), each adding a
+  // line of text and growing the fixed-position footer. The scrollable slot
+  // list below used to reserve a single guessed-at padding value (pb-32) for
+  // it, which was only ever right for the zero/one-line case -- with several
+  // reasons stacked, the footer grew taller than that guess and covered the
+  // last slot(s) in the list (ML is always last, see SLOT_ORDER in
+  // rosterSlots.ts), with no amount of scrolling able to clear a `fixed`
+  // element. Measuring the footer's real height and using that as the
+  // scroll container's padding-bottom fixes it for any number of reasons,
+  // not just today's cases.
+  const footerRef = useRef<HTMLDivElement>(null);
+  const [footerHeight, setFooterHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = footerRef.current;
+    if (!el) return;
+    const measure = () => setFooterHeight(el.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (league && userTeam) syncVoidedPicks(league.id, league.currentWeek);
@@ -75,7 +99,7 @@ export function Lineup() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-2.5 px-4 pb-32">
+      <div className="flex flex-col gap-2.5 px-4" style={{ paddingBottom: footerHeight + 16 }}>
         {roster.slots.map((slot) => {
           const game = slot.wager
             ? (realGamesById[slot.wager.gameId] ??
@@ -103,6 +127,7 @@ export function Lineup() {
       </div>
 
       <div
+        ref={footerRef}
         className="fixed w-full max-w-md bg-bg-raised border-t border-border p-3 space-y-2"
         style={{ bottom: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
       >

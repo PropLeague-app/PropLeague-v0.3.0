@@ -66,10 +66,23 @@ export function wagerLineDescription(wager: { marketKey: MarketKey; side: string
 }
 
 /** Markets that are valid for a given roster slot position, keyed for the Market Browser. */
+// Every market a real book might actually price for a player at this position --
+// NOT just the markets that position "typically" gets. A pass-catching RB like
+// Kenny Gainwell gets real DraftKings reception/receiving-yards lines same as a
+// WR; a mobile QB gets real rushing lines; an occasional WR/TE gets a jet-sweep
+// rushing line. This list was previously scoped to the "stereotypical" markets
+// per position, which was harmless for the old simulated slate (propsGenerator
+// only ever generated those same markets), but for real data it silently threw
+// away real, correctly-priced markets that MarketBrowser had actually fetched --
+// e.g. Gainwell's real Receiving Yards/Receptions lines never showing up under
+// his RB slot (see chat). Broadening this list can never fabricate a market: a
+// player's `group.markets` only ever contains what the real feed actually priced
+// for that specific player, so this is purely "stop hiding real markets that
+// exist," never "invent ones that don't."
 export const MARKETS_BY_POSITION: Record<Position, MarketKey[]> = {
-  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions'],
-  RB: ['player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
-  WR: ['player_reception_yds', 'player_receptions', 'player_anytime_td'],
+  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
+  RB: ['player_rush_yds', 'player_rush_attempts', 'player_reception_yds', 'player_receptions', 'player_anytime_td'],
+  WR: ['player_reception_yds', 'player_receptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
   TE: ['player_reception_yds', 'player_receptions', 'player_anytime_td'],
   K: ['player_kicking_points', 'player_field_goals'],
 };
