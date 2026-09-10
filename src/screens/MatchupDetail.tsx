@@ -20,6 +20,8 @@ export function MatchupDetail() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+  const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const realGamesById = useAppStore((s) => s.realGamesById);
 
   const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
 
@@ -50,13 +52,21 @@ export function MatchupDetail() {
 
   const hidePicks = league.settings.hidePicks;
 
+  useEffect(() => {
+    for (const slot of [...rosterA.slots, ...rosterB.slots]) {
+      if (slot.wager && !realGamesById[slot.wager.gameId]) loadRealGame(slot.wager.gameId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rosterA, rosterB]);
+
   // manual v0.2.1 §5 #8: teamAScore/teamBScore stay null until the week fully settles,
   // so live/in-progress weeks otherwise show "—" here. Fall back to the same
   // expectedWeeklyScore/DecidedGameLookup pattern MatchupCard.tsx already uses on the
   // home matchup card, so this screen shows a consistent current P/L for live weeks too.
   const decided: DecidedGameLookup = {
     isDecided: (gameId) =>
-      getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)?.status !== 'upcoming',
+      (realGamesById[gameId] ??
+        getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides))?.status !== 'upcoming',
     resultFor: (gameId) => resultForGame(gameId),
   };
   const scoreA = matchup.teamAScore ?? expectedWeeklyScore(rosterA, league.settings, decided);
@@ -85,6 +95,7 @@ export function MatchupDetail() {
                   league={league}
                   isUser={teamA.isUser}
                   hidePicks={hidePicks}
+                  realGamesById={realGamesById}
                 />
                 <div className="flex items-center justify-center px-1">
                   <PositionBadge position={slotA.position} />
@@ -94,6 +105,7 @@ export function MatchupDetail() {
                   league={league}
                   isUser={teamB.isUser}
                   hidePicks={hidePicks}
+                  realGamesById={realGamesById}
                   reverse
                 />
               </div>
@@ -133,19 +145,27 @@ function SlotMini({
   league,
   isUser,
   hidePicks,
+  realGamesById,
   reverse,
 }: {
   slot: RosterSlotState;
   league: League;
   isUser: boolean;
   hidePicks: boolean;
+  realGamesById: Record<string, ReturnType<typeof getGame>>;
   reverse?: boolean;
 }) {
   if (!slot.wager) {
     return <div className="bg-bg-card border border-border rounded-lg p-2 text-[11px] text-text-muted flex items-center justify-center">Empty</div>;
   }
-  const game = getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
-  const gameStarted = !game || game.status !== 'upcoming';
+  // Real wagers carry a real Odds-API event id that the local simulated dataset
+  // has never heard of -- getGame() alone would return undefined for those,
+  // which `!game` below then misread as "already started" (see chat: this is
+  // why every real, genuinely-upcoming pick showed a "Live" pill, and also let
+  // hidePicks leak an opponent's real pick before kickoff, since `shouldHide`
+  // depends on the same `gameStarted` flag).
+  const game = realGamesById[slot.wager.gameId] ?? getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+  const gameStarted = !!game && game.status !== 'upcoming';
   const shouldHide = !isUser && hidePicks && !gameStarted;
 
   if (shouldHide) {
