@@ -356,8 +356,16 @@ Deno.serve(async (req) => {
         const aScore = weeklyScoreByTeam.get(m.team_a_id);
         const bScore = weeklyScoreByTeam.get(m.team_b_id);
         if (aScore == null || bScore == null) continue;
-        const isTie = aScore === bScore;
-        const winnerId = isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id;
+        // Scores themselves still update live as each team's bets settle through the
+        // week (that's the "ROI/bet record can move progressively" part -- see chat),
+        // but the actual W/L/T verdict is deliberately held back until every real_games
+        // row for this week is final (weekComplete -- Monday night's game finishing, or
+        // the Tuesday failsafe settle-week run catching it). Before that, winner_id/is_tie
+        // stay null/false, which the standings recompute below already treats as
+        // "not decided yet" and skips incrementing wins/losses/ties for -- so a team's
+        // official record can't flip mid-week off a snapshot that later changes.
+        const isTie = weekComplete && aScore === bScore;
+        const winnerId = weekComplete ? (isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id) : null;
         const { error: matchupErr } = await supabase.rpc('upsert_matchup', {
           p_league_id: leagueId, p_week: weekStr,
           p_team_a_id: m.team_a_id, p_team_b_id: m.team_b_id,
