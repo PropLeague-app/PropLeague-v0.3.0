@@ -69,7 +69,7 @@ type MarketKey =
   | 'h2h' | 'spreads' | 'totals'
   | 'player_pass_yds' | 'player_pass_tds' | 'player_pass_interceptions'
   | 'player_rush_yds' | 'player_rush_attempts' | 'player_anytime_td'
-  | 'player_reception_yds' | 'player_receptions'
+  | 'player_reception_yds' | 'player_receptions' | 'player_rush_reception_yds'
   | 'player_kicking_points' | 'player_field_goals';
 
 interface RealGame { id: string; home_team: string; away_team: string; home_score: number; away_score: number }
@@ -176,6 +176,10 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
   } else if (marketKey === 'player_anytime_td') {
     const hit = ((stat?.rushing_tds ?? 0) + (stat?.receiving_tds ?? 0)) > 0;
     result = hit ? 'yes' : 'no';
+  } else if (marketKey === 'player_rush_reception_yds') {
+    const actual = (stat?.rushing_yards ?? 0) + (stat?.receiving_yards ?? 0);
+    const diff = actual - point;
+    result = diff === 0 ? 'push' : diff > 0 ? 'over' : 'under';
   } else {
     const field = STAT_FIELD[marketKey];
     const actual = field ? (stat?.[field] ?? 0) : 0;

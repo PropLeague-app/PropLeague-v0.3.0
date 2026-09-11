@@ -17,6 +17,7 @@ export const MARKET_LABELS: Record<MarketKey, string> = {
   player_anytime_td: 'Anytime TD',
   player_reception_yds: 'Receiving Yards',
   player_receptions: 'Receptions',
+  player_rush_reception_yds: 'Rush + Rec Yards',
   player_kicking_points: 'Kicking Points',
   player_field_goals: 'Field Goals Made',
 };
@@ -35,6 +36,7 @@ export const MARKET_SHORT_LABELS: Partial<Record<MarketKey, string>> = {
   player_anytime_td: 'anytime TD',
   player_reception_yds: 'rec yds',
   player_receptions: 'receptions',
+  player_rush_reception_yds: 'rush+rec yds',
   player_kicking_points: 'kicking pts',
   player_field_goals: 'FGs made',
 };
@@ -81,7 +83,7 @@ export function wagerLineDescription(wager: { marketKey: MarketKey; side: string
 // exist," never "invent ones that don't."
 export const MARKETS_BY_POSITION: Record<Position, MarketKey[]> = {
   QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
-  RB: ['player_rush_yds', 'player_rush_attempts', 'player_reception_yds', 'player_receptions', 'player_anytime_td'],
+  RB: ['player_rush_yds', 'player_rush_attempts', 'player_reception_yds', 'player_receptions', 'player_rush_reception_yds', 'player_anytime_td'],
   WR: ['player_reception_yds', 'player_receptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
   TE: ['player_reception_yds', 'player_receptions', 'player_anytime_td'],
   K: ['player_kicking_points', 'player_field_goals'],
@@ -105,6 +107,7 @@ const ALT_LINE_STEP: Partial<Record<MarketKey, number>> = {
   player_pass_interceptions: 1,
   player_rush_attempts: 2,
   player_receptions: 1,
+  player_rush_reception_yds: 10,
   player_kicking_points: 1.5,
   player_field_goals: 1,
 };

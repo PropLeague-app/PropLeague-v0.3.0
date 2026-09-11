@@ -19,7 +19,7 @@ const TABS = [
 // Explicit height (rather than intrinsic content height from py-2.5) so any other
 // fixed-position element that needs to sit flush against the tab bar (e.g. Lineup's
 // sticky Save Lineup footer) can use a matching bottom offset instead of guessing.
-export const BOTTOM_TAB_BAR_HEIGHT = 64;
+export const BOTTOM_TAB_BAR_HEIGHT = 56;
 
 export function BottomTabBar() {
   const hasUnsavedChanges = useUIStore((s) => s.hasUnsavedChanges);

@@ -9,15 +9,22 @@ const config: CapacitorConfig = {
   appName: 'PropLeague',
   webDir: 'dist',
   ios: {
-    // This is the actual root cause of the top/bottom clipping that two
-    // rounds of CSS-only fixes failed to solve. Capacitor's iOS webview maps
-    // this directly to UIScrollView.contentInsetAdjustmentBehavior, and its
-    // DEFAULT VALUE IS "never" -- meaning the webview was never adjusting for
-    // the safe area at the native level at all, which is exactly why
-    // env(safe-area-inset-top) was verified (via Web Inspector) to resolve to
-    // 0px no matter where the CSS padding was placed. No CSS change was ever
-    // going to fix this; it needed to happen here.
-    contentInset: 'automatic',
+    // Reverted from 'automatic' back to 'never' (the framework default).
+    // 'automatic' maps to UIScrollView.contentInsetAdjustmentBehavior, which
+    // makes the native webview's own top-level scroll view ALSO push its
+    // content down by the safe-area amount -- on top of the
+    // env(safe-area-inset-top/bottom) padding every screen already applies
+    // in CSS (MobileShell, Welcome, and the rest of onboarding). With both
+    // active at once, the safe area got applied twice, which is what
+    // produced the oversized gap above the header and the extra empty space
+    // below the last item in every scrollable screen. The real fix for
+    // env(safe-area-inset-*) resolving to 0px was adding `viewport-fit=cover`
+    // to the viewport meta tag in index.html -- that's what actually lets
+    // the webview extend its layout viewport under the notch/dynamic island
+    // and makes the CSS env() values resolve correctly. With that in place,
+    // CSS alone should own 100% of the safe-area handling, so the native
+    // scroll view should never also apply its own.
+    contentInset: 'never',
   },
   // Matches --color-bg from index.css exactly. Without this, whatever's
   // natively behind the webview (white, by default) shows through in the

@@ -70,6 +70,7 @@ export type MarketKey =
   | 'player_anytime_td'
   | 'player_reception_yds'
   | 'player_receptions'
+  | 'player_rush_reception_yds'
   | 'player_kicking_points'
   | 'player_field_goals';
 
@@ -166,6 +167,7 @@ export const MARKET_ALLOWED_SIDES: Record<MarketKey, CorrelationSide[]> = {
   player_anytime_td: ['Yes'],
   player_reception_yds: ['Over', 'Under'],
   player_receptions: ['Over', 'Under'],
+  player_rush_reception_yds: ['Over', 'Under'],
   player_kicking_points: ['Over', 'Under'],
   player_field_goals: ['Over', 'Under'],
 };

@@ -89,7 +89,7 @@ export function Lineup() {
 
   return (
     <div className="flex flex-col">
-      <div className="p-4 pb-2 sticky top-0 bg-bg-raised z-10">
+      <div className="px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10">
         <h1 className="text-xl font-bold">{weekLabel(league.currentWeek)} Lineup</h1>
         <div className="mt-3">
           <BudgetBar allocated={validation.totalAllocated} total={league.settings.weeklyCredits} />

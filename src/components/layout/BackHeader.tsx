@@ -14,12 +14,12 @@ function goBack(navigate: ReturnType<typeof useNavigate>, fallback: string) {
  * Standings' column headers, manual v0.3.0 §6) can offset against a single source of
  * truth instead of a guessed pixel value that silently drifts if this component's
  * padding ever changes. */
-export const BACK_HEADER_HEIGHT = 52;
+export const BACK_HEADER_HEIGHT = 44;
 
 export function BackHeader({ title, fallback = '/home' }: { title: string; fallback?: string }) {
   const navigate = useNavigate();
   return (
-    <div className="sticky top-0 z-10 bg-bg-raised/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-2">
+    <div className="sticky top-0 z-10 bg-bg-raised/95 backdrop-blur border-b border-border px-4 py-2 flex items-center gap-2">
       <button
         onClick={() => goBack(navigate, fallback)}
         className="flex items-center gap-0.5 text-text-muted -ml-1 pl-1 pr-2 py-1 shrink-0"

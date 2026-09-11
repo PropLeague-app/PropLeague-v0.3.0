@@ -45,6 +45,7 @@ const PLAYER_PROP_MARKETS = [
   'player_anytime_td',
   'player_reception_yds',
   'player_receptions',
+  'player_rush_reception_yds',
   'player_kicking_points',
   'player_field_goals',
 ].join(',');

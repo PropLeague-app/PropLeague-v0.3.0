@@ -261,7 +261,7 @@ export function SettingsHome() {
 
   return (
     <>
-      <h1 className="text-xl font-bold p-4 pb-3 sticky top-0 bg-bg-raised z-10">Profile & Settings</h1>
+      <h1 className="text-xl font-bold px-4 pt-2 pb-3 sticky top-0 bg-bg-raised z-10">Profile & Settings</h1>
 
       <div className="px-4 pb-5 space-y-5">
         <div className="grid grid-cols-2 gap-2">

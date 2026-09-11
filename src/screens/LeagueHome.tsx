@@ -87,7 +87,7 @@ export function LeagueHome() {
     <>
       <button
         onClick={() => setSwitcherOpen(true)}
-        className="flex items-center gap-2.5 text-left w-full p-4 pb-2 sticky top-0 bg-bg-raised z-10"
+        className="flex items-center gap-2.5 text-left w-full px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10"
       >
         <LeagueLogo league={league} size="lg" />
         <div className="min-w-0 flex-1">

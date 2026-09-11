@@ -162,7 +162,7 @@ export function MarketBrowser() {
 
   return (
     <div className="flex flex-col">
-      <div className="p-4 pb-2 sticky top-0 bg-bg-raised z-10 border-b border-border">
+      <div className="px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10 border-b border-border">
         <div className="flex items-center gap-2 mb-3">
           <button onClick={() => goBack(navigate, '/lineup')} className="text-text-muted flex items-center gap-0.5">
             <span className="text-xl leading-none">‹</span>
