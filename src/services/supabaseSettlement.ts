@@ -39,6 +39,7 @@ export async function upsertStandingRemote(standing: TeamStanding): Promise<Serv
     p_bets_pushed: standing.betsPushed,
     p_best_week_pl: standing.bestWeekPL,
     p_weekly_scores: standing.weeklyScores,
+    p_total_wagered: standing.totalWagered,
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -114,13 +115,14 @@ interface StandingRow {
   bets_lost: number;
   bets_pushed: number;
   best_week_pl: number;
+  total_wagered: number | null;
   weekly_scores: Record<string, number>;
 }
 
 export async function fetchLeagueStandings(leagueId: string): Promise<ServiceResult<{ standings: TeamStanding[] }>> {
   const { data, error } = await supabase
     .from('standings')
-    .select('team_id, wins, losses, ties, total_pl, bets_won, bets_lost, bets_pushed, best_week_pl, weekly_scores')
+    .select('team_id, wins, losses, ties, total_pl, bets_won, bets_lost, bets_pushed, best_week_pl, weekly_scores, total_wagered')
     .eq('league_id', leagueId);
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not load standings.' };
 
@@ -134,6 +136,7 @@ export async function fetchLeagueStandings(leagueId: string): Promise<ServiceRes
     betsLost: row.bets_lost,
     betsPushed: row.bets_pushed,
     bestWeekPL: row.best_week_pl,
+    totalWagered: row.total_wagered ?? 0,
     weeklyScores: row.weekly_scores,
   }));
   return { ok: true, standings };

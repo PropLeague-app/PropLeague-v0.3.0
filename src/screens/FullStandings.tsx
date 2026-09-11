@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
-import { computeTeamStreak, totalWageredByTeam } from '../engine/stats';
+import { computeTeamStreak } from '../engine/stats';
 import { sortStandings } from '../engine/standings';
 import { activeMultipliers } from '../engine/prizePool';
 import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader';
@@ -82,8 +82,12 @@ function StandingsRows({
         const team = league.teams.find((t) => t.id === s.teamId);
         if (!team) return null;
         const streak = computeTeamStreak(league, s.teamId);
-        const wagered = totalWageredByTeam(league, s.teamId);
-        const roi = wagered > 0 ? s.totalPL / wagered : 0;
+        // s.totalWagered is computed server-side from the whole season's real
+        // wagers (settle-week) or, for a simulated league, from the full local
+        // rostersByTeamWeek (engine/standings.ts) -- not derived here from the
+        // client's own partial rostersByTeamWeek cache, which only ever holds
+        // whatever weeks this device happened to load (see chat).
+        const roi = s.totalWagered > 0 ? s.totalPL / s.totalWagered : 0;
         const multiplier = multipliers?.[s.teamId] ?? 1;
         return (
           <div key={s.teamId}>

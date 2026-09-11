@@ -493,6 +493,11 @@ export interface TeamStanding {
   betsLost: number;
   betsPushed: number;
   bestWeekPL: number;
+  /** Sum of every wager's stake this team has ever placed, any status --
+   * computed server-side by settle-week from the whole season's real wagers
+   * (see chat). Used for ROI instead of the client's local rostersByTeamWeek
+   * cache, which only ever has whatever weeks happened to be loaded locally. */
+  totalWagered: number;
   weeklyScores: Record<string, number>;
 }
 

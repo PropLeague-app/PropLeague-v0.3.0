@@ -372,11 +372,11 @@ Deno.serve(async (req) => {
       const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
       const { data: allRosterRows } = await supabase
         .from('weekly_rosters')
-        .select('team_id, wagers(status), teams!inner(league_id)')
+        .select('team_id, wagers(status, stake), teams!inner(league_id)')
         .eq('teams.league_id', leagueId);
 
       const standingsMap = new Map(
-        (teams ?? []).map((t) => [t.id, { teamId: t.id, wins: 0, losses: 0, ties: 0, totalPL: 0, betsWon: 0, betsLost: 0, betsPushed: 0, bestWeekPL: -Infinity, weeklyScores: {} as Record<string, number> }]),
+        (teams ?? []).map((t) => [t.id, { teamId: t.id, wins: 0, losses: 0, ties: 0, totalPL: 0, betsWon: 0, betsLost: 0, betsPushed: 0, bestWeekPL: -Infinity, totalWagered: 0, weeklyScores: {} as Record<string, number> }]),
       );
       for (const m of allMatchups ?? []) {
         if (m.team_a_score == null || m.team_b_score == null) continue;
@@ -400,6 +400,9 @@ Deno.serve(async (req) => {
           if (w.status === 'won') s.betsWon++;
           else if (w.status === 'lost') s.betsLost++;
           else if (w.status === 'push') s.betsPushed++;
+          // Every wager placed counts toward total wagered regardless of status
+          // (matches the client's old totalWageredByTeam semantics -- see chat).
+          s.totalWagered += w.stake ?? 0;
         }
       }
       for (const [teamId, s] of standingsMap) {
@@ -407,6 +410,7 @@ Deno.serve(async (req) => {
           p_team_id: teamId, p_wins: s.wins, p_losses: s.losses, p_ties: s.ties,
           p_total_pl: s.totalPL, p_bets_won: s.betsWon, p_bets_lost: s.betsLost, p_bets_pushed: s.betsPushed,
           p_best_week_pl: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL, p_weekly_scores: s.weeklyScores,
+          p_total_wagered: s.totalWagered,
         });
         if (standingErr) errors.push(`standing ${teamId}: ${standingErr.message}`);
       }

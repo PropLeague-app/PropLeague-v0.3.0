@@ -11,6 +11,7 @@ export function emptyStanding(teamId: string): TeamStanding {
     betsLost: 0,
     betsPushed: 0,
     bestWeekPL: -Infinity,
+    totalWagered: 0,
     weeklyScores: {},
   };
 }
@@ -56,6 +57,9 @@ export function computeStandings(
       if (status === 'won') standing.betsWon++;
       else if (status === 'lost') standing.betsLost++;
       else if (status === 'push') standing.betsPushed++;
+      // Every wager placed counts toward total wagered regardless of status,
+      // mirroring settle-week's server-side computation for real leagues.
+      standing.totalWagered += slot.wager?.stake ?? 0;
     }
   }
 
