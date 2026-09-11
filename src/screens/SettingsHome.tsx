@@ -1047,13 +1047,14 @@ export function SettingsHome() {
         <p className="text-[11px]">PropLeague</p>
       </div>
       {/* manual v0.2.0 §4 #10: was anchored bottom-24 left-4, which clipped off the left
-          edge of the centered mobile shell on wider viewports. Moved to the bottom-right,
-          stacked above the always-present DEV button (also bottom-right, at bottom-24)
-          so the two floating buttons never overlap, and above the tab bar (64px) either way. */}
+          edge of the centered mobile shell on wider viewports. Moved to the bottom-right.
+          Used to sit at bottom-40 to stack above the always-present DEV button (also
+          bottom-right, at bottom-24) -- the DEV button is gone now (see chat), so this
+          drops back down to bottom-24, just clear of the tab bar. */}
       <button
         onClick={() => setHowItWorksOpen(true)}
         aria-label="How does PropLeague work?"
-        className="fixed bottom-40 right-4 z-50 w-10 h-10 rounded-full bg-bg-raised border border-border text-primary font-bold shadow-lg"
+        className="fixed bottom-24 right-4 z-50 w-10 h-10 rounded-full bg-bg-raised border border-border text-primary font-bold shadow-lg"
         style={{ right: 'max(1rem, calc(50% - 14rem))' }}
       >
         ?

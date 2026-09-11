@@ -117,7 +117,14 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
   const sections = buildSections(settings);
   return (
     <div className="fixed inset-0 z-[60] bg-bg flex justify-center">
-      <div className="w-full max-w-md min-h-screen flex flex-col border-x border-border">
+      {/* Same min-h-screen/overflow bug as MobileShell (see chat): min-h-screen is a
+          floor, not a cap, so content could grow past one viewport height and the
+          browser's native document scroll would activate instead of the intended
+          overflow-y-auto panel below -- which made the sticky header lose track of
+          where the top of the content actually was, cutting the first section off
+          behind it. h-dvh caps the height; min-h-0 lets the flex child actually
+          shrink to scroll internally instead of pushing the whole column taller. */}
+      <div className="w-full max-w-md h-dvh flex flex-col border-x border-border">
         <div
           className="flex justify-between items-center p-4 sticky top-0 bg-bg-raised z-10 border-b border-border"
           style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
@@ -131,7 +138,7 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
           </button>
         </div>
         <div
-          className="flex-1 overflow-y-auto px-4 py-5 space-y-6"
+          className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-6"
           style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
         >
           {sections.map((section) => (
