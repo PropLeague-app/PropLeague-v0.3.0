@@ -74,7 +74,7 @@ export function MarketRow({
   return (
     <div className="py-1 border-b border-border last:border-b-0">
       <div className="flex items-center">
-        <p className="w-28 shrink-0 text-xs font-medium leading-tight pr-2">{label}</p>
+        <p className="w-36 shrink-0 text-xs font-medium leading-tight pr-2">{label}</p>
         <div className="flex-1 flex items-center justify-end gap-1.5">
           {showStepper && (
             <button

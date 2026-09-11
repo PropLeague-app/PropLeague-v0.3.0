@@ -19,7 +19,11 @@ const TABS = [
 // Explicit height (rather than intrinsic content height from py-2.5) so any other
 // fixed-position element that needs to sit flush against the tab bar (e.g. Lineup's
 // sticky Save Lineup footer) can use a matching bottom offset instead of guessing.
-export const BOTTOM_TAB_BAR_HEIGHT = 56;
+// 49pt matches Apple's own native UITabBar content height (the tab bar every stock
+// iOS app uses, unchanged since iOS 7) -- not an arbitrary number, but the actual
+// platform convention, so this now sits at the same footprint a native tab bar
+// would rather than looking taller/more spacious than what iOS users are used to.
+export const BOTTOM_TAB_BAR_HEIGHT = 49;
 
 export function BottomTabBar() {
   const hasUnsavedChanges = useUIStore((s) => s.hasUnsavedChanges);

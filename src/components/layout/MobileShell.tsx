@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BottomTabBar } from './BottomTabBar';
+import { BOTTOM_TAB_BAR_HEIGHT, BottomTabBar } from './BottomTabBar';
 
 export function MobileShell({ children }: { children: ReactNode }) {
   // MobileShell wraps <Outlet/> at the layout-route level, so this component
@@ -35,10 +35,15 @@ export function MobileShell({ children }: { children: ReactNode }) {
          * up to <html>) just grows to fit all the page's content instead of
          * clipping to the space actually left after the strip/tab bar, which
          * is what made <html> itself the thing scrolling instead of this div. */}
+        {/* Bottom padding is derived from BOTTOM_TAB_BAR_HEIGHT (+16px clearance)
+         * instead of a separately hardcoded value, so it can't drift out of sync
+         * with the tab bar's actual height the way a fixed '5rem' silently did
+         * the last time that height changed -- leaving 24px of now-pointless
+         * extra space below the last scrolled item on every screen. */}
         <div
           ref={scrollRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
-          style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+          style={{ paddingBottom: `calc(${BOTTOM_TAB_BAR_HEIGHT + 16}px + env(safe-area-inset-bottom))` }}
         >
           {children}
         </div>
