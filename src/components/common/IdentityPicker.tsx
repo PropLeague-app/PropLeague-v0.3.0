@@ -166,14 +166,20 @@ export function IdentityPicker({
               ))}
             </div>
           )}
-          <div className="grid grid-cols-6 gap-1.5 max-h-48 overflow-y-auto">
-            {emojiResults.length === 0 && <p className="col-span-6 text-xs text-text-muted text-center py-3">No matches.</p>}
+          {/* No per-cell box/border anymore -- with the full emoji set (see chat:
+              "add most/all of the emoji options ... more compact") a bordered tile
+              per glyph made the grid feel heavy and wasted space that could go to
+              more columns. Selection is now just a filled rounded highlight behind
+              the glyph, and the grid runs 8-wide instead of 6 with a taller scroll
+              area, since there's a lot more to browse per category now. */}
+          <div className="grid grid-cols-8 gap-1 max-h-64 overflow-y-auto">
+            {emojiResults.length === 0 && <p className="col-span-8 text-xs text-text-muted text-center py-3">No matches.</p>}
             {emojiResults.map(({ char }) => (
               <button
                 key={char}
                 onClick={() => update({ logoEmoji: char })}
-                className={`text-xl aspect-square rounded-lg border flex items-center justify-center ${
-                  draft.logoEmoji === char ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
+                className={`text-xl aspect-square rounded-md flex items-center justify-center ${
+                  draft.logoEmoji === char ? 'bg-primary/20' : ''
                 }`}
               >
                 {char}

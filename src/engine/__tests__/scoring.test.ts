@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { computeIncompleteLineupPenalty, computeWeeklyScore, winProbability } from '../scoring';
+import { computeIncompleteLineupPenalty, computeWeeklyScore, expectedScoreDistribution, matchupWinProbability } from '../scoring';
 import { buildEmptyRoster } from '../rosterSlots';
 import { DEFAULT_LEAGUE_SETTINGS } from '../../types';
 import type { Wager } from '../../types';
+
+function wagerSlot(roster: ReturnType<typeof buildEmptyRoster>, index: number, wager: Partial<Wager>) {
+  return {
+    ...roster,
+    slots: roster.slots.map((s, i) =>
+      i === index
+        ? { ...s, wager: { id: `w${i}`, slotId: s.slotId, gameId: 'g', marketKey: 'h2h', side: 'X', oddsAtPlacement: -110, stake: 10, placedAt: '', status: 'pending', settledProfit: null, ...wager } as Wager }
+        : s,
+    ),
+  };
+}
 
 describe('computeIncompleteLineupPenalty', () => {
   it('penalizes the full unallocated amount for a totally empty, unsubmitted roster', () => {
@@ -49,13 +60,44 @@ describe('computeWeeklyScore', () => {
   });
 });
 
-describe('winProbability', () => {
-  it('is 50% when both sides have identical expected scores', () => {
-    expect(winProbability(10, 10)).toBeCloseTo(0.5, 5);
+describe('expectedScoreDistribution + matchupWinProbability', () => {
+  it('is 50/50 for two identical, fully-empty rosters (all-phantom, equal variance)', () => {
+    const roster = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    const dist = expectedScoreDistribution(roster, DEFAULT_LEAGUE_SETTINGS);
+    expect(dist.mean).toBe(0);
+    expect(dist.variance).toBeGreaterThan(0);
+    expect(matchupWinProbability(dist, dist)).toBeCloseTo(0.5, 5);
   });
 
-  it('favors the side with the higher expected score', () => {
-    expect(winProbability(50, -50)).toBeGreaterThan(0.5);
-    expect(winProbability(-50, 50)).toBeLessThan(0.5);
+  it('favors the side with the higher expected mean', () => {
+    const base = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    const ahead = wagerSlot(base, 0, { status: 'won', settledProfit: 50 });
+    const behind = wagerSlot(base, 0, { status: 'lost', settledProfit: -50 });
+    const distAhead = expectedScoreDistribution(ahead, DEFAULT_LEAGUE_SETTINGS);
+    const distBehind = expectedScoreDistribution(behind, DEFAULT_LEAGUE_SETTINGS);
+    expect(matchupWinProbability(distAhead, distBehind)).toBeGreaterThan(0.5);
+    expect(matchupWinProbability(distBehind, distAhead)).toBeLessThan(0.5);
+  });
+
+  it('is a clean step function once both sides are fully settled (zero variance left)', () => {
+    const roster = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    const full = roster.slots.reduce((r, _s, i) => wagerSlot(r, i, { status: 'won', settledProfit: 10 }), roster);
+    const distWinner = expectedScoreDistribution(full, DEFAULT_LEAGUE_SETTINGS);
+    const tiedFull = roster.slots.reduce((r, _s, i) => wagerSlot(r, i, { status: 'push', settledProfit: 0 }), roster);
+    const distTied = expectedScoreDistribution(tiedFull, DEFAULT_LEAGUE_SETTINGS);
+    expect(distWinner.variance).toBe(0);
+    expect(matchupWinProbability(distWinner, distTied)).toBe(1);
+    expect(matchupWinProbability(distTied, distWinner)).toBe(0);
+    expect(matchupWinProbability(distTied, distTied)).toBe(0.5);
+  });
+
+  it('a small stake on a heavy favorite contributes little either way vs. a real stake', () => {
+    const base = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    const tinyFavorite = wagerSlot(base, 0, { stake: 5, oddsAtPlacement: -300 });
+    const realFavorite = wagerSlot(base, 0, { stake: 50, oddsAtPlacement: -300 });
+    const distTiny = expectedScoreDistribution(tinyFavorite, DEFAULT_LEAGUE_SETTINGS);
+    const distReal = expectedScoreDistribution(realFavorite, DEFAULT_LEAGUE_SETTINGS);
+    expect(Math.abs(distTiny.mean)).toBeLessThan(Math.abs(distReal.mean));
+    expect(distTiny.variance).toBeLessThan(distReal.variance);
   });
 });

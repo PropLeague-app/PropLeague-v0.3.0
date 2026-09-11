@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { League, LeagueTeam, Matchup, WeeklyRoster } from '../../types';
-import { rosterKey } from '../../engine/rosterSlots';
-import { expectedWeeklyScore, winProbability, type DecidedGameLookup } from '../../engine/scoring';
+import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
+import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
 import { resultForGame } from '../../data/seed';
 import { useAppStore } from '../../store/useAppStore';
@@ -61,9 +61,22 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
   // "is final" the way it used to. Decided is winnerId/isTie being set, full stop.
   const isFinal = matchup.winnerId != null || matchup.isTie;
 
-  const prob = winProbability(scoreA, scoreB);
+  // Win probability is its own model now, not just a curve on the two $ scores
+  // above (see chat: Hunter's 3-part spec) -- it needs each side's full roster
+  // (odds/stakes per slot, and how many slots are still empty), not just the
+  // aggregate score. A team with literally no weekly_rosters row yet still needs
+  // a roster shape to model against, hence the buildEmptyRoster fallback here --
+  // unlike scoreA/scoreB above, expectedScoreDistribution never treats an empty
+  // roster as a foregone loss, so this is safe to call on one right away.
+  const distA = expectedScoreDistribution(rosterA ?? buildEmptyRoster(teamA.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
+  const distB = expectedScoreDistribution(rosterB ?? buildEmptyRoster(teamB.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
+  const prob = matchupWinProbability(distA, distB);
+  const give = matchupGive(distA, distB, league.settings);
 
   const totalSlots = Object.values(league.settings.lineupSlots).reduce((a, b) => a + b, 0);
+  // 2px at give=0 (matches the old flat divider's width) up to 16px at give=1
+  // (both rosters still fully open) -- see matchupGive() in engine/scoring.
+  const giveWidthPx = 2 + give * 14;
   const progressA = pickProgress(rosterA, totalSlots);
   const progressB = pickProgress(rosterB, totalSlots);
 
@@ -81,28 +94,50 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
       </div>
 
       <div>
-        {/* Both halves are the teams' own colors, meeting at a fixed divider line rather
-            than blending into each other — needed even when both teams happen to have
-            picked the same color (see chat). The trailing side is dimmed down (not at an
-            exact tie) so a fixed color never reads as an inherent enemy/loser — whoever
-            is actually behind is the one that's muted, whichever side of the card that is
-            (see chat: "it has to function more like ... starts even, but then supports
-            whoever is winning"). The bar and the team badges both get a hairline border
-            so they stay visible even against a background close to a team's own color.
-            Requires every team to have a real logoColor even in Image mode, which
-            IdentityPicker now always collects. */}
+        {/* Both halves are the teams' own colors, meeting at a divider whose width
+            reflects how settled the matchup actually is (see give comment below) --
+            needed even when both teams happen to have picked the same color (see
+            chat). The trailing side is dimmed down (not at an exact tie) so a fixed
+            color never reads as an inherent enemy/loser -- whoever is actually
+            behind is the one that's muted, whichever side of the card that is (see
+            chat: "it has to function more like ... starts even, but then supports
+            whoever is winning"). The bar and the team badges both get a hairline
+            border so they stay visible even against a background close to a team's
+            own color. Requires every team to have a real logoColor even in Image
+            mode, which IdentityPicker now always collects. */}
         <div className="relative h-1.5 rounded-full overflow-hidden bg-bg-card border border-border">
           <div
             className="absolute inset-y-0 left-0 h-full transition-all duration-500"
-            style={{ width: `${prob * 100}%`, backgroundColor: teamA.logoColor, opacity: prob < 0.5 ? 0.4 : 1 }}
+            style={{ width: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: teamA.logoColor, opacity: prob < 0.5 ? 0.4 : 1 }}
           />
           <div
             className="absolute inset-y-0 right-0 h-full transition-all duration-500"
-            style={{ width: `${(1 - prob) * 100}%`, backgroundColor: teamB.logoColor, opacity: prob > 0.5 ? 0.4 : 1 }}
+            style={{ width: `calc(${(1 - prob) * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: teamB.logoColor, opacity: prob > 0.5 ? 0.4 : 1 }}
+          />
+          {/* The seam between the two fills isn't a fixed 2px line anymore --
+              its width now breathes with `give` (see chat: a fully-undecided week
+              should read as less locked-in than one where only a coinflip prop or
+              two remains). Two overlapping gradients, each fading its own team's
+              (muting-adjusted) color toward transparent over the bar's own
+              background, replace the old flat bg-bg-card divider rect; at give=0
+              they collapse to the same ~2px hard edge the flat divider used to be. */}
+          <div
+            className="absolute inset-y-0 transition-all duration-500"
+            style={{
+              left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
+              width: `${giveWidthPx}px`,
+              background: `linear-gradient(to right, ${teamA.logoColor}, transparent)`,
+              opacity: prob < 0.5 ? 0.4 : 1,
+            }}
           />
           <div
-            className="absolute inset-y-0 w-[2px] bg-bg-card transition-all duration-500"
-            style={{ left: `${prob * 100}%`, transform: 'translateX(-50%)' }}
+            className="absolute inset-y-0 transition-all duration-500"
+            style={{
+              left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
+              width: `${giveWidthPx}px`,
+              background: `linear-gradient(to left, ${teamB.logoColor}, transparent)`,
+              opacity: prob > 0.5 ? 0.4 : 1,
+            }}
           />
         </div>
         <div className="flex items-center justify-between text-[11px] text-text-muted mt-1">
