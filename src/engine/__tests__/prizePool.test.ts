@@ -277,6 +277,7 @@ function leagueForMultiplierTest(overrides: Partial<League> = {}): League {
     standings: standingsFor(['a', 'b', 'c']),
     bracket: null,
     activity: [],
+    chat: [],
     prizePool: null,
     manualGameOverrides: {},
     ...overrides,

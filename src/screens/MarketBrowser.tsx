@@ -93,8 +93,15 @@ export function MarketBrowser() {
     // empty bookmakers array would mean nothing to bet on); otherwise fall back
     // to the local simulated slate, unchanged from before this existed.
     const real = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
-    if (real && real.length > 0) return real;
-    return getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled).filter((g) => g.status === 'upcoming');
+    const base =
+      real && real.length > 0
+        ? real
+        : getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled).filter((g) => g.status === 'upcoming');
+    // Neither source guarantees kickoff order (Supabase returns rows in
+    // whatever order the query happened to fetch them; getSlate's order isn't
+    // guaranteed either) — sort explicitly so the soonest games always list
+    // first instead of whatever incidental order the data arrived in.
+    return [...base].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [league, realGamesForWeek]);
 
   const filteredGames =

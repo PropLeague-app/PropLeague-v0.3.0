@@ -119,6 +119,7 @@ export function createLeague(params: CreateLeagueParams): League {
         message: `Welcome to ${params.name}! Fill the league with simulated teams to kick off Week 1.`,
       },
     ],
+    chat: [],
   };
 }
 
@@ -207,6 +208,7 @@ export function buildLeagueFromRealTeams(params: {
         message: `Welcome to ${params.name}!`,
       },
     ],
+    chat: [],
   };
 }
 

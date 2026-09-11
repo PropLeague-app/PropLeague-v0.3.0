@@ -566,6 +566,20 @@ export interface ActivityItem {
   momentPosition?: SlotPosition;
 }
 
+/** One free-text message in a league's Chat tab (manual backlog item, added per
+ * chat) -- deliberately separate from ActivityItem/activity_items: chat is a much
+ * higher-volume, purely-social stream (no reactions, no pinning, no moment fields,
+ * any member can post) while activity_items stays the sparse, curated feed of
+ * system settlements, weekly Moments, and commissioner-only League News. Posted by
+ * any league member (not gated), fetched on load like the rest of shared league
+ * state -- no realtime subscription (none exist anywhere in this app yet). */
+export interface ChatMessage {
+  id: string;
+  ts: string;
+  teamId: string;
+  message: string;
+}
+
 export type SeasonPhase = 'regular' | 'playoffs' | 'complete';
 
 export interface League {
@@ -590,6 +604,7 @@ export interface League {
   standings: TeamStanding[];
   bracket: PlayoffBracket | null;
   activity: ActivityItem[];
+  chat: ChatMessage[];
   prizePool: PrizePool | null;
   /** Dev-panel game-by-game stepper (manual §6): lets a single game (or a whole day
    * slot) be pushed to 'live' or 'final' ahead of the full weekly settlement, purely

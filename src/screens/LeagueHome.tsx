@@ -21,6 +21,7 @@ export function LeagueHome() {
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
+  const postChatMessage = useAppStore((s) => s.postChatMessage);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
   const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
@@ -173,11 +174,19 @@ export function LeagueHome() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="font-semibold text-sm">Activity</p>
-            <button onClick={() => setAnnounceOpen((v) => !v)} className="text-xs text-primary font-medium">
-              {announceOpen ? 'Cancel' : '+ Announcement'}
-            </button>
+            {/* League News is commissioner-only/auto (see chat) -- any member could
+               post an announcement before this gate; postAnnouncement itself is a
+               client action, so this is a client-side gate only until the
+               post_announcement RPC (hand-created in the SQL editor, not
+               migration-tracked -- see chat's established pattern) gets a matching
+               server-side check. */}
+            {isCommissioner && (
+              <button onClick={() => setAnnounceOpen((v) => !v)} className="text-xs text-primary font-medium">
+                {announceOpen ? 'Cancel' : '+ Announcement'}
+              </button>
+            )}
           </div>
-          {announceOpen && (
+          {isCommissioner && announceOpen && (
             <div className="flex gap-2 mb-2">
               <input
                 value={announceText}
@@ -198,7 +207,13 @@ export function LeagueHome() {
               </button>
             </div>
           )}
-          <ActivityFeed league={league} items={league.activity} onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)} />
+          <ActivityFeed
+            league={league}
+            items={league.activity}
+            chat={league.chat}
+            onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
+            onSendChat={(message) => postChatMessage(league.id, message)}
+          />
         </div>
       </div>
     </>

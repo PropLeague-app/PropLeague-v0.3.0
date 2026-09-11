@@ -48,9 +48,13 @@ export function NFLSlate() {
     setTimeout(() => setLoading(false), 250);
   }
 
-  const grouped = DAY_ORDER.map((day) => ({ day, games: games.filter((g) => g.daySlot === day) })).filter(
-    (g) => g.games.length > 0,
-  );
+  const grouped = DAY_ORDER.map((day) => ({
+    day,
+    // Sorted by kickoff within each day slot — neither the real-data source
+    // nor getSlate guarantees an order, so without this, games inside a day
+    // (e.g. the early/late Sunday windows) could list out of kickoff order.
+    games: games.filter((g) => g.daySlot === day).sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
+  })).filter((g) => g.games.length > 0);
 
   return (
     <>

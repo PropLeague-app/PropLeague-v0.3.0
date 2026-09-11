@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox } from 'lucide-react';
-import type { ActivityItem, League } from '../../types';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send } from 'lucide-react';
+import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
 import { EmptyState } from '../common/EmptyState';
@@ -115,7 +115,31 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
   );
 }
 
-type FeedTab = 'all' | 'moments' | 'news';
+type FeedTab = 'all' | 'moments' | 'news' | 'chat';
+
+const FEED_TAB_LABELS: Record<FeedTab, string> = { all: 'All', moments: 'Moments', news: 'League News', chat: 'Chat' };
+
+/** One message row in the Chat tab (see chat: deliberately separate from the
+ * News/Moments cards above -- no Card wrapper, no reactions, just sender + text,
+ * since this is meant to read like a normal group chat, not another award/news
+ * card style). */
+function ChatBubble({ league, item }: { league: League; item: ChatMessage }) {
+  const team = league.teams.find((t) => t.id === item.teamId);
+  return (
+    <div className="flex items-start gap-2">
+      {team ? <TeamLogo team={team} size="sm" /> : <span className="w-6 h-6 shrink-0" />}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <p className="text-xs font-semibold truncate">{team?.teamName ?? 'Former member'}</p>
+          <p className="text-[10px] text-text-muted shrink-0">
+            {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </p>
+        </div>
+        <p className="text-sm break-words">{item.message}</p>
+      </div>
+    </div>
+  );
+}
 
 function groupMomentsByWeek(items: ActivityItem[]): { key: string; label: string; order: number; items: ActivityItem[] }[] {
   const groups = new Map<string, ActivityItem[]>();
@@ -138,10 +162,24 @@ function groupMomentsByWeek(items: ActivityItem[]): { key: string; label: string
     .sort((a, b) => b.order - a.order); // most recent week first
 }
 
-export function ActivityFeed({ league, items, onReact }: { league: League; items: ActivityItem[]; onReact?: (itemId: string, emoji: string) => void }) {
+export function ActivityFeed({
+  league,
+  items,
+  chat,
+  onReact,
+  onSendChat,
+}: {
+  league: League;
+  items: ActivityItem[];
+  chat?: ChatMessage[];
+  onReact?: (itemId: string, emoji: string) => void;
+  onSendChat?: (message: string) => void;
+}) {
   const [tab, setTab] = useState<FeedTab>('all');
+  const [chatText, setChatText] = useState('');
+  const chatItems = chat ?? [];
 
-  if (items.length === 0) {
+  if (items.length === 0 && chatItems.length === 0) {
     return <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No activity yet" subtitle="League announcements and bet alerts will show up here." />;
   }
 
@@ -152,13 +190,13 @@ export function ActivityFeed({ league, items, onReact }: { league: League; items
   return (
     <div className="space-y-3">
       <div className="flex bg-bg-card rounded-lg overflow-hidden w-fit">
-        {(['all', 'moments', 'news'] as FeedTab[]).map((t) => (
+        {(['all', 'moments', 'news', 'chat'] as FeedTab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-1.5 text-xs font-semibold ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
           >
-            {t === 'all' ? 'All' : t === 'moments' ? 'Moments' : 'League News'}
+            {FEED_TAB_LABELS[t]}
           </button>
         ))}
       </div>
@@ -199,6 +237,46 @@ export function ActivityFeed({ league, items, onReact }: { league: League; items
             <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
             news.slice(0, 8).map((item) => <NewsCard key={item.id} league={league} item={item} onReact={onReact} />)
+          )}
+        </div>
+      )}
+
+      {tab === 'chat' && (
+        <div className="space-y-3">
+          {onSendChat && (
+            <div className="flex gap-2">
+              <input
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || !chatText.trim()) return;
+                  onSendChat(chatText.trim());
+                  setChatText('');
+                }}
+                placeholder="Message the league…"
+                maxLength={500}
+                className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                disabled={!chatText.trim()}
+                onClick={() => {
+                  onSendChat(chatText.trim());
+                  setChatText('');
+                }}
+                className="bg-primary text-white text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          )}
+          {chatItems.length === 0 ? (
+            <EmptyState icon={<MessageCircle size={36} strokeWidth={1.5} />} title="No messages yet" subtitle="Say something to the rest of the league." />
+          ) : (
+            <div className="space-y-3">
+              {[...chatItems].reverse().map((item) => (
+                <ChatBubble key={item.id} league={league} item={item} />
+              ))}
+            </div>
           )}
         </div>
       )}

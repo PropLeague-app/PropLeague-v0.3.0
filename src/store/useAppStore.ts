@@ -9,7 +9,7 @@ import { isWagerScratched } from '../engine/settlement';
 import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
-import { getGame } from '../services/oddsService';
+import { resolveGame, gameHasStarted } from '../services/oddsService';
 import {
   addSimulatedTeamRemote,
   fetchLeagueTeams,
@@ -23,6 +23,7 @@ import {
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
+import { postChatMessageRemote, fetchLeagueChat } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
 import { gamesForWeek } from '../data/seed';
@@ -102,6 +103,7 @@ interface AppState {
   simulateDay: (leagueId: string, daySlot: string) => void;
   postAnnouncement: (leagueId: string, message: string) => Promise<void>;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
+  postChatMessage: (leagueId: string, message: string) => Promise<void>;
 
   loadRealGamesForWeek: (week: WeekId) => Promise<void>;
   loadRealGame: (gameId: string) => Promise<void>;
@@ -504,8 +506,20 @@ export const useAppStore = create<AppState>()(
           let changed = false;
           const slots = roster.slots.map((slot) => {
             if (!slot.wager || slot.wager.status !== 'pending') return slot;
-            const game = getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
-            if (!game || game.status !== 'upcoming') return slot;
+            // Was calling getGame() directly, which only knows about simulated
+            // games -- for a real wager this always returned undefined, so
+            // `!game` was true and the function silently skipped the
+            // scratch-void check for every real-game pick, every time. Same
+            // bug class already fixed in LeagueHome/MatchupCard/BetHistory/
+            // MyStats/Leaderboards/MatchupDetail (see oddsService.ts), but
+            // NOT using gameHasStarted()'s "unresolved counts as not started"
+            // default the way those screens do -- this action actually voids
+            // a wager and returns credits, so an unresolved game (a brief
+            // loading gap, not the norm now that resolveGame checks
+            // realGamesById first) should skip for now rather than risk
+            // voiding a wager whose game may already be live.
+            const game = resolveGame(slot.wager.gameId, state.realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+            if (!game || gameHasStarted(game)) return slot;
             if (!isWagerScratched(slot.wager.id)) return slot;
             changed = true;
             return { ...slot, wager: null };
@@ -532,11 +546,12 @@ export const useAppStore = create<AppState>()(
         }),
 
       loadLeagueResults: async (leagueId) => {
-        const [matchupsResult, standingsResult, progressResult, activityResult, teamsResult] = await Promise.all([
+        const [matchupsResult, standingsResult, progressResult, activityResult, chatResult, teamsResult] = await Promise.all([
           fetchLeagueMatchups(leagueId),
           fetchLeagueStandings(leagueId),
           fetchLeagueProgress(leagueId),
           fetchLeagueActivity(leagueId),
+          fetchLeagueChat(leagueId),
           fetchLeagueTeams(leagueId),
         ]);
         set((state) =>
@@ -549,6 +564,11 @@ export const useAppStore = create<AppState>()(
                   .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
                   .slice(0, 40)
               : league.activity;
+            const chat = chatResult.ok
+              ? [...league.chat.filter((item) => !chatResult.chat.some((f) => f.id === item.id)), ...chatResult.chat]
+                  .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+                  .slice(-100)
+              : league.chat;
             // Full identity sync now (see chat: name/abbrev/logo edits are pushed to
             // Supabase as of this step, so a fresh fetch here is the real, current
             // value -- from this device or any other member's). An uploaded image
@@ -588,6 +608,7 @@ export const useAppStore = create<AppState>()(
               bracket: progressResult.ok ? progressResult.bracket : league.bracket,
               prizePool: progressResult.ok ? progressResult.prizePool : league.prizePool,
               activity,
+              chat,
               teams,
               ...leagueLogo,
             };
@@ -707,6 +728,19 @@ export const useAppStore = create<AppState>()(
             activity: league.activity.map((item) =>
               item.id === itemId ? { ...item, reactions: { ...item.reactions, [emoji]: (item.reactions?.[emoji] ?? 0) + 1 } } : item,
             ),
+          })),
+        );
+      },
+
+      postChatMessage: async (leagueId, message) => {
+        const userTeam = get().leagues[leagueId]?.teams.find((t) => t.isUser);
+        if (!userTeam) return;
+        const result = await postChatMessageRemote(leagueId, message);
+        if (!result.ok) return;
+        set((state) =>
+          updateLeague(state, leagueId, (league) => ({
+            ...league,
+            chat: [...league.chat, { id: result.itemId, ts: new Date().toISOString(), teamId: userTeam.id, message }].slice(-100),
           })),
         );
       },
