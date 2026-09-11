@@ -33,7 +33,9 @@ export type LogoSize = keyof typeof SIZE_CLASSES;
  * gets all three modes for free. Falls back to the initials treatment for pre-v0.1.1
  * data with no explicit mode, or an image mode missing its data URL. */
 export function IdentityBadge({ identity, initials, size = 'md' }: { identity: LogoIdentity; initials: string; size?: LogoSize }) {
-  const cls = `${SIZE_CLASSES[size]} rounded-full flex items-center justify-center font-bold text-white shrink-0 overflow-hidden`;
+  // A hairline border (manual, see chat) so the badge stays visually distinct from the
+  // page even when a team's own color/logo happens to sit close to the background.
+  const cls = `${SIZE_CLASSES[size]} rounded-full flex items-center justify-center font-bold text-white shrink-0 overflow-hidden border border-border`;
   if (identity.logoMode === 'image' && identity.logoDataUrl) {
     return <img src={identity.logoDataUrl} alt="" className={cls} />;
   }

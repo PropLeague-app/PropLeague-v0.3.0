@@ -46,8 +46,11 @@ export function ScheduleView() {
           const opponent = league.teams.find((t) => t.id === oppId);
           const myScore = matchup.teamAId === viewedTeam.id ? matchup.teamAScore : matchup.teamBScore;
           const oppScore = matchup.teamAId === viewedTeam.id ? matchup.teamBScore : matchup.teamAScore;
-          const isFinal = myScore != null;
-          const won = isFinal && myScore! > oppScore!;
+          // matchup.teamAScore/teamBScore update live all week as picks settle (see
+          // chat), so "has a score" doesn't mean "is final" -- winnerId/isTie only get
+          // set once the whole week is actually complete. Same fix as MatchupCard.tsx.
+          const isFinal = matchup.winnerId != null || matchup.isTie;
+          const won = isFinal && myScore != null && oppScore != null && myScore > oppScore;
           const tied = isFinal && myScore === oppScore;
 
           return (

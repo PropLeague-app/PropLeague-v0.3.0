@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import type { League, LeagueTeam, Matchup } from '../../types';
+import type { League, LeagueTeam, Matchup, WeeklyRoster } from '../../types';
 import { rosterKey } from '../../engine/rosterSlots';
 import { expectedWeeklyScore, winProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
@@ -8,6 +8,31 @@ import { useAppStore } from '../../store/useAppStore';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
+
+/** Per-team pick progress for the small line under the win-probability bar (see
+ * chat): how many of this week's picks are still awaiting a result ("active"),
+ * how many have already graded this week (with a W-L-P record), and how many
+ * roster slots are still empty and need a pick placed. A team with literally
+ * zero picks placed has no weekly_rosters row at all (see settle-week's own
+ * comments on this), so `roster` can be undefined -- treated as "everything
+ * still open" rather than crashing. */
+function pickProgress(roster: WeeklyRoster | undefined, totalSlots: number): { active: number; won: number; lost: number; pushed: number; open: number } {
+  if (!roster) return { active: 0, won: 0, lost: 0, pushed: 0, open: totalSlots };
+  let active = 0;
+  let won = 0;
+  let lost = 0;
+  let pushed = 0;
+  for (const slot of roster.slots) {
+    const status = slot.wager?.status;
+    if (!status) continue;
+    if (status === 'pending') active++;
+    else if (status === 'won') won++;
+    else if (status === 'lost') lost++;
+    else if (status === 'push') pushed++;
+  }
+  const placed = active + won + lost + pushed;
+  return { active, won, lost, pushed, open: Math.max(0, totalSlots - placed) };
+}
 
 export function MatchupCard({ league, matchup, highlightTeamId }: { league: League; matchup: Matchup; highlightTeamId?: string }) {
   const navigate = useNavigate();
@@ -30,9 +55,17 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
   };
   const scoreA = matchup.teamAScore ?? (rosterA ? expectedWeeklyScore(rosterA, league.settings, decided) : 0);
   const scoreB = matchup.teamBScore ?? (rosterB ? expectedWeeklyScore(rosterB, league.settings, decided) : 0);
-  const isFinal = matchup.teamAScore != null;
+  // matchup.teamAScore now updates live all week as picks settle (see chat --
+  // settle-week writes scores progressively but only sets winnerId/isTie once
+  // the whole week is actually complete), so "has a score" no longer means
+  // "is final" the way it used to. Decided is winnerId/isTie being set, full stop.
+  const isFinal = matchup.winnerId != null || matchup.isTie;
 
   const prob = winProbability(scoreA, scoreB);
+
+  const totalSlots = Object.values(league.settings.lineupSlots).reduce((a, b) => a + b, 0);
+  const progressA = pickProgress(rosterA, totalSlots);
+  const progressB = pickProgress(rosterB, totalSlots);
 
   return (
     <Card onClick={() => navigate(`/matchup/${matchup.id}`)} className="space-y-3">
@@ -48,12 +81,43 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
       </div>
 
       <div>
-        <div className="h-1.5 rounded-full bg-loss/30 overflow-hidden flex">
-          <div className="h-full bg-primary transition-all duration-500" style={{ width: `${prob * 100}%` }} />
+        {/* Both halves are the teams' own colors, meeting at a fixed divider line rather
+            than blending into each other — needed even when both teams happen to have
+            picked the same color (see chat). The trailing side is dimmed down (not at an
+            exact tie) so a fixed color never reads as an inherent enemy/loser — whoever
+            is actually behind is the one that's muted, whichever side of the card that is
+            (see chat: "it has to function more like ... starts even, but then supports
+            whoever is winning"). The bar and the team badges both get a hairline border
+            so they stay visible even against a background close to a team's own color.
+            Requires every team to have a real logoColor even in Image mode, which
+            IdentityPicker now always collects. */}
+        <div className="relative h-1.5 rounded-full overflow-hidden bg-bg-card border border-border">
+          <div
+            className="absolute inset-y-0 left-0 h-full transition-all duration-500"
+            style={{ width: `${prob * 100}%`, backgroundColor: teamA.logoColor, opacity: prob < 0.5 ? 0.4 : 1 }}
+          />
+          <div
+            className="absolute inset-y-0 right-0 h-full transition-all duration-500"
+            style={{ width: `${(1 - prob) * 100}%`, backgroundColor: teamB.logoColor, opacity: prob > 0.5 ? 0.4 : 1 }}
+          />
+          <div
+            className="absolute inset-y-0 w-[2px] bg-bg-card transition-all duration-500"
+            style={{ left: `${prob * 100}%`, transform: 'translateX(-50%)' }}
+          />
         </div>
-        <p className="text-[11px] text-text-muted text-center mt-1">
-          {isFinal ? 'Final' : `${teamA.abbrev} win probability: ${Math.round(prob * 100)}%`}
-        </p>
+        <div className="flex items-center justify-between text-[11px] text-text-muted mt-1">
+          <span>{Math.round(prob * 100)}%</span>
+          <span>{isFinal ? 'Final' : prob === 0.5 ? 'Even' : `${prob > 0.5 ? teamA.abbrev : teamB.abbrev} leads`}</span>
+          <span>{Math.round((1 - prob) * 100)}%</span>
+        </div>
+        <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
+          <span>
+            {progressA.active} active · {progressA.won}-{progressA.lost}-{progressA.pushed} settled · {progressA.open} left
+          </span>
+          <span className="text-right">
+            {progressB.active} active · {progressB.won}-{progressB.lost}-{progressB.pushed} settled · {progressB.open} left
+          </span>
+        </div>
       </div>
     </Card>
   );

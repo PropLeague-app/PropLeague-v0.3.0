@@ -3,7 +3,11 @@ type Status = 'pending' | 'live' | 'won' | 'lost' | 'push' | 'voided' | 'upcomin
 const STYLES: Record<Status, string> = {
   pending: 'bg-bg-raised text-text-muted',
   upcoming: 'bg-bg-raised text-text-muted',
-  live: 'bg-loss/20 text-loss animate-pulse',
+  // Was bg-loss/20 text-loss -- read as "something's wrong" rather than "in
+  // progress" (see chat). Same neutral family as 'pending', just brighter/
+  // higher-contrast, plus the pulse, so it reads as "this one's live" without
+  // implying a loss.
+  live: 'bg-bg-raised text-text font-semibold animate-pulse',
   final: 'bg-bg-raised text-text-muted',
   won: 'bg-profit/20 text-profit',
   lost: 'bg-loss/20 text-loss',

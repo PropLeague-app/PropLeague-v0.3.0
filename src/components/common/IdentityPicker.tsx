@@ -1,12 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LogoIdentity, TeamLogoMode } from '../../types';
-import { TEAM_LOGO_COLORS } from '../../data/simulatedTeamNames';
 import { EMOJI_CATEGORIES, searchEmojis } from '../../data/emojiPicker';
 import { processLogoFile, LOGO_MAX_BYTES } from '../../engine/imageUpload';
 import { IdentityBadge, type LogoSize } from './TeamLogo';
+import { ColorPicker } from './ColorPicker';
 
 const MODES: TeamLogoMode[] = ['emoji', 'initials', 'image'];
 const MODE_LABELS: Record<TeamLogoMode, string> = { emoji: 'Emoji', initials: 'Initials', image: 'Image' };
+
+/** Curated 12-color subset of TEAM_LOGO_COLORS (which stays the full 28 -- still used
+ * as-is for auto-assigning simulated teams distinct colors) for the quick-pick row
+ * under the color-wheel picker (see chat: "limit the dot options ... to just 1 row of
+ * some of the main colors"). One evenly-spaced stop around the hue wheel plus a
+ * neutral, rather than several near-duplicate shades of the same hue. */
+const TEAM_LOGO_COLOR_PRESETS = [
+  '#EF4444',
+  '#F97316',
+  '#EAB308',
+  '#84CC16',
+  '#22C55E',
+  '#14B8A6',
+  '#06B6D4',
+  '#3B82F6',
+  '#6366F1',
+  '#A855F7',
+  '#EC4899',
+  '#64748B',
+] as const;
 
 function sameIdentity(a: LogoIdentity, b: LogoIdentity): boolean {
   return a.logoMode === b.logoMode && a.logoEmoji === b.logoEmoji && a.logoColor === b.logoColor && a.logoDataUrl === b.logoDataUrl;
@@ -35,6 +55,7 @@ export function IdentityPicker({
   value,
   initials,
   previewSize = 'lg',
+  colorLabel = 'Background color',
   onSave,
   onDirtyChange,
 }: {
@@ -42,6 +63,12 @@ export function IdentityPicker({
   value: LogoIdentity;
   initials: string;
   previewSize?: LogoSize;
+  /** Label over the color section below — "Background color" everywhere by default
+   * (it sits behind the emoji/initials badge), but the team-identity caller passes
+   * "Team color" instead, since for a team this same value now also colors that
+   * team's side of the win-probability bar on the matchup board (see chat) —
+   * true regardless of which of the three logo modes is active, Image included. */
+  colorLabel?: string;
   /** `file` is the raw image file staged this session (null unless the user just
    * picked a new image and hasn't saved yet) — the caller uploads it to Storage on
    * save; this component only handles the local compressed-preview side. */
@@ -153,30 +180,6 @@ export function IdentityPicker({
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-text-muted">Background color</p>
-          <div className="flex gap-2 flex-wrap">
-            {TEAM_LOGO_COLORS.map((color) => (
-              <button
-                key={color}
-                onClick={() => update({ logoColor: color })}
-                className={`w-7 h-7 rounded-full border-2 ${draft.logoColor === color ? 'border-white' : 'border-transparent'}`}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {draft.logoMode === 'initials' && (
-        <div className="flex gap-2 flex-wrap">
-          {TEAM_LOGO_COLORS.map((color) => (
-            <button
-              key={color}
-              onClick={() => update({ logoColor: color })}
-              className={`w-7 h-7 rounded-full border-2 ${draft.logoColor === color ? 'border-white' : 'border-transparent'}`}
-              style={{ backgroundColor: color }}
-            />
-          ))}
         </div>
       )}
 
@@ -222,6 +225,24 @@ export function IdentityPicker({
           <p className="text-[11px] text-text-muted mt-1">Cropped to a 256×256 square, capped around 150KB.</p>
         </div>
       )}
+
+      <div className="space-y-2">
+        <p className="text-[11px] text-text-muted">{colorLabel}</p>
+        <ColorPicker value={draft.logoColor} onChange={(color) => update({ logoColor: color })} />
+        {/* A grid (not the old flex-wrap row) so all 12 presets stretch to fill the
+            full width evenly — flex-wrap left the last row short and noticeably
+            off-center (see chat). */}
+        <div className="grid grid-cols-12 gap-1.5 pt-0.5">
+          {TEAM_LOGO_COLOR_PRESETS.map((color) => (
+            <button
+              key={color}
+              onClick={() => update({ logoColor: color })}
+              className={`aspect-square w-full rounded-full border-2 ${draft.logoColor === color ? 'border-white' : 'border-transparent'}`}
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
+      </div>
 
       <div className="flex items-center gap-2 pt-1 border-t border-border">
         <button

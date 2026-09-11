@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Info } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { validateLineup } from '../engine/validation';
@@ -10,6 +11,7 @@ import { BOTTOM_TAB_BAR_HEIGHT } from '../components/layout/BottomTabBar';
 import { weekLabel } from '../types';
 
 export function Lineup() {
+  const [infoOpen, setInfoOpen] = useState(false);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateWagerStake = useAppStore((s) => s.updateWagerStake);
@@ -86,17 +88,54 @@ export function Lineup() {
 
   const validation = validateLineup(roster, league.settings);
   const multiplier = activeMultipliers(league)[userTeam.id] ?? 1;
+  // The top icon doubles as the lineup-issue indicator: red "!" (and the reasons
+  // tucked behind it) when something's blocking submission, blue "i" otherwise
+  // (see chat: "some of these lineup warnings can also get dropped in a '!' or
+  // the 'i' at the top") -- same reveal-on-tap pattern as RosterSlotCard's own
+  // "!" badge, just promoted to the header since these are lineup-wide, not
+  // per-slot.
+  const hasIssues = validation.overallReasons.length > 0;
 
   return (
     <div className="flex flex-col">
       <div className="px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10">
-        <h1 className="text-xl font-bold">{weekLabel(league.currentWeek)} Lineup</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">{weekLabel(league.currentWeek)} Lineup</h1>
+          {/* Was two always-visible paragraphs of explainer text (here and in the
+              footer below) -- condensed into this single icon + reveal-on-tap panel
+              (same "hidden behind a badge until tapped" pattern RosterSlotCard.tsx
+              already uses for slot validation reasons) so the screen reads mostly as
+              picks + numbers, not prose (see chat). */}
+          <button
+            onClick={() => setInfoOpen((v) => !v)}
+            aria-label={hasIssues ? 'Lineup issues' : 'How this screen works'}
+            className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+              hasIssues ? 'bg-loss text-white text-xs font-bold' : 'bg-bg-card border border-border text-primary'
+            }`}
+          >
+            {hasIssues ? '!' : <Info size={13} />}
+          </button>
+        </div>
         <div className="mt-3">
           <BudgetBar allocated={validation.totalAllocated} total={league.settings.weeklyCredits} />
         </div>
-        <p className="mt-1.5 text-[11px] text-text-muted">
-          Picks save instantly as you make them — no need to wait to submit.
-        </p>
+        {infoOpen && (
+          <div className="mt-1.5 space-y-1">
+            {hasIssues && (
+              <div className="space-y-0.5">
+                {validation.overallReasons.map((reason) => (
+                  <p key={reason} className="text-loss text-[11px]">
+                    {reason}
+                  </p>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-text-muted">
+              Picks save instantly, no need to submit. Marking complete just confirms it's full and in
+              budget -- left incomplete at kickoff, any unused credits count as a loss.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-2.5 px-4" style={{ paddingBottom: footerHeight + 16 }}>
@@ -131,15 +170,6 @@ export function Lineup() {
         className="fixed w-full max-w-md bg-bg-raised border-t border-border p-3 space-y-2"
         style={{ bottom: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
       >
-        {validation.overallReasons.length > 0 && (
-          <div className="space-y-0.5">
-            {validation.overallReasons.map((reason) => (
-              <p key={reason} className="text-loss text-xs text-center">
-                {reason}
-              </p>
-            ))}
-          </div>
-        )}
         <div className="flex items-center justify-between text-xs text-text-muted px-1">
           <span>Remaining: ${Math.max(0, validation.remaining).toFixed(2)}</span>
           <span>{validation.distinctGames} game(s) used</span>
@@ -151,12 +181,6 @@ export function Lineup() {
         >
           {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>
-        {!(roster.submitted && validation.valid) && (
-          <p className="text-[11px] text-text-muted text-center px-1">
-            Your picks are already saved — this just marks the roster complete once it's full and
-            in budget. Left incomplete at kickoff, any unused credits count as a loss.
-          </p>
-        )}
       </div>
     </div>
   );

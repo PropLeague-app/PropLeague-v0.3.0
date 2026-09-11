@@ -320,7 +320,15 @@ export interface TeamStreak {
   count: number;
 }
 
-/** Trailing streak from the most recently settled week backward. */
+/** Trailing streak from the most recently settled week backward. Gated on
+ * winnerId/isTie, NOT on teamAScore being present -- a real league's
+ * matchup.teamAScore now updates live all week as bets settle (see chat: the
+ * "Final" badge fix), while winnerId/isTie only get set once the whole week
+ * is actually complete. Gating on teamAScore here would read a team's
+ * still-in-progress week as a loss (winnerId isn't this team, since it's
+ * null) for every week that has any settled/live bet in it, same class of
+ * bug as the Hot Hand/Ice Box off-by-one this already had to be fixed for
+ * once (see simulateWeek.ts's own comment + tests). */
 export function computeTeamStreak(league: League, teamId: string): TeamStreak {
   const weeks = Object.keys(league.matchupsByWeek)
     .filter((w) => (league.matchupsByWeek[w] ?? []).some((m) => m.teamAId === teamId || m.teamBId === teamId))
@@ -329,7 +337,7 @@ export function computeTeamStreak(league: League, teamId: string): TeamStreak {
   let streak: TeamStreak = { type: null, count: 0 };
   for (const w of weeks) {
     const matchup = league.matchupsByWeek[w].find((m) => m.teamAId === teamId || m.teamBId === teamId);
-    if (!matchup || matchup.teamAScore == null) continue;
+    if (!matchup || (matchup.winnerId == null && !matchup.isTie)) continue;
     const result: 'W' | 'L' | 'T' = matchup.isTie ? 'T' : matchup.winnerId === teamId ? 'W' : 'L';
     if (result === streak.type) streak.count += 1;
     else streak = { type: result, count: 1 };

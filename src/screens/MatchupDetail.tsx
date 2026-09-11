@@ -59,8 +59,7 @@ export function MatchupDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rosterA, rosterB]);
 
-  // manual v0.2.1 §5 #8: teamAScore/teamBScore stay null until the week fully settles,
-  // so live/in-progress weeks otherwise show "—" here. Fall back to the same
+  // manual v0.2.1 §5 #8: before any real score exists at all, fall back to the same
   // expectedWeeklyScore/DecidedGameLookup pattern MatchupCard.tsx already uses on the
   // home matchup card, so this screen shows a consistent current P/L for live weeks too.
   const decided: DecidedGameLookup = {
@@ -71,7 +70,11 @@ export function MatchupDetail() {
   };
   const scoreA = matchup.teamAScore ?? expectedWeeklyScore(rosterA, league.settings, decided);
   const scoreB = matchup.teamBScore ?? expectedWeeklyScore(rosterB, league.settings, decided);
-  const isFinal = matchup.teamAScore != null;
+  // matchup.teamAScore now updates live all week as picks settle (settle-week writes
+  // scores progressively but only sets winnerId/isTie once the whole week is actually
+  // complete -- see chat), so "has a score" no longer means "is final". Same fix as
+  // MatchupCard.tsx.
+  const isFinal = matchup.winnerId != null || matchup.isTie;
 
   return (
     <div className="flex flex-col">
@@ -177,12 +180,24 @@ function SlotMini({
   }
 
   const wager = slot.wager;
+  // Once a pick is settled (won/lost/push/voided), it's history -- dim the name/line
+  // text a bit so a still-pending or live pick reads as the thing to actually pay
+  // attention to. The status pill itself is deliberately left at full color/opacity
+  // either way (see chat: Won/Lost should stay exactly as vivid as they are now).
+  const settled = wager.status !== 'pending';
+  // Settled cards also get a touch of background muting on top of the text
+  // opacity above (see chat: "maybe we want to also mute the cell color just
+  // a bit too") -- bg-bg-card/60 lets the page background show through
+  // slightly rather than a flat opacity on the whole card, which would also
+  // wash out the border. The status pill's own won/lost colors are untouched.
   return (
-    <div className={`bg-bg-card border border-border rounded-lg p-2 ${reverse ? 'text-right' : ''}`}>
-      <p className="text-[11px] font-semibold truncate">{wager.playerName ?? wager.side}</p>
-      <p className="text-[10px] text-text-muted truncate">
-        {wagerLineDescription(wager)} · ${wager.stake.toFixed(2)}
-      </p>
+    <div className={`border border-border rounded-lg p-2 ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
+      <div className={settled ? 'opacity-60' : ''}>
+        <p className="text-[11px] font-semibold truncate">{wager.playerName ?? wager.side}</p>
+        <p className="text-[10px] text-text-muted truncate">
+          {wagerLineDescription(wager)} · ${wager.stake.toFixed(2)}
+        </p>
+      </div>
       <div className={`mt-1 flex ${reverse ? 'justify-end' : 'justify-start'}`}>
         <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
       </div>

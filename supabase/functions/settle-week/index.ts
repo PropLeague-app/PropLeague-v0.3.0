@@ -334,15 +334,22 @@ Deno.serve(async (req) => {
         weeklyScoreByTeam.set((row as any).team_id, teamTotal);
       }
 
-      if (weekComplete) {
-        // Teams with zero picks all week have no weekly_rosters row at all,
-        // so they never entered the loop above -- they still owe the full
-        // incomplete-lineup penalty once the week is final.
-        for (const t of teams ?? []) {
-          const teamId = (t as any).id as string;
-          if (!weeklyScoreByTeam.has(teamId)) {
-            weeklyScoreByTeam.set(teamId, -settings.weeklyCredits);
-          }
+      // Teams with zero picks all week have no weekly_rosters row at all, so they
+      // never entered the loop above -- give every one of them an entry here
+      // regardless of weekComplete (0 mid-week, the full incomplete-lineup penalty
+      // once the week is actually final). Previously this whole block only ran once
+      // weekComplete, which meant a team with nothing rostered had NO entry here
+      // while the week was still in progress -- the matchup-scoring loop right below
+      // then skips writing anything at all for a matchup with an undefined score
+      // (aScore == null || bScore == null), so whatever score happened to already be
+      // sitting in that matchups row (e.g. from an earlier, since-reset test week, or
+      // simply never written yet) stayed displayed indefinitely instead of the $0 a
+      // genuinely empty roster should show mid-week (see chat: "both screens should
+      // default to $0 until a bet settles one way or another").
+      for (const t of teams ?? []) {
+        const teamId = (t as any).id as string;
+        if (!weeklyScoreByTeam.has(teamId)) {
+          weeklyScoreByTeam.set(teamId, weekComplete ? -settings.weeklyCredits : 0);
         }
       }
 

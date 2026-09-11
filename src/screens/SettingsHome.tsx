@@ -387,6 +387,7 @@ export function SettingsHome() {
           title="Team Logo"
           value={userTeam}
           initials={userTeam.abbrev.slice(0, 2)}
+          colorLabel="Team color"
           onSave={async (next, file) => {
             updateUserTeam(league.id, next);
             if (!file) return;
