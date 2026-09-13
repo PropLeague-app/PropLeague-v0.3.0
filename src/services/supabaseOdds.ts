@@ -251,6 +251,11 @@ interface RefreshPropsResult {
   secondsRemaining?: number;
   gamesUpdated?: number;
   error?: string;
+  /** Per-game failures during the batch (e.g. that specific event's odds call
+      errored) -- the edge function has always returned this, it just wasn't
+      declared here or read anywhere, so a game silently failing mid-refresh
+      was invisible without a direct DB/SQL check (see chat). */
+  gameErrors?: { gameId: string; matchup: string; error: string }[];
 }
 
 /** Calls the manually-triggered player-props Edge Function (see chat: kept off

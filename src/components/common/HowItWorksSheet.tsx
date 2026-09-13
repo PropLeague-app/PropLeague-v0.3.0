@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Trophy, CreditCard, Target, ChartColumn, Swords, DollarSign } from 'lucide-react';
 import type { LeagueSettings, Position } from '../../types';
 import logoMark from '../../assets/logo-mono-muted.png';
@@ -115,7 +116,22 @@ function buildSections(settings: LeagueSettings | null): ExplainerSection[] {
  * scrolling page (manual v0.3.0 §3) rather than a swipeable card deck. */
 export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSettings | null; onClose: () => void }) {
   const sections = buildSections(settings);
-  return (
+  // Rendered via a portal straight onto <body> (see chat: header sitting way lower
+  // than it should, with a sliver of the first paragraph visibly cut off above it).
+  // This component is mounted from two very different places -- a bare top-level
+  // route for onboarding, and an overlay opened from deep inside SettingsHome,
+  // which itself lives inside MobileShell's own scrolling column. `fixed inset-0`
+  // is *supposed* to be positioned against the true viewport regardless of where
+  // in the tree it's mounted, but WKWebView (this app's actual iOS runtime, not a
+  // desktop browser) has a long-standing bug where a `position: fixed` descendant
+  // of a scrolling container gets laid out relative to that scroll container
+  // instead of the real viewport -- which lines up exactly with what was reported:
+  // the sheet rendering as if it started below MobileShell's own top safe-area
+  // strip instead of at the true top of the screen, with a fragment of real page
+  // content peeking out above it. A portal sidesteps the whole class of bug by
+  // detaching this from SettingsHome's DOM subtree entirely, the same fix used for
+  // this exact WebKit quirk in any nested-scroll-container app.
+  return createPortal(
     <div className="fixed inset-0 z-[60] bg-bg flex justify-center">
       {/* Same min-h-screen/overflow bug as MobileShell (see chat): min-h-screen is a
           floor, not a cap, so content could grow past one viewport height and the
@@ -125,12 +141,15 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
           behind it. h-dvh caps the height; min-h-0 lets the flex child actually
           shrink to scroll internally instead of pushing the whole column taller. */}
       <div className="w-full max-w-md h-dvh flex flex-col border-x border-border">
+        {/* Trimmed from p-4/text-lg (see chat: "the header is fairly large") -- the
+            extra top cushion beyond the safe-area itself is now 0.5rem instead of a
+            full 1rem, and the logo/title shrink to match. */}
         <div
-          className="flex justify-between items-center p-4 sticky top-0 bg-bg-raised z-10 border-b border-border"
-          style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+          className="flex justify-between items-center px-4 py-2.5 sticky top-0 bg-bg-raised z-10 border-b border-border"
+          style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top))' }}
         >
-          <h1 className="text-lg font-bold flex items-center gap-1.5">
-            <img src={logoMark} alt="" className="w-5 h-5 object-contain" />
+          <h1 className="text-sm font-bold flex items-center gap-1.5">
+            <img src={logoMark} alt="" className="w-4 h-4 object-contain" />
             How PropLeague Works
           </h1>
           <button onClick={onClose} className="text-text-muted text-sm">
@@ -161,6 +180,7 @@ export function HowItWorksSheet({ settings, onClose }: { settings: LeagueSetting
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

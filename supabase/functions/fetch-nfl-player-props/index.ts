@@ -87,9 +87,34 @@ interface OddsApiEventOdds {
 // a client-side disable that a page refresh would bypass.
 const COOLDOWN_MINUTES = 15;
 
-Deno.serve(async (_req: Request) => {
+// Supabase's edge runtime does NOT add CORS headers on its own -- every
+// function that's actually called from a browser/webview (via
+// supabase.functions.invoke, like this one from the in-app "Refresh Odds"
+// button) has to send these itself, including on an OPTIONS preflight, or
+// the request never even reaches here: the client's fetch() rejects outright
+// with a generic network-style error before any response body exists to
+// inspect (see chat -- "Failed to send a request to the Edge Function" every
+// single time, not intermittently, is exactly what a missing-CORS failure
+// looks like from the client side). This is the ONLY function in this app
+// ever invoked this way -- every other one only runs via the Dashboard's own
+// Test button, which isn't subject to browser CORS at all, which is why this
+// gap never surfaced anywhere else.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   if (!ODDS_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ODDS_API_KEY secret is not set' }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'ODDS_API_KEY secret is not set' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -98,7 +123,10 @@ Deno.serve(async (_req: Request) => {
     .rpc('try_claim_refresh_cooldown', { p_function_name: 'fetch-nfl-player-props', p_cooldown_minutes: COOLDOWN_MINUTES })
     .single();
   if (cooldownError) {
-    return new Response(JSON.stringify({ error: cooldownError.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: cooldownError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
   const { claimed, seconds_remaining } = cooldown as { claimed: boolean; seconds_remaining: number };
   if (!claimed) {
@@ -108,7 +136,7 @@ Deno.serve(async (_req: Request) => {
     // surfaces a non-2xx body, which hasn't been exercised from the app itself
     // yet (unlike every other function so far, called only via the Dashboard).
     return new Response(JSON.stringify({ ok: false, onCooldown: true, secondsRemaining: seconds_remaining }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
@@ -121,10 +149,15 @@ Deno.serve(async (_req: Request) => {
     .returns<UpcomingGame[]>();
 
   if (fetchError) {
-    return new Response(JSON.stringify({ error: fetchError.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: fetchError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
   if (!games || games.length === 0) {
-    return new Response(JSON.stringify({ ok: true, gamesProcessed: 0, note: 'No upcoming games in the lookahead window.' }));
+    return new Response(JSON.stringify({ ok: true, gamesProcessed: 0, note: 'No upcoming games in the lookahead window.' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   let succeeded = 0;
@@ -162,6 +195,6 @@ Deno.serve(async (_req: Request) => {
 
   return new Response(
     JSON.stringify({ ok: true, gamesInWindow: games.length, gamesUpdated: succeeded, gameErrors }),
-    { headers: { 'Content-Type': 'application/json' } },
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 });

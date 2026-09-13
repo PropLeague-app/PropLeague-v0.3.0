@@ -17,6 +17,38 @@ import { findClaimingTeam, claimBlockReason, claimHolders } from '../engine/dupl
 import { activeMultipliers } from '../engine/prizePool';
 import type { LeagueTeam, MarketKey, NFLTeam, OddsOutcome } from '../types';
 
+/** The edge function's per-game error is `${status} ${rawResponseBody}` -- often
+ * a full JSON error body from The Odds API repeated once per failed game (see
+ * chat: "This is A LOT of text"). Reduces that to "404: Event not found" or
+ * similar -- enough to know what happened without dumping the whole response. */
+function summarizeOddsError(raw: string): string {
+  const spaceIdx = raw.indexOf(' ');
+  const status = spaceIdx === -1 ? raw : raw.slice(0, spaceIdx);
+  const body = spaceIdx === -1 ? '' : raw.slice(spaceIdx + 1);
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.message === 'string') {
+      return `${status}: ${parsed.message.split('.')[0]}`;
+    }
+  } catch {
+    // Not JSON -- fall through to a truncated raw snippet below.
+  }
+  return `${status}: ${body.slice(0, 60)}`;
+}
+
+/** Most batches that have any failures at all fail for the SAME reason (e.g. a
+ * handful of far-out games whose event ids haven't stabilized yet) -- listing
+ * that reason once instead of once per game is what keeps this readable. */
+function summarizeGameErrors(gameErrors: { matchup: string; error: string }[]): string {
+  const summarized = gameErrors.map((e) => ({ matchup: e.matchup, reason: summarizeOddsError(e.error) }));
+  const uniqueReasons = new Set(summarized.map((e) => e.reason));
+  const matchups = summarized.map((e) => e.matchup).join(', ');
+  if (uniqueReasons.size === 1) {
+    return `${gameErrors.length} game${gameErrors.length === 1 ? '' : 's'} failed (${summarized[0].reason}): ${matchups}`;
+  }
+  return summarized.map((e) => `${e.matchup} (${e.reason})`).join('; ');
+}
+
 /** Matches a search query against a team's city, nickname, full name, or
  * abbreviation -- so "Kans", "Chie", "KC", "Kansas City Chiefs", or the
  * completed individual words all find the Kansas City Chiefs,
@@ -56,11 +88,17 @@ export function MarketBrowser() {
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Kept as two separate pieces of state -- not one string -- specifically so
+  // "Refreshed real odds for N games" never has to share a text color with a
+  // failure list (see chat: the whole line was going red just because SOME of
+  // the batch failed, even though the refresh itself genuinely succeeded).
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const [refreshErrorDetail, setRefreshErrorDetail] = useState<string | null>(null);
 
   async function handleRefreshOdds() {
     setRefreshing(true);
     setRefreshMessage(null);
+    setRefreshErrorDetail(null);
     const result = await refreshPlayerProps();
     setRefreshing(false);
     if (result.onCooldown) {
@@ -69,10 +107,17 @@ export function MarketBrowser() {
       return;
     }
     if (!result.ok) {
-      setRefreshMessage(result.error ?? 'Could not refresh odds.');
+      setRefreshErrorDetail(result.error ?? 'Could not refresh odds.');
       return;
     }
     setRefreshMessage(`Refreshed real odds for ${result.gamesUpdated ?? 0} game${result.gamesUpdated === 1 ? '' : 's'}.`);
+    // The edge function always reported per-game failures in its response --
+    // this just wasn't surfaced anywhere in the UI, so a game failing mid-batch
+    // was invisible without a direct SQL check. Condensed and deduped (see the
+    // helpers above) rather than dumping each game's full raw API error body.
+    if (result.gameErrors && result.gameErrors.length > 0) {
+      setRefreshErrorDetail(summarizeGameErrors(result.gameErrors));
+    }
     if (league) loadRealGamesForWeek(league.currentWeek);
   }
 
@@ -184,7 +229,12 @@ export function MarketBrowser() {
             {refreshing ? 'Refreshing…' : 'Refresh Odds'}
           </button>
         </div>
-        {refreshMessage && <p className="text-xs text-text-muted mb-2">{refreshMessage}</p>}
+        {(refreshMessage || refreshErrorDetail) && (
+          <div className="mb-2 space-y-0.5">
+            {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}
+            {refreshErrorDetail && <p className="text-xs text-loss">{refreshErrorDetail}</p>}
+          </div>
+        )}
         <div className="space-y-2">
           <div className="flex gap-2">
             <select
