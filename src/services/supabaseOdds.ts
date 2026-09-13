@@ -169,21 +169,63 @@ function mapPlayerPropMarkets(rawMarket: RawMarket, homeAbbrev: string | null, a
 }
 
 // Real feeds include up to ~9 different bookmakers, each with their own line for
-// the same market -- without filtering, a player's "Passing TDs" market would
-// show up once per bookmaker, which is exactly the clutter Hunter reported.
-// Simulated data never had this problem (it only ever generated one bookmaker's
-// worth of lines). This is the immediate fix: default to one preferred book.
-// Making this a real, commissioner-only league setting (with a UI to pick it) is
-// a separate, larger piece of work -- tied to a broader point about
-// commissioner-locked settings in general, worth doing but not rushed in here.
+// the same market -- without any filtering, a player's "Passing TDs" market would
+// show up once per bookmaker, which is exactly the clutter Hunter originally
+// reported. The fix defaults to one preferred book, same as before, but now
+// backfills anything that specific book is missing from whichever other book
+// actually has it, rather than silently going without (see chat: DraftKings not
+// carrying a given market/player is a real, recurring gap -- Hunter hit the same
+// thing with Home Run odds in his MLB Edge Finder and solved it the same way
+// there: prefer one book, fall through to the next when it doesn't have
+// something). Making the preferred book a real, commissioner-only league setting
+// is a separate, larger piece of work, not rushed in here.
 const PREFERRED_BOOKMAKER_KEY = 'draftkings';
 
-function pickPreferredBookmaker(bookmakers: RawBookmaker[]): RawBookmaker[] {
+/** Merges every bookmaker in the raw feed into one synthetic "book" per game:
+ * the preferred book's own lines win wherever it has them, and anything it's
+ * missing gets filled in from the next book (in whatever order the feed
+ * returned them) that actually has it. Two different granularities, because
+ * game-level and player-prop markets don't fail the same way:
+ *  - h2h/spreads/totals have no per-player dimension -- a book either priced
+ *    the whole game or it didn't, so the first book with that market key wins
+ *    it outright.
+ *  - Player-prop markets (e.g. "Passing Yards") bundle every player's Over/
+ *    Under into one shared market per book -- the preferred book can have the
+ *    market in general but still be missing one specific player that another
+ *    book carries (exactly what happened here: DraftKings + everyone else in
+ *    this feed simply didn't have Pass + Rush Yards priced for anyone yet, but
+ *    the same gap shows up at the single-player level too), so this merges
+ *    outcome-by-outcome, keyed by each outcome's player description, rather
+ *    than taking or discarding a whole market at once.
+ * The result is never less complete than picking one book alone, and title is
+ * deliberately generic now that a single game's lines can genuinely be sourced
+ * from more than one real book. */
+function mergeBookmakersWithFallback(bookmakers: RawBookmaker[]): RawBookmaker[] {
+  if (bookmakers.length === 0) return [];
   const preferred = bookmakers.find((b) => b.key === PREFERRED_BOOKMAKER_KEY);
-  if (preferred) return [preferred];
-  // DraftKings didn't have a line for this specific game (rare, but possible) --
-  // fall back to whichever bookmaker is first, rather than showing zero odds.
-  return bookmakers.length > 0 ? [bookmakers[0]] : [];
+  const priorityOrder = preferred ? [preferred, ...bookmakers.filter((b) => b !== preferred)] : bookmakers;
+
+  const marketsByKey = new Map<string, RawMarket>();
+  for (const book of priorityOrder) {
+    for (const rawMarket of book.markets) {
+      if (GAME_LEVEL_KEYS.has(rawMarket.key)) {
+        if (!marketsByKey.has(rawMarket.key)) marketsByKey.set(rawMarket.key, rawMarket);
+        continue;
+      }
+      const existing = marketsByKey.get(rawMarket.key);
+      if (!existing) {
+        marketsByKey.set(rawMarket.key, { key: rawMarket.key, outcomes: [...rawMarket.outcomes] });
+        continue;
+      }
+      const seenDescriptions = new Set(existing.outcomes.map((o) => o.description));
+      for (const outcome of rawMarket.outcomes) {
+        if (outcome.description && seenDescriptions.has(outcome.description)) continue;
+        existing.outcomes.push(outcome);
+      }
+    }
+  }
+
+  return [{ key: preferred?.key ?? priorityOrder[0].key, title: 'Best Available Odds', markets: Array.from(marketsByKey.values()) }];
 }
 function mapBookmaker(raw: RawBookmaker, homeAbbrev: string | null, awayAbbrev: string | null, roster: RosterCandidate[]): OddsBookmaker {
   const markets: OddsMarket[] = [];
@@ -223,7 +265,7 @@ function mapRow(row: RealGameRow, roster: RosterCandidate[]): NFLGame {
     status: row.status as GameStatus,
     homeScore: row.home_score,
     awayScore: row.away_score,
-    bookmakers: pickPreferredBookmaker(row.bookmakers).map((b) => mapBookmaker(b, homeAbbrev, awayAbbrev, roster)),
+    bookmakers: mergeBookmakersWithFallback(row.bookmakers).map((b) => mapBookmaker(b, homeAbbrev, awayAbbrev, roster)),
   };
 }
 

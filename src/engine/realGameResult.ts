@@ -33,6 +33,23 @@ const STAT_FIELD_FOR_MARKET: Partial<Record<MarketKey, keyof RealPlayerStatLine>
   player_receptions: 'receptions',
   player_kicking_points: 'kickingPoints',
   player_field_goals: 'fieldGoalsMade',
+  // player_pass_rush_yds and player_rush_reception_yds are each two stat fields
+  // added together -- handled as dedicated branches in buildRealGameResult below,
+  // same as player_anytime_td, rather than through this single-field lookup.
+};
+
+/** Combined-stat markets that sum two RealPlayerStatLine fields rather than reading
+ * one directly (see STAT_FIELD_FOR_MARKET's comment). Was previously only handled
+ * for settle-week's own copy of this logic (supabase/functions/settle-week/index.ts,
+ * which can't import this file) -- this client-side copy fell through to the
+ * generic single-field branch below, which silently graded every real
+ * player_rush_reception_yds wager as "under" (STAT_FIELD_FOR_MARKET had no entry
+ * for it, so statValue() always returned 0) regardless of actual performance. Not
+ * currently reachable from any live code path (buildRealGameResult has no callers
+ * yet), but fixed here so it isn't a landmine for whatever wires it up next. */
+const COMBINED_STAT_FIELDS_FOR_MARKET: Partial<Record<MarketKey, (keyof RealPlayerStatLine)[]>> = {
+  player_pass_rush_yds: ['passingYards', 'rushingYards'],
+  player_rush_reception_yds: ['rushingYards', 'receivingYards'],
 };
 
 function anytimeTdHit(stat: RealPlayerStatLine | undefined): boolean {
@@ -41,6 +58,11 @@ function anytimeTdHit(stat: RealPlayerStatLine | undefined): boolean {
 }
 
 function statValue(marketKey: MarketKey, stat: RealPlayerStatLine | undefined): number {
+  const combinedFields = COMBINED_STAT_FIELDS_FOR_MARKET[marketKey];
+  if (combinedFields) {
+    if (!stat) return 0;
+    return combinedFields.reduce((sum, field) => sum + ((stat[field] as number | undefined) ?? 0), 0);
+  }
   const field = STAT_FIELD_FOR_MARKET[marketKey];
   if (!field || !stat) return 0;
   return (stat[field] as number | undefined) ?? 0;

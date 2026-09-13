@@ -68,7 +68,7 @@ import {
 type MarketKey =
   | 'h2h' | 'spreads' | 'totals'
   | 'player_pass_yds' | 'player_pass_tds' | 'player_pass_interceptions'
-  | 'player_rush_yds' | 'player_rush_attempts' | 'player_anytime_td'
+  | 'player_rush_yds' | 'player_rush_attempts' | 'player_pass_rush_yds' | 'player_anytime_td'
   | 'player_reception_yds' | 'player_receptions' | 'player_rush_reception_yds'
   | 'player_kicking_points' | 'player_field_goals';
 
@@ -178,6 +178,10 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
     result = hit ? 'yes' : 'no';
   } else if (marketKey === 'player_rush_reception_yds') {
     const actual = (stat?.rushing_yards ?? 0) + (stat?.receiving_yards ?? 0);
+    const diff = actual - point;
+    result = diff === 0 ? 'push' : diff > 0 ? 'over' : 'under';
+  } else if (marketKey === 'player_pass_rush_yds') {
+    const actual = (stat?.passing_yards ?? 0) + (stat?.rushing_yards ?? 0);
     const diff = actual - point;
     result = diff === 0 ? 'push' : diff > 0 ? 'over' : 'under';
   } else {

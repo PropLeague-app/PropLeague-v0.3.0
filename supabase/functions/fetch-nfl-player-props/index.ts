@@ -42,6 +42,7 @@ const PLAYER_PROP_MARKETS = [
   'player_pass_interceptions',
   'player_rush_yds',
   'player_rush_attempts',
+  'player_pass_rush_yds',
   'player_anytime_td',
   'player_reception_yds',
   'player_receptions',

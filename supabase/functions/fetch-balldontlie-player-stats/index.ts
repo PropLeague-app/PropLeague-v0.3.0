@@ -12,23 +12,48 @@
 // returned Hollins' exact real line -- 4 receptions, 51 yards, clean integers,
 // no scrambling -- for the real Sept 9 2026 SEA @ NE game.
 //
+// ALSO (added Sept 2026, see chat): keeps public.real_games' status/home_score/
+// away_score in sync, for every game this same /games call returns -- not just
+// the final ones used for stats below. This replaces fetch-nfl-scores, which
+// pulled from The Odds API's /scores endpoint and was burning credits running
+// every 15 min around the clock for something balldontlie already includes at
+// no extra cost (the /games endpoint is available even on balldontlie's Free
+// tier, per their docs). fetch-nfl-scores' cron job should be disabled once
+// this is confirmed working -- left in the repo for now, not deleted.
+//
+// real_games has no balldontlie id to join against -- its id/home_team/
+// away_team were written by the Odds-API-based pregame ingestion
+// (fetch-nfl-odds), which stores full team names ("Seattle Seahawks"), not
+// abbreviations. So the sync below matches on (week, home_team full name,
+// away_team full name) instead, using balldontlie's own home_team.full_name /
+// visitor_team.full_name fields -- confirmed via balldontlie's own docs to be
+// the full "City Name" form (e.g. "Kansas City Chiefs"), same convention The
+// Odds API uses. NOT yet verified against a real live API response from
+// here (no network path to balldontlie's actual API from this environment) --
+// check the `results[].gamesNoMatch` / `gamesNoMatchSample` fields in this
+// function's response after the next real run to confirm every game matched;
+// a non-zero gamesNoMatch means a team-name spelling mismatch to fix here.
+//
 // Deploy: Supabase Dashboard -> Edge Functions -> Deploy a new function -> Via Editor
 // Secret needed: BALLDONTLIE_API_KEY (Dashboard -> Edge Functions -> Secrets) --
 // NEVER hardcode the real key here or anywhere that gets committed to git.
 // Requires the All-Star tier or above -- the Stats endpoint (what this function
-// actually needs) is not available on balldontlie's free tier.
-// Schedule: Dashboard -> Integrations -> Cron -> a handful of times a week
-// clustered after games typically finish (see chat for the exact cron
-// expressions) -- NOT hourly, same reasoning as before: a wager that isn't
-// graded yet just stays pending until the next scheduled call catches it.
+// actually needs for player stats) is not available on balldontlie's free tier.
+// Schedule: Dashboard -> Integrations -> Cron -> every 15 min, every day (see
+// chat) -- safe to run this often, no cooldown here and no meaningful rate
+// limit at this volume.
 //
 // IMPORTANT: only games balldontlie itself marks final (game.status_state ===
-// 'final') get their player rows upserted. Every other game's rows are
-// skipped entirely, not stored with a placeholder -- same defensive posture as
-// the SportsDataIO version, guarding against the exact defaulting-to-zero bug
-// that mis-graded real wagers (see chat, the Mack Hollins incident). Rerunning
-// this for a week already in the table safely overwrites any bad data a prior
-// run wrote, via the same (season, week, player_name) upsert key.
+// 'final') get their player rows upserted into real_player_stats. Every other
+// game's stat rows are skipped entirely, not stored with a placeholder --
+// same defensive posture as the SportsDataIO version, guarding against the
+// exact defaulting-to-zero bug that mis-graded real wagers (see chat, the
+// Mack Hollins incident). Rerunning this for a week already in the table
+// safely overwrites any bad data a prior run wrote, via the same (season,
+// week, player_name) upsert key. The real_games sync above is separate and
+// deliberately less strict -- it also reflects 'in_progress' games as 'live'
+// with whatever score balldontlie currently reports, since a live score
+// display isn't wager-grading-sensitive the way player stats are.
 //
 // The /stats endpoint has no direct week filter -- it's fetched by game_ids[],
 // so this fetches that week's games first (which DOES support weeks[]), keeps
@@ -40,7 +65,8 @@
 // support postseason via season_types[]=3, but how its own week numbering
 // maps onto this app's WC/DIV/CONF week ids wasn't verified against real
 // data, so those weeks are skipped with a note in the response rather than
-// guessed at -- worth a real look once the postseason is closer.
+// guessed at -- worth a real look once the postseason is closer. (The
+// real_games score sync above is skipped for those weeks too, same reason.)
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -56,6 +82,9 @@ const CURRENT_SEASON = 2026;
 interface BdlTeam {
   abbreviation: string;
 }
+interface BdlGameTeam {
+  full_name: string;
+}
 interface BdlPlayer {
   first_name: string;
   last_name: string;
@@ -66,6 +95,10 @@ interface BdlGame {
   week: number;
   season: number;
   status_state: string; // 'final' | 'in_progress' | 'scheduled' | ...
+  home_team: BdlGameTeam;
+  visitor_team: BdlGameTeam;
+  home_team_score: number | null;
+  visitor_team_score: number | null;
 }
 interface BdlStatRow {
   player: BdlPlayer;
@@ -180,10 +213,49 @@ Deno.serve(async (req: Request) => {
       perWeek.push({ week: weekStr, error: String(err) });
       continue;
     }
+
+    // Keep real_games' status/score fresh from this same /games call -- see
+    // file header. Runs for every game regardless of final/live/scheduled,
+    // independent of the player-stats path below.
+    let gamesUpdated = 0;
+    let gamesNoMatch = 0;
+    const gamesNoMatchSample: { home: string; away: string }[] = [];
+    for (const g of games) {
+      let status: 'final' | 'live' | null = null;
+      if (g.status_state === 'final') status = 'final';
+      else if (g.status_state && g.status_state !== 'scheduled') status = 'live';
+      if (!status) continue; // still pregame -- nothing to update yet
+
+      const patch: Record<string, unknown> = { status };
+      const homeScore = n(g.home_team_score);
+      const awayScore = n(g.visitor_team_score);
+      if (homeScore != null) patch.home_score = homeScore;
+      if (awayScore != null) patch.away_score = awayScore;
+
+      const { data: matched, error: syncErr } = await supabase
+        .from('real_games')
+        .update(patch)
+        .eq('week', weekStr)
+        .eq('home_team', g.home_team.full_name)
+        .eq('away_team', g.visitor_team.full_name)
+        .select('id');
+
+      if (syncErr) {
+        gamesNoMatch++; // counts as unmatched for visibility; message goes in perWeek below
+        gamesNoMatchSample.push({ home: g.home_team.full_name, away: `${g.visitor_team.full_name} (error: ${syncErr.message})` });
+      } else if (!matched || matched.length === 0) {
+        gamesNoMatch++;
+        if (gamesNoMatchSample.length < 5) gamesNoMatchSample.push({ home: g.home_team.full_name, away: g.visitor_team.full_name });
+      } else {
+        gamesUpdated++;
+      }
+    }
+    const scoreSync = { gamesUpdated, gamesNoMatch, gamesNoMatchSample: gamesNoMatchSample.slice(0, 5) };
+
     const finalGameIds = games.filter((g) => g.status_state === 'final').map((g) => String(g.id));
 
     if (finalGameIds.length === 0) {
-      perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: 0, upserted: 0, note: 'no games final yet for this week' });
+      perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: 0, upserted: 0, note: 'no games final yet for this week', ...scoreSync });
       continue;
     }
 
@@ -191,7 +263,7 @@ Deno.serve(async (req: Request) => {
     try {
       statRows = await fetchAllPages<BdlStatRow>('/stats', { 'game_ids[]': finalGameIds, 'seasons[]': String(season), 'season_types[]': '2' });
     } catch (err) {
-      perWeek.push({ week: weekStr, error: String(err) });
+      perWeek.push({ week: weekStr, error: String(err), ...scoreSync });
       continue;
     }
 
@@ -222,16 +294,16 @@ Deno.serve(async (req: Request) => {
     });
 
     if (rows.length === 0) {
-      perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: finalGameIds.length, upserted: 0, note: 'final games but no stat rows returned' });
+      perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: finalGameIds.length, upserted: 0, note: 'final games but no stat rows returned', ...scoreSync });
       continue;
     }
 
     const { error: upsertErr } = await supabase.from('real_player_stats').upsert(rows, { onConflict: 'season,week,player_name' });
     if (upsertErr) {
-      perWeek.push({ week: weekStr, error: upsertErr.message });
+      perWeek.push({ week: weekStr, error: upsertErr.message, ...scoreSync });
       continue;
     }
-    perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: finalGameIds.length, upserted: rows.length });
+    perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: finalGameIds.length, upserted: rows.length, ...scoreSync });
   }
 
   return new Response(JSON.stringify({ ok: true, season, weeksProcessed: weeksToProcess, results: perWeek }), {

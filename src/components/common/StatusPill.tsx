@@ -3,11 +3,12 @@ type Status = 'pending' | 'live' | 'won' | 'lost' | 'push' | 'voided' | 'upcomin
 const STYLES: Record<Status, string> = {
   pending: 'bg-bg-raised text-text-muted',
   upcoming: 'bg-bg-raised text-text-muted',
-  // Was bg-loss/20 text-loss -- read as "something's wrong" rather than "in
-  // progress" (see chat). Same neutral family as 'pending', just brighter/
-  // higher-contrast, plus the pulse, so it reads as "this one's live" without
-  // implying a loss.
-  live: 'bg-bg-raised text-text font-semibold animate-pulse',
+  // Deliberately text-loss (red) + a leading dot, per Hunter's explicit ask --
+  // reverses an earlier decision (see git blame) that avoided red here to
+  // dodge an "in progress" pill reading as "something's wrong." The dot +
+  // red + pulse combo together is what should now read as "broadcast live,"
+  // not an error state.
+  live: 'bg-bg-raised text-loss font-semibold animate-pulse',
   final: 'bg-bg-raised text-text-muted',
   won: 'bg-profit/20 text-profit',
   lost: 'bg-loss/20 text-loss',
@@ -28,7 +29,8 @@ const LABELS: Record<Status, string> = {
 
 export function StatusPill({ status }: { status: Status }) {
   return (
-    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${STYLES[status]}`}>
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${STYLES[status]}`}>
+      {status === 'live' && <span aria-hidden="true">•</span>}
       {LABELS[status]}
     </span>
   );

@@ -14,6 +14,7 @@ export const MARKET_LABELS: Record<MarketKey, string> = {
   player_pass_interceptions: 'Interceptions',
   player_rush_yds: 'Rushing Yards',
   player_rush_attempts: 'Rush Attempts',
+  player_pass_rush_yds: 'Pass + Rush Yards',
   player_anytime_td: 'Anytime TD',
   player_reception_yds: 'Receiving Yards',
   player_receptions: 'Receptions',
@@ -33,6 +34,7 @@ export const MARKET_SHORT_LABELS: Partial<Record<MarketKey, string>> = {
   player_pass_interceptions: 'INTs',
   player_rush_yds: 'rush yds',
   player_rush_attempts: 'rush att',
+  player_pass_rush_yds: 'pass+rush yds',
   player_anytime_td: 'anytime TD',
   player_reception_yds: 'rec yds',
   player_receptions: 'receptions',
@@ -82,7 +84,7 @@ export function wagerLineDescription(wager: { marketKey: MarketKey; side: string
 // for that specific player, so this is purely "stop hiding real markets that
 // exist," never "invent ones that don't."
 export const MARKETS_BY_POSITION: Record<Position, MarketKey[]> = {
-  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
+  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_pass_rush_yds', 'player_anytime_td'],
   RB: ['player_rush_yds', 'player_rush_attempts', 'player_reception_yds', 'player_receptions', 'player_rush_reception_yds', 'player_anytime_td'],
   WR: ['player_reception_yds', 'player_receptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
   TE: ['player_reception_yds', 'player_receptions', 'player_anytime_td'],

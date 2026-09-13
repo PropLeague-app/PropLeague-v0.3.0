@@ -1,3 +1,12 @@
+// SUPERSEDED (Sept 2026, see chat): fetch-balldontlie-player-stats now syncs
+// real_games' status/home_score/away_score itself, off the same /games call it
+// already makes every 15 min for player stats -- balldontlie's Games endpoint
+// includes scores for free (even on the Free tier), so this function's Odds API
+// usage was pure waste running around the clock. Disable this function's cron
+// job in the Dashboard once the balldontlie sync is confirmed working (check
+// its response's gamesNoMatch/gamesNoMatchSample fields after a real run).
+// Left deployed but should go idle -- not deleted here, that's your call.
+//
 // Pulls real final scores from The Odds API's /scores endpoint and writes them
 // into real_games (status + home_score + away_score). Meant to run on a cron
 // schedule a bit after each day's last kickoff window closes (e.g. hourly on
