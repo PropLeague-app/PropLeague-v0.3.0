@@ -6,6 +6,7 @@ import { formatCents } from '../engine/oddsMath';
 import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
 import { TeamLogo } from '../components/common/TeamLogo';
+import { PositionBadge } from '../components/common/PositionBadge';
 import { MARKET_LABELS, MARKET_SHORT_LABELS } from '../data/propsGenerator';
 import type { LeagueTeam } from '../types';
 
@@ -55,11 +56,11 @@ export function Leaderboards() {
         <Card>
           <p className="text-xs text-text-muted mb-2">Best ROI</p>
           {boards.bestROI.slice(0, 5).map((e, i) => (
-            <div key={e.teamId} className="flex items-start justify-between gap-2 text-xs py-1.5">
-              <span className="min-w-0 flex-1">
+            <div key={e.teamId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-1.5">
+              <span>
                 {i + 1}. <TeamName team={teamById(e.teamId)} />
               </span>
-              <span className={`shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}>{(e.value * 100).toFixed(1)}%</span>
+              <span className={`ml-auto shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}>{(e.value * 100).toFixed(1)}%</span>
             </div>
           ))}
         </Card>
@@ -67,11 +68,11 @@ export function Leaderboards() {
         <Card>
           <p className="text-xs text-text-muted mb-2">Most total profit</p>
           {boards.mostProfit.slice(0, 5).map((e, i) => (
-            <div key={e.teamId} className="flex items-start justify-between gap-2 text-xs py-1.5">
-              <span className="min-w-0 flex-1">
+            <div key={e.teamId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-1.5">
+              <span>
                 {i + 1}. <TeamName team={teamById(e.teamId)} />
               </span>
-              <span className={`shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(e.value)}</span>
+              <span className={`ml-auto shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(e.value)}</span>
             </div>
           ))}
         </Card>
@@ -79,11 +80,11 @@ export function Leaderboards() {
         <Card>
           <p className="text-xs text-text-muted mb-2">Best single week</p>
           {boards.bestSingleWeek.slice(0, 5).map((e, i) => (
-            <div key={e.teamId} className="flex items-start justify-between gap-2 text-xs py-1.5">
-              <span className="min-w-0 flex-1">
+            <div key={e.teamId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-1.5">
+              <span>
                 {i + 1}. <TeamName team={teamById(e.teamId)} />
               </span>
-              <span className="shrink-0 whitespace-nowrap text-profit">{formatCents(e.value)}</span>
+              <span className="ml-auto shrink-0 whitespace-nowrap text-profit">{formatCents(e.value)}</span>
             </div>
           ))}
         </Card>
@@ -91,11 +92,11 @@ export function Leaderboards() {
         <Card>
           <p className="text-xs text-text-muted mb-2">Most bets won</p>
           {boards.mostBetsWon.slice(0, 5).map((e, i) => (
-            <div key={e.teamId} className="flex items-start justify-between gap-2 text-xs py-1.5">
-              <span className="min-w-0 flex-1">
+            <div key={e.teamId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-1.5">
+              <span>
                 {i + 1}. <TeamName team={teamById(e.teamId)} />
               </span>
-              <span className="shrink-0 whitespace-nowrap">{e.value}</span>
+              <span className="ml-auto shrink-0 whitespace-nowrap">{e.value}</span>
             </div>
           ))}
         </Card>
@@ -103,11 +104,21 @@ export function Leaderboards() {
         <Card>
           <p className="text-xs text-text-muted mb-2">Position specialists</p>
           {boards.positionSpecialists.map((s) => (
-            <div key={s.position} className="flex items-start justify-between gap-2 text-xs py-1.5">
-              <span className="min-w-0 flex-1">
-                Best {s.position} bettor: <TeamName team={teamById(s.teamId)} />
-              </span>
-              <span className={`shrink-0 whitespace-nowrap ${s.roi >= 0 ? 'text-profit' : 'text-loss'}`}>{(s.roi * 100).toFixed(1)}%</span>
+            // Two-line layout so it's unambiguous which team goes with which
+            // position: a title row (position pill + "Best Bettor") makes the
+            // category read like a heading, then the team + ROI sit together
+            // on their own line right under it (see chat: previous single-line
+            // "Best RB bettor: <team>  <roi>" layout got squeezed/unclear once
+            // wrapping kicked in on long team names).
+            <div key={s.position} className="py-2 border-b border-border last:border-0">
+              <div className="flex items-center gap-2 mb-1">
+                <PositionBadge position={s.position} />
+                <span className="text-xs font-semibold text-text">Best Bettor</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <TeamName team={teamById(s.teamId)} />
+                <span className={`shrink-0 whitespace-nowrap ${s.roi >= 0 ? 'text-profit' : 'text-loss'}`}>{(s.roi * 100).toFixed(1)}%</span>
+              </div>
             </div>
           ))}
         </Card>
@@ -116,11 +127,11 @@ export function Leaderboards() {
           <Card>
             <p className="text-xs text-text-muted mb-2">Most-picked props this week</p>
             {boards.mostPickedPropsThisWeek.map((p) => (
-              <div key={`${p.playerName}-${p.marketKey}`} className="flex items-start justify-between gap-2 text-xs py-1.5">
-                <span className="min-w-0 flex-1">
+              <div key={`${p.playerName}-${p.marketKey}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs py-1.5">
+                <span>
                   {p.playerName} · {MARKET_SHORT_LABELS[p.marketKey] ?? MARKET_LABELS[p.marketKey]}
                 </span>
-                <span className="shrink-0 whitespace-nowrap text-text-muted">{p.count} {p.count === 1 ? 'team' : 'teams'}</span>
+                <span className="ml-auto shrink-0 whitespace-nowrap text-text-muted">{p.count} {p.count === 1 ? 'team' : 'teams'}</span>
               </div>
             ))}
           </Card>

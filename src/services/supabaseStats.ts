@@ -49,16 +49,37 @@ function mapRow(row: RealPlayerStatRow): RealPlayerStatLine {
   };
 }
 
+// PostgREST caps an unranged select at 1000 rows by default and truncates
+// silently rather than erroring -- same bug class as loadActiveRoster in
+// supabaseOdds.ts (see that file's comment). A full week's real_player_stats
+// (every skill player + kicker across all 16 games, once everything's final)
+// sits close enough to that ceiling that it silently clipped off the LAST
+// rows written -- Dak Prescott, CeeDee Lamb, Cam Skattebo, Jaxson Dart, all
+// from Cowboys@Giants, the last game of the week to finish ingesting (see
+// chat, Sept 2026) -- which is why their ticker went blank on every reload
+// while everyone ingested earlier in the day kept working. Paginating here
+// the same way fixes it regardless of how large the table grows.
+const PAGE_SIZE = 1000;
+
 /** Keyed by player_name.trim().toLowerCase() -- the exact same normalization
  * settle-week's own statByPlayerName map uses (see
  * supabase/functions/settle-week/index.ts), so a ticker value can never
  * disagree with what actually got graded. */
 export async function fetchRealPlayerStatsForWeek(week: WeekId): Promise<Record<string, RealPlayerStatLine>> {
-  const { data, error } = await supabase.from('real_player_stats').select('*').eq('week', String(week));
-  if (error || !data) return {};
   const out: Record<string, RealPlayerStatLine> = {};
-  for (const row of data as RealPlayerStatRow[]) {
-    out[row.player_name.trim().toLowerCase()] = mapRow(row);
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('real_player_stats')
+      .select('*')
+      .eq('week', String(week))
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data) break;
+    for (const row of data as RealPlayerStatRow[]) {
+      out[row.player_name.trim().toLowerCase()] = mapRow(row);
+    }
+    if (data.length < PAGE_SIZE) break; // last page reached
+    from += PAGE_SIZE;
   }
   return out;
 }

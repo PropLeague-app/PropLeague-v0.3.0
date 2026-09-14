@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { rosterKey, buildEmptyRoster } from '../engine/rosterSlots';
@@ -11,10 +11,10 @@ import { StatusPill } from '../components/common/StatusPill';
 import { WagerResultTicker } from '../components/common/WagerResultTicker';
 import { TeamLogo } from '../components/common/TeamLogo';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
-import { BackHeader } from '../components/layout/BackHeader';
+import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader';
 import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription } from '../data/propsGenerator';
-import type { League, RosterSlotState } from '../types';
+import type { League, Matchup, RosterSlotState } from '../types';
 import { weekLabel } from '../types';
 
 export function MatchupDetail() {
@@ -28,6 +28,20 @@ export function MatchupDetail() {
   const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
 
   const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
+
+  // Lets this screen swipe between every matchup in the week instead of only
+  // ever showing the one you tapped into from Home -- see chat, Sept 2026:
+  // "scroll between the matchups once you click on one... a scroll bar at
+  // the top when you are looking at a matchup." Same ordering LeagueHome
+  // uses for its own matchup card + "View other matchups" list: the
+  // viewer's own matchup first, then the rest in schedule order.
+  const navigate = useNavigate();
+  const weekMatchups = league && matchup ? league.matchupsByWeek[String(matchup.week)] ?? [] : [];
+  const userTeamId = league?.teams.find((t) => t.isUser)?.id;
+  const userWeekMatchup = weekMatchups.find((m) => m.teamAId === userTeamId || m.teamBId === userTeamId);
+  const orderedWeekMatchups: Matchup[] = userWeekMatchup
+    ? [userWeekMatchup, ...weekMatchups.filter((m) => m.id !== userWeekMatchup.id)]
+    : weekMatchups;
 
   // Rosters for this matchup's week aren't guaranteed to already be in local state --
   // previously this screen only ever read whatever Lineup.tsx happened to have loaded
@@ -100,6 +114,9 @@ export function MatchupDetail() {
   return (
     <div className="flex flex-col">
       <BackHeader title="Matchup" fallback="/home" />
+      {orderedWeekMatchups.length > 1 && (
+        <MatchupTabs league={league} matchups={orderedWeekMatchups} currentMatchupId={matchup.id} onSelect={(id) => navigate(`/matchup/${id}`, { replace: true })} />
+      )}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
           <TeamHeader team={teamA} score={scoreA} isFinal={isFinal} />
@@ -138,6 +155,54 @@ export function MatchupDetail() {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MatchupTabs({
+  league,
+  matchups,
+  currentMatchupId,
+  onSelect,
+}: {
+  league: League;
+  matchups: Matchup[];
+  currentMatchupId: string;
+  onSelect: (matchupId: string) => void;
+}) {
+  const activeRef = useRef<HTMLButtonElement>(null);
+
+  // Keeps the active pill in view as you swipe further down the list --
+  // without this, tapping the last matchup in a long week can leave the
+  // strip scrolled to wherever it happened to be, hiding the very pill
+  // that's supposed to show what's selected.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [currentMatchupId]);
+
+  return (
+    <div className="sticky z-10 bg-bg-raised/95 backdrop-blur border-b border-border" style={{ top: BACK_HEADER_HEIGHT }}>
+      <div className="flex gap-1.5 overflow-x-auto px-4 py-2">
+        {matchups.map((m) => {
+          const teamA = league.teams.find((t) => t.id === m.teamAId);
+          const teamB = league.teams.find((t) => t.id === m.teamBId);
+          const isActive = m.id === currentMatchupId;
+          return (
+            <button
+              key={m.id}
+              ref={isActive ? activeRef : undefined}
+              onClick={() => onSelect(m.id)}
+              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold ${
+                isActive ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+              }`}
+            >
+              {teamA && <TeamLogo team={teamA} size="sm" />}
+              <span className={isActive ? 'text-white/70' : ''}>vs</span>
+              {teamB && <TeamLogo team={teamB} size="sm" />}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
