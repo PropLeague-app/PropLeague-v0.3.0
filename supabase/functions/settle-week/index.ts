@@ -72,7 +72,22 @@ type MarketKey =
   | 'player_reception_yds' | 'player_receptions' | 'player_rush_reception_yds'
   | 'player_kicking_points' | 'player_field_goals';
 
-interface RealGame { id: string; home_team: string; away_team: string; home_score: number; away_score: number }
+interface RealGame { id: string; home_team: string; away_team: string; home_score: number; away_score: number; final_since: string | null }
+
+// How long a game must have been final (per real_games.final_since, stamped
+// by fetch-balldontlie-player-stats the first time it sees the game final)
+// before its player stats are trusted for grading -- balldontlie can still
+// revise a player's box score for a few minutes after posting the final
+// score/status, and a wager is only ever graded once (see chat: the Lamar
+// Jackson pass+rush yds incident, Sept 2026, graded off an early/incomplete
+// stat snapshot and stuck wrong since settle-week never re-grades a settled
+// wager). Game-level markets (h2h/spreads/totals) don't depend on a
+// per-player stat provider at all, so this grace period only ever delays
+// grading actual player-prop wagers, not final-score-based ones -- but for
+// simplicity finalGames (used for both) is gated by it uniformly; the only
+// side effect is weekComplete/season-advancement also lands up to this much
+// later, which is harmless.
+const FINAL_GRACE_MS = 15 * 60 * 1000; // 15 min -- adjust freely, see chat
 
 interface StatRow {
   player_name: string;
@@ -234,13 +249,16 @@ Deno.serve(async (req) => {
   for (const weekStr of weeksToProcess) {
     const { data: games, error: gamesErr } = await supabase
       .from('real_games')
-      .select('id, home_team, away_team, home_score, away_score, status')
+      .select('id, home_team, away_team, home_score, away_score, status, final_since')
       .eq('week', weekStr);
     if (gamesErr) {
       summary.push({ week: weekStr, error: gamesErr.message });
       continue;
     }
-    const finalGames = (games ?? []).filter((g) => g.status === 'final') as RealGame[];
+    const now = Date.now();
+    const finalGames = (games ?? []).filter(
+      (g) => g.status === 'final' && g.final_since != null && now - new Date(g.final_since).getTime() >= FINAL_GRACE_MS,
+    ) as RealGame[];
     const weekComplete = (games ?? []).length > 0 && finalGames.length === (games ?? []).length;
     if (finalGames.length === 0) {
       summary.push({ week: weekStr, note: 'no final real_games for this week yet' });

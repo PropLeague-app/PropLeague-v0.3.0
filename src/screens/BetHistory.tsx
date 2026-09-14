@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Ticket } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
-import { isWagerVisibleToViewer } from '../engine/stats';
+import { isWagerVisibleToViewer, LEAGUE_VIEW_ID } from '../engine/stats';
 import { resolveGame, gameHasStarted } from '../services/oddsService';
 import { OddsDisplay } from '../components/common/OddsDisplay';
 import { StatusPill } from '../components/common/StatusPill';
+import { WagerResultTicker } from '../components/common/WagerResultTicker';
 import { PositionBadge } from '../components/common/PositionBadge';
+import { TeamLogo } from '../components/common/TeamLogo';
 import { EmptyState } from '../components/common/EmptyState';
 import { BackHeader } from '../components/layout/BackHeader';
 import { MemberSelector } from '../components/common/MemberSelector';
@@ -43,28 +45,34 @@ export function BetHistory() {
   const userTeam = league?.teams.find((t) => t.isUser);
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
+  const loadRealPlayerStatsForWeek = useAppStore((s) => s.loadRealPlayerStatsForWeek);
 
   // manual v0.3.0 §5: browse any league member's bet history, defaulting to the
-  // signed-in user's own team.
+  // signed-in user's own team. LEAGUE_VIEW_ID (Sept 2026 chat: "league aggregate
+  // stats") is a third option alongside "my own team" and "another single team" --
+  // it folds every team's bets into one list instead of picking a viewedTeam at all.
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const viewedTeam = league?.teams.find((t) => t.id === selectedTeamId) ?? userTeam;
+  const isLeagueView = selectedTeamId === LEAGUE_VIEW_ID;
+  const viewedTeam = isLeagueView ? undefined : (league?.teams.find((t) => t.id === selectedTeamId) ?? userTeam);
   const isOwnTeam = !!viewedTeam && !!userTeam && viewedTeam.id === userTeam.id;
 
   // A bet's game might span any past week, not just the current one -- unlike
   // Lineup.tsx (which only ever needs the current week's wagered games), bet
   // history needs every real game this team has ever bet on loaded, or gameStarted
   // below silently falls back to "unknown" for every past-week real wager (see
-  // chat: resolveGame/gameHasStarted in oddsService.ts).
+  // chat: resolveGame/gameHasStarted in oddsService.ts). In the league-aggregate
+  // view that widens to every real game every team has ever bet on.
   useEffect(() => {
-    if (!league || !viewedTeam) return;
+    if (!league || !userTeam) return;
     const gameIds = new Set<string>();
     for (const roster of Object.values(league.rostersByTeamWeek)) {
-      if (roster.teamId !== viewedTeam.id) continue;
+      if (!isLeagueView && roster.teamId !== viewedTeam?.id) continue;
       for (const slot of roster.slots) if (slot.wager) gameIds.add(slot.wager.gameId);
     }
     for (const gameId of gameIds) if (!realGamesById[gameId]) loadRealGame(gameId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [league, viewedTeam?.id]);
+  }, [league, userTeam, viewedTeam?.id, isLeagueView]);
 
   const [weekFilter, setWeekFilter] = useState<'all' | string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -73,14 +81,16 @@ export function BetHistory() {
   const [search, setSearch] = useState('');
 
   const allBets = useMemo(() => {
-    if (!league || !viewedTeam) return [];
-    return Object.values(league.rostersByTeamWeek)
-      .filter((r) => r.teamId === viewedTeam.id)
-      .flatMap((r) => r.slots.map((s) => ({ week: r.week, slot: s })))
+    if (!league || !userTeam) return [];
+    const rosters = isLeagueView
+      ? Object.values(league.rostersByTeamWeek)
+      : Object.values(league.rostersByTeamWeek).filter((r) => r.teamId === viewedTeam?.id);
+    return rosters
+      .flatMap((r) => r.slots.map((s) => ({ week: r.week, slot: s, teamId: r.teamId })))
       .filter((b) => b.slot.wager)
-      .filter(({ week, slot }) =>
+      .filter(({ week, slot, teamId }) =>
         isWagerVisibleToViewer({
-          isOwnTeam,
+          isOwnTeam: teamId === userTeam.id,
           hidePicks: league.settings.hidePicks,
           wagerWeek: week,
           currentWeek: league.currentWeek,
@@ -89,13 +99,24 @@ export function BetHistory() {
         }),
       )
       .sort((a, b) => (b.slot.wager!.placedAt > a.slot.wager!.placedAt ? 1 : -1));
-  }, [league, viewedTeam, isOwnTeam, realGamesById]);
+  }, [league, userTeam, viewedTeam?.id, isLeagueView, realGamesById]);
 
   const weekOptions = useMemo(() => {
     const weeks = new Map<string, WeekId>();
     for (const b of allBets) weeks.set(String(b.week), b.week);
     return [...weeks.values()].sort((a, b) => weekOrder(a) - weekOrder(b));
   }, [allBets]);
+
+  // Powers each settled ticket's result ticker (see WagerResultTicker) --
+  // unlike the real-games effect above this can span every week the viewed
+  // team/league has ever bet on, not just the current one, so it loads
+  // whichever of those weeks haven't been fetched yet rather than a single id.
+  useEffect(() => {
+    for (const week of weekOptions) {
+      if (!realPlayerStatsByWeek[String(week)]) loadRealPlayerStatsForWeek(week);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekOptions]);
 
   const anyFilterActive =
     weekFilter !== 'all' || statusFilter !== 'all' || resultFilter !== 'all' || positionFilter !== 'all' || search !== '';
@@ -114,7 +135,7 @@ export function BetHistory() {
     });
   }, [allBets, weekFilter, statusFilter, resultFilter, positionFilter, search]);
 
-  if (!league || !viewedTeam) return null;
+  if (!league || !userTeam || (!isLeagueView && !viewedTeam)) return null;
 
   const settled = bets.filter((b) => b.slot.wager!.status !== 'pending');
   const won = settled.filter((b) => b.slot.wager!.status === 'won').length;
@@ -122,7 +143,7 @@ export function BetHistory() {
   const totalPL = settled.reduce((sum, b) => sum + (b.slot.wager!.settledProfit ?? 0), 0);
   const totalWagered = bets.reduce((sum, b) => sum + b.slot.wager!.stake, 0);
   const winRate = won + lost > 0 ? Math.round((won / (won + lost)) * 100) : 0;
-  const title = isOwnTeam ? 'My Bets' : `${viewedTeam.teamName}'s Bets`;
+  const title = isLeagueView ? 'League Bets' : isOwnTeam ? 'My Bets' : `${viewedTeam!.teamName}'s Bets`;
 
   function clearAll() {
     setWeekFilter('all');
@@ -136,7 +157,7 @@ export function BetHistory() {
     <div className="flex flex-col">
       <BackHeader title={title} fallback="/home" />
       <div className="p-4 space-y-4">
-        <MemberSelector teams={league.teams} selectedTeamId={viewedTeam.id} onSelect={setSelectedTeamId} />
+        <MemberSelector teams={league.teams} selectedTeamId={selectedTeamId ?? userTeam.id} onSelect={setSelectedTeamId} showLeagueOption />
         <div className="grid grid-cols-4 gap-2 text-center">
           <Stat label="Record" value={`${won}-${lost}`} />
           <Stat label="Win Rate" value={`${winRate}%`} />
@@ -144,8 +165,11 @@ export function BetHistory() {
           <Stat label="Net P/L" value={formatCents(totalPL)} valueClass={totalPL >= 0 ? 'text-profit' : 'text-loss'} />
         </div>
 
-        <button onClick={() => navigate('/my-stats')} className="text-xs text-primary font-medium">
-          View advanced stats →
+        <button
+          onClick={() => navigate('/my-stats', isLeagueView ? { state: { view: 'league' } } : undefined)}
+          className="text-xs text-primary font-medium"
+        >
+          {isLeagueView ? 'View league stats →' : 'View advanced stats →'}
         </button>
 
         <div className="space-y-2">
@@ -215,10 +239,20 @@ export function BetHistory() {
           />
         ) : (
           <div className="space-y-2">
-            {bets.map(({ week, slot }) => {
+            {bets.map(({ week, slot, teamId }) => {
               const wager = slot.wager!;
+              // Only shown in the league-aggregate view -- with every team's bets
+              // mixed into one list, whose pick this is stops being obvious
+              // otherwise (see chat: "league aggregate stats").
+              const betTeam = isLeagueView ? league.teams.find((t) => t.id === teamId) : undefined;
               return (
                 <div key={wager.id} className="bg-bg-card border border-border rounded-xl p-3 space-y-1.5">
+                  {betTeam && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
+                      <TeamLogo team={betTeam} size="xs" />
+                      <span className="truncate">{betTeam.isUser ? 'You' : betTeam.teamName}</span>
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <PositionBadge position={slot.position} />
@@ -227,7 +261,22 @@ export function BetHistory() {
                         <p className="text-xs text-text-muted truncate">{wagerLineDescription(wager)}</p>
                       </div>
                     </div>
-                    <StatusPill status={wager.status} />
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <StatusPill status={wager.status} />
+                      <WagerResultTicker
+                        marketKey={wager.marketKey}
+                        status={wager.status}
+                        stat={
+                          wager.playerName
+                            ? realPlayerStatsByWeek[String(week)]?.[wager.playerName.trim().toLowerCase()]
+                            : undefined
+                        }
+                        game={(() => {
+                          const g = resolveGame(wager.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+                          return g ? { homeScore: g.homeScore, awayScore: g.awayScore } : undefined;
+                        })()}
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between text-xs text-text-muted pt-1.5 border-t border-border">
                     <span>{weekLabel(week)}</span>
@@ -253,8 +302,8 @@ export function BetHistory() {
 
 function Stat({ label, value, valueClass = '' }: { label: string; value: string; valueClass?: string }) {
   return (
-    <div className="bg-bg-card border border-border rounded-lg py-2">
-      <p className={`text-sm font-bold ${valueClass}`}>{value}</p>
+    <div className="bg-bg-card border border-border rounded-lg py-2 px-1">
+      <p className={`text-sm font-bold whitespace-nowrap ${valueClass}`}>{value}</p>
       <p className="text-[10px] text-text-muted">{label}</p>
     </div>
   );

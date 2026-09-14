@@ -217,6 +217,27 @@ Deno.serve(async (req: Request) => {
     // Keep real_games' status/score fresh from this same /games call -- see
     // file header. Runs for every game regardless of final/live/scheduled,
     // independent of the player-stats path below.
+    //
+    // Also stamps final_since the FIRST time (and only the first time) a game
+    // is observed as final -- settle-week uses this to wait out a grace
+    // period after a game goes final before trusting real_player_stats for
+    // grading. Needed because balldontlie can still revise a player's box
+    // score for a few minutes after posting the final score/status, and a
+    // wager is only ever graded once (see chat: the Lamar Jackson pass+rush
+    // yds incident, Sept 2026 -- his real total was well over the line, but
+    // an early/incomplete stat snapshot got graded as a loss and, since
+    // settle-week never re-grades an already-settled wager, stayed wrong
+    // until manually corrected). Requires the real_games.final_since column
+    // (migration below, run this yourself in the SQL editor):
+    //   alter table real_games add column if not exists final_since timestamptz;
+    const { data: existingGameRows } = await supabase
+      .from('real_games')
+      .select('home_team, away_team, final_since')
+      .eq('week', weekStr);
+    const existingFinalSinceByKey = new Map(
+      (existingGameRows ?? []).map((r) => [`${r.home_team}::${r.away_team}`, r.final_since as string | null]),
+    );
+
     let gamesUpdated = 0;
     let gamesNoMatch = 0;
     const gamesNoMatchSample: { home: string; away: string }[] = [];
@@ -231,6 +252,11 @@ Deno.serve(async (req: Request) => {
       const awayScore = n(g.visitor_team_score);
       if (homeScore != null) patch.home_score = homeScore;
       if (awayScore != null) patch.away_score = awayScore;
+
+      if (status === 'final') {
+        const existingFinalSince = existingFinalSinceByKey.get(`${g.home_team.full_name}::${g.visitor_team.full_name}`);
+        if (!existingFinalSince) patch.final_since = nowIso;
+      }
 
       const { data: matched, error: syncErr } = await supabase
         .from('real_games')

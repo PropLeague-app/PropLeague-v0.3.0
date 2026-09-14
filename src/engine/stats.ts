@@ -107,6 +107,27 @@ export function collectTeamBets(league: League, teamId: string, visibility?: Bet
   return bets.sort((a, b) => weekOrder(a.week) - weekOrder(b.week) || (a.placedAt < b.placedAt ? -1 : 1));
 }
 
+/** Sentinel "team id" for the league-aggregate view (Sept 2026 chat: "we should
+ * also have a league aggregate stats") -- not a real team, so anything keyed by
+ * teamId must check for this before treating it as one. Lives here (not in a
+ * screen or component) because it's the shared vocabulary between MemberSelector
+ * (renders the "League" chip) and collectLeagueBets below. */
+export const LEAGUE_VIEW_ID = '__league__';
+
+/** League-aggregate counterpart to collectTeamBets: every visible wager from every
+ * team in the league, flattened into one chronologically sorted list. computeIndividualStats
+ * only ever reduces over a flat TeamBet[] and never looks at who placed a bet, so
+ * feeding it this instead of one team's bets turns every My Stats breakdown (by
+ * position, by favorite/dog, streaks, biggest win/loss, etc.) into a league-wide
+ * version for free. `viewerTeamId` is still applied per-bet (not once) since
+ * hide-picks visibility differs by whether each individual wager belongs to the
+ * viewer's own team -- a spectator's current-week pending picks stay hidden from
+ * everyone else even inside the aggregate. */
+export function collectLeagueBets(league: League, viewerTeamId: string | undefined, isGameStarted: (gameId: string) => boolean): TeamBet[] {
+  const bets = league.teams.flatMap((t) => collectTeamBets(league, t.id, { isOwnTeam: t.id === viewerTeamId, isGameStarted }));
+  return bets.sort((a, b) => weekOrder(a.week) - weekOrder(b.week) || (a.placedAt < b.placedAt ? -1 : 1));
+}
+
 export interface IndividualStats {
   totalBets: number;
   settledBets: number;

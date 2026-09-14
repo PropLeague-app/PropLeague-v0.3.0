@@ -1,7 +1,34 @@
 // Supabase Edge Function: fetch-nfl-odds
 //
-// Fetches live/upcoming NFL game odds (h2h, spreads, totals) and recent scores
-// from The Odds API, and upserts them into public.real_games.
+// Fetches live/upcoming NFL game odds (h2h, spreads, totals) from The Odds
+// API, and upserts them into public.real_games. This is also the function
+// that creates real_games rows in the first place (the pregame odds feed is
+// the first place a given week's games show up).
+//
+// CHANGED (Sept 2026, see chat -- audit after the balldontlie migration):
+// this used to ALSO call The Odds API's /scores endpoint every run and write
+// status/home_score/away_score here, which (a) kept spending Odds API credits
+// on something we deliberately moved off Odds API, contradicting "only use
+// The Odds API for the actual odds," and (b) raced against
+// fetch-balldontlie-player-stats's much more frequent (every 15 min) sync of
+// those same three columns -- this function running every few hours could
+// silently stomp fresher balldontlie data with stale/re-derived Odds API
+// data. Fixed by dropping the /scores call entirely: status/home_score/
+// away_score are now ONLY ever written by fetch-balldontlie-player-stats.
+// This function still needs to write *something* into those columns the
+// first time a game row is created (before balldontlie or anyone else has
+// touched it) -- new rows default to status 'upcoming', scores null, which
+// is correct since a game just appearing in the pregame odds feed hasn't
+// kicked off yet in the overwhelming majority of cases. For a row that
+// already exists, the existing status/home_score/away_score are carried
+// forward unchanged (same merge-don't-clobber approach already used for
+// bookmakers below, extended to these three columns).
+//
+// Also removed the "pick up a completed game that dropped out of the /odds
+// feed" backfill pass that used to run off the same /scores call -- no
+// longer needed, since fetch-balldontlie-player-stats's /games call already
+// covers every game for a week regardless of whether it still has an active
+// betting market.
 //
 // Deploy: Supabase Dashboard -> Edge Functions -> Deploy a new function -> Via Editor
 // Secret needed: ODDS_API_KEY (Dashboard -> Edge Functions -> Secrets)
@@ -85,14 +112,6 @@ interface OddsApiGame {
   away_team: string;
   bookmakers: OddsApiBookmaker[];
 }
-interface ScoreApiGame {
-  id: string;
-  commence_time: string;
-  completed: boolean;
-  home_team: string;
-  away_team: string;
-  scores: { name: string; score: string }[] | null;
-}
 
 interface RealGameRow {
   id: string;
@@ -107,15 +126,6 @@ interface RealGameRow {
   away_score: number | null;
   bookmakers: { key: string; title: string; markets: { key: string; outcomes: OddsApiOutcome[] }[] }[];
   updated_at: string;
-}
-
-function scoreFor(game: { home_team: string; away_team: string }, score: ScoreApiGame | undefined) {
-  const home = score?.scores?.find((s) => s.name === game.home_team)?.score;
-  const away = score?.scores?.find((s) => s.name === game.away_team)?.score;
-  return {
-    home: home != null ? Number(home) : null,
-    away: away != null ? Number(away) : null,
-  };
 }
 
 type BookmakerRow = { key: string; title: string; markets: { key: string; outcomes: OddsApiOutcome[] }[] };
@@ -159,7 +169,7 @@ Deno.serve(async (_req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // 1. Live/upcoming odds — game-level markets only (see file header for why).
+  // Live/upcoming odds — game-level markets only (see file header for why).
   const oddsRes = await fetch(
     `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`,
   );
@@ -168,26 +178,23 @@ Deno.serve(async (_req: Request) => {
   }
   const oddsGames = (await oddsRes.json()) as OddsApiGame[];
 
-  // 2. Live + recently-completed scores (up to 3 days back).
-  const scoresRes = await fetch(`https://api.the-odds-api.com/v4/sports/americanfootball_nfl/scores/?apiKey=${ODDS_API_KEY}&daysFrom=3`);
-  if (!scoresRes.ok) {
-    return new Response(JSON.stringify({ error: `Scores fetch failed: ${scoresRes.status} ${await scoresRes.text()}` }), { status: 502 });
-  }
-  const scoreGames = (await scoresRes.json()) as ScoreApiGame[];
-  const scoresById = new Map(scoreGames.map((g) => [g.id, g]));
-
-  // Fetch existing bookmakers data for every game about to be upserted, so
-  // fresh game-level markets can be merged into it rather than replacing it
-  // outright -- see mergeBookmakers above for why this matters.
-  const allIds = [...new Set([...oddsGames.map((g) => g.id), ...scoreGames.map((g) => g.id)])];
-  const { data: existingRows } = await supabase.from('real_games').select('id, bookmakers').in('id', allIds);
-  const existingBookmakersById = new Map((existingRows ?? []).map((r) => [r.id as string, (r.bookmakers ?? []) as BookmakerRow[]]));
+  // Fetch existing bookmakers + status/scores for every game about to be
+  // upserted. Bookmakers get merged (see mergeBookmakers). status/home_score/
+  // away_score are carried forward as-is when a row already exists -- this
+  // function no longer derives those from Odds API at all (see file header);
+  // fetch-balldontlie-player-stats owns them exclusively now. A brand-new row
+  // (no existing data) defaults to 'upcoming'/null/null, correct for a game
+  // just now appearing in the pregame odds feed.
+  const allIds = [...new Set(oddsGames.map((g) => g.id))];
+  const { data: existingRows } = await supabase
+    .from('real_games')
+    .select('id, bookmakers, status, home_score, away_score')
+    .in('id', allIds);
+  const existingByid = new Map((existingRows ?? []).map((r) => [r.id as string, r]));
 
   const nowIso = new Date().toISOString();
   const rows: RealGameRow[] = oddsGames.map((game) => {
-    const score = scoresById.get(game.id);
-    const { home, away } = scoreFor(game, score);
-    const status: RealGameRow['status'] = score?.completed ? 'final' : home != null ? 'live' : 'upcoming';
+    const existing = existingByid.get(game.id);
     const freshBookmakers: BookmakerRow[] = game.bookmakers.map((b) => ({
       key: b.key,
       title: b.title,
@@ -201,37 +208,13 @@ Deno.serve(async (_req: Request) => {
       kickoff: game.commence_time,
       home_team: game.home_team,
       away_team: game.away_team,
-      status,
-      home_score: home,
-      away_score: away,
-      bookmakers: mergeBookmakers(existingBookmakersById.get(game.id) ?? [], freshBookmakers),
+      status: (existing?.status as RealGameRow['status'] | undefined) ?? 'upcoming',
+      home_score: (existing?.home_score as number | null | undefined) ?? null,
+      away_score: (existing?.away_score as number | null | undefined) ?? null,
+      bookmakers: mergeBookmakers((existing?.bookmakers as BookmakerRow[] | undefined) ?? [], freshBookmakers),
       updated_at: nowIso,
     };
   });
-
-  // The /odds endpoint stops returning a game once it's no longer upcoming/live
-  // (confirmed in The Odds API's own docs), so a just-finished game would never
-  // get its final score saved without this: pick up any completed game from the
-  // scores response that already dropped out of the odds response.
-  const oddsIds = new Set(oddsGames.map((g) => g.id));
-  for (const score of scoreGames) {
-    if (oddsIds.has(score.id) || !score.completed) continue;
-    const { home, away } = scoreFor(score, score);
-    rows.push({
-      id: score.id,
-      sport_key: 'americanfootball_nfl',
-      week: computeWeek(score.commence_time),
-      day_slot: computeDaySlot(score.commence_time),
-      kickoff: score.commence_time,
-      home_team: score.home_team,
-      away_team: score.away_team,
-      status: 'final',
-      home_score: home,
-      away_score: away,
-      bookmakers: [],
-      updated_at: nowIso,
-    });
-  }
 
   const { error } = await supabase.from('real_games').upsert(rows, { onConflict: 'id' });
   if (error) {

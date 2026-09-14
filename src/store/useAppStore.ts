@@ -26,6 +26,8 @@ import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote
 import { postChatMessageRemote, fetchLeagueChat } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
+import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
+import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { gamesForWeek } from '../data/seed';
 import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -56,6 +58,13 @@ interface AppState {
    * MarketBrowser/Lineup for now, not all 13 places that read odds data. */
   realGamesByWeek: Record<string, NFLGame[]>;
   realGamesById: Record<string, NFLGame>;
+  /** Final real box-score lines, per week -- keyed by player_name.trim().toLowerCase()
+   * (same normalization settle-week's own grading map uses), populated only for
+   * games balldontlie has marked final (see fetch-balldontlie-player-stats's header).
+   * Powers the settled-wager result ticker (Sept 2026 chat: "frame of reference for
+   * how much someone won/lost by") -- absence means "not loaded yet, or this
+   * player's game isn't final/ingested yet", not "confirmed zero". */
+  realPlayerStatsByWeek: Record<string, Record<string, RealPlayerStatLine>>;
   /** Whether hydrateMyLeagues has run (successfully or not) for the current
    * session -- gates RootRedirect's routing decision so a returning user with
    * a real Supabase membership isn't bounced to Create League before we've
@@ -107,6 +116,7 @@ interface AppState {
 
   loadRealGamesForWeek: (week: WeekId) => Promise<void>;
   loadRealGame: (gameId: string) => Promise<void>;
+  loadRealPlayerStatsForWeek: (week: WeekId) => Promise<void>;
   hydrateMyLeagues: () => Promise<void>;
 }
 
@@ -164,6 +174,7 @@ export const useAppStore = create<AppState>()(
       currentLeagueId: null,
       realGamesByWeek: {},
       realGamesById: {},
+      realPlayerStatsByWeek: {},
       leaguesHydrated: false,
 
       setProfile: (profile) => set({ profile }),
@@ -760,6 +771,12 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ realGamesById: { ...state.realGamesById, [gameId]: game } }));
       },
 
+      loadRealPlayerStatsForWeek: async (week) => {
+        const stats = await fetchRealPlayerStatsForWeek(week);
+        if (Object.keys(stats).length === 0) return; // nothing ingested yet -- don't clobber a previous load
+        set((state) => ({ realPlayerStatsByWeek: { ...state.realPlayerStatsByWeek, [String(week)]: stats } }));
+      },
+
       // Discovers every league the currently authenticated user actually
       // belongs to in Supabase and reconstructs local League objects for
       // them -- the fix for a real, serious gap: previously the app only
@@ -812,7 +829,13 @@ export const useAppStore = create<AppState>()(
       // that needs to survive a page reload — re-fetched fresh via the loading
       // useEffect in whichever screen needs it, same as rosters/standings/etc.
       partialize: (state) => {
-        const { realGamesByWeek: _realGamesByWeek, realGamesById: _realGamesById, leaguesHydrated: _leaguesHydrated, ...rest } = state;
+        const {
+          realGamesByWeek: _realGamesByWeek,
+          realGamesById: _realGamesById,
+          realPlayerStatsByWeek: _realPlayerStatsByWeek,
+          leaguesHydrated: _leaguesHydrated,
+          ...rest
+        } = state;
         return rest;
       },
       merge: (persisted, current) => {

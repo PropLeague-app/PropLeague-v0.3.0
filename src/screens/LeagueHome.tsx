@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronDown, Hourglass, Rocket } from 'lucide-react';
+import { Trophy, ChevronDown, Hourglass, Rocket, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { getSlate } from '../services/oddsService';
@@ -30,6 +30,7 @@ export function LeagueHome() {
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceText, setAnnounceText] = useState('');
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Pulls the real, shared matchup/standings results — matters most for anyone who
   // isn't the commissioner, since they never ran Advance Week themselves.
@@ -66,6 +67,25 @@ export function LeagueHome() {
   }
 
   const userTeam = league.teams.find((t) => t.isUser);
+
+  // Client-side-only refresh: re-reads whatever's already in Supabase (scores,
+  // wager/roster status, standings) -- does NOT touch the odds/lines
+  // themselves, which stay behind the separate Refresh Odds button + cooldown
+  // on MarketBrowser (that one spends real Odds API credits; this one doesn't
+  // touch any edge function at all, so no cooldown needed here).
+  async function handleRefresh() {
+    if (refreshing || !league) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadLeagueResults(league.id),
+        loadWeekRosters(league.id, league.currentWeek),
+        loadRealGamesForWeek(league.currentWeek),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
   const weekMatchups = league.matchupsByWeek[String(league.currentWeek)] ?? [];
   const userMatchup = weekMatchups.find((m) => m.teamAId === userTeam?.id || m.teamBId === userTeam?.id);
   const otherMatchups = weekMatchups.filter((m) => m.id !== userMatchup?.id);
@@ -86,26 +106,33 @@ export function LeagueHome() {
 
   return (
     <>
-      <button
-        onClick={() => setSwitcherOpen(true)}
-        className="flex items-center gap-2.5 text-left w-full px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10"
-      >
-        <LeagueLogo league={league} size="lg" />
-        <div className="min-w-0 flex-1">
-          <p className="text-text-muted text-sm truncate flex items-center gap-1">
-            {league.name}
-            <ChevronDown size={12} />
-          </p>
-          <div className="flex items-baseline justify-between">
-            <h1 className="text-2xl font-bold">{weekLabel(league.currentWeek)}</h1>
-            {firstKickoff && (
-              <span className="text-xs text-text-muted">
-                <CountdownTimer target={firstKickoff} />
-              </span>
-            )}
+      <div className="flex items-center gap-2.5 w-full px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10">
+        <button onClick={() => setSwitcherOpen(true)} className="flex items-center gap-2.5 text-left flex-1 min-w-0">
+          <LeagueLogo league={league} size="lg" />
+          <div className="min-w-0 flex-1">
+            <p className="text-text-muted text-sm truncate flex items-center gap-1">
+              {league.name}
+              <ChevronDown size={12} />
+            </p>
+            <div className="flex items-baseline justify-between">
+              <h1 className="text-2xl font-bold">{weekLabel(league.currentWeek)}</h1>
+              {firstKickoff && (
+                <span className="text-xs text-text-muted">
+                  <CountdownTimer target={firstKickoff} />
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          aria-label="Refresh scores and stats"
+          className="p-2 -mr-2 text-text-muted disabled:opacity-50 shrink-0"
+        >
+          <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+        </button>
+      </div>
 
       {switcherOpen && (
         <LeagueSwitcherSheet

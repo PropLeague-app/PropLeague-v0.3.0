@@ -8,7 +8,9 @@ import { resultForGame } from '../data/seed';
 import { expectedWeeklyScore, type DecidedGameLookup } from '../engine/scoring';
 import { PositionBadge } from '../components/common/PositionBadge';
 import { StatusPill } from '../components/common/StatusPill';
+import { WagerResultTicker } from '../components/common/WagerResultTicker';
 import { TeamLogo } from '../components/common/TeamLogo';
+import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { BackHeader } from '../components/layout/BackHeader';
 import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription } from '../data/propsGenerator';
@@ -21,7 +23,9 @@ export function MatchupDetail() {
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const loadRealPlayerStatsForWeek = useAppStore((s) => s.loadRealPlayerStatsForWeek);
   const realGamesById = useAppStore((s) => s.realGamesById);
+  const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
 
   const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
 
@@ -35,6 +39,15 @@ export function MatchupDetail() {
     if (league && matchup) loadWeekRosters(league.id, matchup.week);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [league?.id, matchup?.week]);
+
+  // Powers the result ticker next to each settled pick's Won/Lost pill (see
+  // WagerResultTicker) -- only ever has rows for games balldontlie has already
+  // marked final, so this is a plain "load once the matchup's week is known"
+  // effect, same shape as the rosters one above, not a poll.
+  useEffect(() => {
+    if (matchup) loadRealPlayerStatsForWeek(matchup.week);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchup?.week]);
 
   if (!league) return null;
   if (!matchup) return <div className="p-4 text-text-muted text-sm">Matchup not found.</div>;
@@ -99,6 +112,7 @@ export function MatchupDetail() {
                   isUser={teamA.isUser}
                   hidePicks={hidePicks}
                   realGamesById={realGamesById}
+                  realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
                 />
                 <div className="flex items-center justify-center px-1">
                   <PositionBadge position={slotA.position} />
@@ -109,6 +123,7 @@ export function MatchupDetail() {
                   isUser={teamB.isUser}
                   hidePicks={hidePicks}
                   realGamesById={realGamesById}
+                  realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
                   reverse
                 />
               </div>
@@ -149,6 +164,7 @@ function SlotMini({
   isUser,
   hidePicks,
   realGamesById,
+  realPlayerStats,
   reverse,
 }: {
   slot: RosterSlotState;
@@ -156,6 +172,7 @@ function SlotMini({
   isUser: boolean;
   hidePicks: boolean;
   realGamesById: Record<string, ReturnType<typeof getGame>>;
+  realPlayerStats?: Record<string, RealPlayerStatLine>;
   reverse?: boolean;
 }) {
   if (!slot.wager) {
@@ -198,8 +215,14 @@ function SlotMini({
           {wagerLineDescription(wager)} · ${wager.stake.toFixed(2)}
         </p>
       </div>
-      <div className={`mt-1 flex ${reverse ? 'justify-end' : 'justify-start'}`}>
+      <div className={`mt-1 flex items-center gap-1.5 ${reverse ? 'flex-row-reverse justify-end' : 'justify-start'}`}>
         <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
+        <WagerResultTicker
+          marketKey={wager.marketKey}
+          status={wager.status}
+          stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
+          game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
+        />
       </div>
     </div>
   );

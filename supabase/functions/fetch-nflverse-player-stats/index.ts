@@ -1,3 +1,15 @@
+// SUPERSEDED (Sept 2026, see chat): fetch-balldontlie-player-stats is now the
+// sole source of truth for public.real_player_stats. This function doesn't
+// spend Odds API credits (nflverse is a free GitHub file), so it wasn't part of
+// the credit-usage problem -- but it upserts to the exact same table on the
+// exact same (season, week, player_name) conflict key as balldontlie, with NO
+// final-game gating at all (see the balldontlie file's header for why that
+// gating matters -- the Mack Hollins incident). Running both is two sources
+// racing to write the same wager-grading row, which is worse than either alone.
+// Disable this function's cron job in the Dashboard -- balldontlie fully
+// replaces it now. Left deployed but should go idle -- not deleted here,
+// that's your call.
+//
 // Supabase Edge Function: fetch-nflverse-player-stats
 //
 // Fetches real NFL player box-score stats from nflverse (a free, actively-

@@ -94,6 +94,40 @@ export interface WagerToGrade {
   point?: number | null;
 }
 
+/** Purely for display -- the settled-wager result "ticker" next to a Won/Lost
+ * pill (Sept 2026 chat: "some frame of reference for how much someone
+ * won/lost by ... will also make it easier to track the Lamar Jackson
+ * pass+rush bug if we can see the result"). Reuses this file's own
+ * statValue/anytimeTdHit so the number shown is guaranteed to be the exact
+ * figure grading itself used -- including the two combined-stat markets
+ * (player_pass_rush_yds, player_rush_reception_yds) this file's own history
+ * comment above already documents a real bug for.
+ *
+ * Returns null when there's genuinely nothing to show yet: no stat row
+ * ingested for a player market (see this file's header -- "not ingested
+ * yet" is not the same as "recorded a zero"), or no score posted yet for a
+ * game-level market. A plain integer is used for every numeric stat
+ * (yards/attempts/receptions/FGs made are always whole numbers in practice,
+ * unlike the .5 lines they're compared against) rather than a "21/18.5"
+ * fraction, which read noisier without adding information. */
+export function describeWagerResult(
+  marketKey: MarketKey,
+  stat: RealPlayerStatLine | undefined,
+  game?: { homeScore: number | null | undefined; awayScore: number | null | undefined },
+): string | null {
+  if (marketKey === 'h2h' || marketKey === 'spreads' || marketKey === 'totals') {
+    if (!game || game.homeScore == null || game.awayScore == null) return null;
+    return `${game.awayScore}-${game.homeScore}`;
+  }
+  if (marketKey === 'player_anytime_td') {
+    if (!stat) return null;
+    const tds = (stat.rushingTds ?? 0) + (stat.receivingTds ?? 0);
+    return tds > 0 ? `${tds} TD${tds > 1 ? 's' : ''}` : '0 TD';
+  }
+  if (!stat) return null;
+  return String(statValue(marketKey, stat));
+}
+
 /**
  * Builds a single-market GameResult for one wager against real data -- the
  * real-data replacement for the per-market branches inside
