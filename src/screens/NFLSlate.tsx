@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { CalendarClock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { DaySlot, WeekId } from '../types';
-import { getSlate } from '../services/oddsService';
 import { WeekSelector } from '../components/slate/WeekSelector';
 import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
+import { EmptyState } from '../components/common/EmptyState';
 
 const DAY_LABELS: Record<DaySlot, string> = {
   WED: 'Wednesday',
@@ -22,37 +23,38 @@ export function NFLSlate() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const [week, setWeek] = useState<WeekId | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Tracks the real_games fetch itself (not a fixed timer) -- see chat, Sept
+  // 2026: this screen used to fall back to the fully-fabricated data/seed.ts
+  // slate (fake teams, fake odds) for any week The Odds API hasn't posted yet,
+  // which is every week more than ~1-2 out, and is flatly impossible for
+  // WC/DIV/CONF since the real bracket isn't seeded until those rounds are
+  // actually reached. That fallback is gone -- a week with no real rows yet
+  // shows an honest "not posted" empty state instead of invented matchups.
+  const [gamesLoading, setGamesLoading] = useState(true);
   const realGamesForWeek = useAppStore((s) => s.realGamesByWeek[String(week ?? league?.currentWeek ?? 1)]);
   const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
 
   const activeWeek = week ?? league?.currentWeek ?? 1;
 
   useEffect(() => {
-    loadRealGamesForWeek(activeWeek);
+    let cancelled = false;
+    setGamesLoading(true);
+    loadRealGamesForWeek(activeWeek).finally(() => {
+      if (!cancelled) setGamesLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWeek]);
 
-  const games = useMemo(() => {
-    // NFL Slate browses every game regardless of status (unlike MarketBrowser,
-    // which only wants games still open for new bets) -- no bookmakers.length
-    // filter either, since a final/past game's matchup and score are still
-    // worth showing once its pre-game odds are gone.
-    if (realGamesForWeek && realGamesForWeek.length > 0) return realGamesForWeek;
-    return getSlate(activeWeek, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled, league?.manualGameOverrides);
-  }, [realGamesForWeek, activeWeek, league?.currentWeek, league?.settings.lineMovementEnabled, league?.manualGameOverrides]);
-
-  function changeWeek(w: WeekId) {
-    setLoading(true);
-    setWeek(w);
-    setTimeout(() => setLoading(false), 250);
-  }
+  const games = realGamesForWeek ?? [];
 
   const grouped = DAY_ORDER.map((day) => ({
     day,
-    // Sorted by kickoff within each day slot — neither the real-data source
-    // nor getSlate guarantees an order, so without this, games inside a day
-    // (e.g. the early/late Sunday windows) could list out of kickoff order.
+    // Sorted by kickoff within each day slot -- the real-data source doesn't
+    // guarantee an order, so without this, games inside a day (e.g. the
+    // early/late Sunday windows) could list out of kickoff order.
     games: games.filter((g) => g.daySlot === day).sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
   })).filter((g) => g.games.length > 0);
 
@@ -60,16 +62,22 @@ export function NFLSlate() {
     <>
       <div className="px-4 pt-2 pb-3 space-y-3 sticky top-0 bg-bg-raised z-10">
         <h1 className="text-xl font-bold">NFL Slate</h1>
-        <WeekSelector value={activeWeek} onChange={changeWeek} />
+        <WeekSelector value={activeWeek} onChange={setWeek} />
       </div>
 
       <div className="px-4 pb-4">
-        {loading ? (
+        {gamesLoading ? (
           <div className="space-y-2">
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
           </div>
+        ) : grouped.length === 0 ? (
+          <EmptyState
+            icon={<CalendarClock size={36} strokeWidth={1.5} />}
+            title="Schedule not posted yet"
+            subtitle="Odds usually go up about a week before kickoff -- playoff matchups aren't set until the bracket is seeded. Check back closer to game day."
+          />
         ) : (
           <div className="space-y-4">
             {grouped.map(({ day, games: dayGames }) => (

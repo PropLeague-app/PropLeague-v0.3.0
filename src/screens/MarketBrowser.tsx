@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
-import { getSlate, getPlayerPropGroups } from '../services/oddsService';
+import { getPlayerPropGroups } from '../services/oddsService';
 import { refreshPlayerProps } from '../services/supabaseOdds';
 import { nflTeamById } from '../data/nflTeams';
 import { MARKETS_BY_POSITION, MARKET_LABELS } from '../data/propsGenerator';
@@ -133,19 +133,18 @@ export function MarketBrowser() {
 
   const games = useMemo(() => {
     if (!league) return [];
-    // Real games, when we have them for this week, take priority — only games
-    // that actually have real odds attached are worth showing as "real" (an
-    // empty bookmakers array would mean nothing to bet on); otherwise fall back
-    // to the local simulated slate, unchanged from before this existed.
-    const real = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
-    const base =
-      real && real.length > 0
-        ? real
-        : getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled).filter((g) => g.status === 'upcoming');
-    // Neither source guarantees kickoff order (Supabase returns rows in
-    // whatever order the query happened to fetch them; getSlate's order isn't
-    // guaranteed either) — sort explicitly so the soonest games always list
-    // first instead of whatever incidental order the data arrived in.
+    // Only real games with real odds attached are ever bettable here now -- no
+    // more falling back to the local simulated slate (see chat, Sept 2026: that
+    // fallback let a user place a real wager on a fully fake game, keyed to a
+    // data/seed.ts id that will never appear in real_games. settle-week can
+    // never find that game final, so the wager would sit "pending"/"Live"
+    // forever -- unfixable, since no real data for a fake game is ever coming.
+    // An empty slate while odds are still posting is a much safer failure mode
+    // than a wager nothing can ever settle.
+    const base = (realGamesForWeek ?? []).filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
+    // Supabase doesn't guarantee kickoff order (rows come back in whatever
+    // order the query happened to fetch them) -- sort explicitly so the
+    // soonest games always list first.
     return [...base].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [league, realGamesForWeek]);
 
@@ -275,7 +274,11 @@ export function MarketBrowser() {
 
       <div className="px-4 py-2 space-y-3">
         {filteredGames.length === 0 && (
-          <EmptyState icon={<Search size={36} strokeWidth={1.5} />} title="No games available" subtitle="Every game for this week has already kicked off." />
+          <EmptyState
+            icon={<Search size={36} strokeWidth={1.5} />}
+            title="No games available"
+            subtitle="Every game for this week has already kicked off, or odds haven't posted for this week yet -- try the refresh button above."
+          />
         )}
 
         {slot.position === 'ML'

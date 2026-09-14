@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Trophy, ChevronDown, Hourglass, Rocket, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
-import { getSlate } from '../services/oddsService';
 import { MatchupCard } from '../components/home/MatchupCard';
 import { StandingsPreview } from '../components/home/StandingsPreview';
 import { ActivityFeed } from '../components/home/ActivityFeed';
@@ -95,14 +94,15 @@ export function LeagueHome() {
   // ever get a schedule at all). Distinguish by whether *any* week has matchups.
   const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
   const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
-  // Real games take priority once loaded, same "only trust real rows with
-  // actual bookmaker data" filter MarketBrowser uses -- otherwise fall back to
-  // the simulated slate unchanged.
-  const realUpcoming = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0);
-  const slate = realUpcoming && realUpcoming.length > 0
-    ? realUpcoming
-    : getSlate(league.currentWeek, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
-  const firstKickoff = slate.length > 0 ? slate.reduce((min, g) => (g.kickoff < min ? g.kickoff : min), slate[0].kickoff) : null;
+  // Real games only now -- no more falling back to the simulated slate just to
+  // compute a countdown (see chat, Sept 2026: MarketBrowser dropped the same
+  // fallback since it let a wager get placed against a fake game that could
+  // never settle; this spot was display-only so the risk was different, but a
+  // countdown to a game that was never going to happen was still wrong).
+  // No countdown at all (rather than a fake one) is the honest state while
+  // this week's real odds are still posting.
+  const realUpcoming = realGamesForWeek?.filter((g) => g.status === 'upcoming' && g.bookmakers.length > 0) ?? [];
+  const firstKickoff = realUpcoming.length > 0 ? realUpcoming.reduce((min, g) => (g.kickoff < min ? g.kickoff : min), realUpcoming[0].kickoff) : null;
 
   return (
     <>
