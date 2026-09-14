@@ -89,6 +89,19 @@ interface RealGame { id: string; home_team: string; away_team: string; home_scor
 // later, which is harmless.
 const FINAL_GRACE_MS = 15 * 60 * 1000; // 15 min -- adjust freely, see chat
 
+// How long a game must have been final before a player-prop wager on a
+// player with NO stat row at all gets voided (profit 0, stake NOT returned
+// to the team's weekly credits -- see chat: Hunter's call was that voiding
+// shouldn't free the slot up to be re-picked, just neutralize its P/L
+// impact) instead of left pending forever. This is deliberately much longer
+// than FINAL_GRACE_MS: that one only guards against balldontlie still
+// revising an EXISTING box score, but "this player has no row at all" could
+// also mean a transient ingestion gap (see chat: the Byron Young name-
+// collision incident) rather than a genuine DNP/inactive. A wrongly delayed
+// grade just corrects itself next run; a wrongly voided wager doesn't
+// un-void as cleanly, so this errs slow.
+const VOID_GRACE_MS = 3 * 60 * 60 * 1000; // 3 hours -- adjust freely, see chat
+
 interface StatRow {
   player_name: string;
   passing_yards?: number; passing_tds?: number; passing_interceptions?: number;
@@ -322,6 +335,15 @@ Deno.serve(async (req) => {
       // Supabase never actually changed. `errors` (shared with the two RPC
       // calls below) surfaces that instead of swallowing it.
       const errors: string[] = [];
+      // TEMP DEBUG (see chat: Brandon Aubrey / Odell Beckham Jr. stuck on
+      // Live despite their game being final) -- traces every still-pending
+      // wager whose game has ALREADY gone final, recording exactly which
+      // branch it fell into instead of silently leaving it pending. Scoped to
+      // "game already final" so this doesn't balloon with every wager that's
+      // legitimately still waiting on a game in progress. Safe to remove once
+      // the mystery is resolved -- it only ever appends to the response, it
+      // never changes grading behavior.
+      const skipped: { wagerId: string; playerName: string | null; marketKey: string; reason: string }[] = [];
       for (const row of rosterRows ?? []) {
         let teamTotal = 0;
         const wagers = (row as any).wagers ?? [];
@@ -343,15 +365,39 @@ Deno.serve(async (req) => {
           // (h2h/spreads/totals) don't need a player stat row at all, so they
           // aren't gated by this.
           const isPlayerMarket = wager.market_key !== 'h2h' && wager.market_key !== 'spreads' && wager.market_key !== 'totals';
-          if (isPlayerMarket && !stat) continue; // stat not ingested yet -- leave pending
+          if (isPlayerMarket && !stat) {
+            const finalSinceMs = game.final_since ? new Date(game.final_since).getTime() : null;
+            const longEnoughToVoid = finalSinceMs != null && now - finalSinceMs >= VOID_GRACE_MS;
+            if (!longEnoughToVoid) {
+              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'no-stat-row (within void grace)' });
+              continue; // stat not ingested yet -- could still be a transient gap, leave pending a while longer
+            }
+            // Game's been final for VOID_GRACE_MS with still no stat row for this
+            // player at all -- treat as DNP/inactive and void rather than wait
+            // forever for data that will never arrive (see chat: Odell Beckham
+            // Jr., Sept 2026 -- 0 targets/snaps, balldontlie never emits a row for
+            // a player who didn't play at all). Void = $0 P/L impact, stake stays
+            // spent (not returned to weekly credits, doesn't reopen the slot).
+            const { error: voidErr } = await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: 'voided', p_settled_profit: 0 });
+            if (voidErr) {
+              errors.push(`wager ${wager.id}: ${voidErr.message}`);
+              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: `void-rpc-error: ${voidErr.message}` });
+              continue;
+            }
+            gradedCount++;
+            skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'voided-no-stat' });
+            continue; // profit is 0 either way, nothing to add to teamTotal
+          }
           const { status, profit } = gradeWager(wager, game, stat);
           const { error: settleErr } = await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: status, p_settled_profit: profit });
           if (settleErr) {
             errors.push(`wager ${wager.id}: ${settleErr.message}`);
+            skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: `rpc-error: ${settleErr.message}` });
             continue; // don't count it as graded or fold its profit into the team's score -- it's still 'pending' in the DB
           }
           teamTotal += profit;
           gradedCount++;
+          skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: `graded-${status}` });
         }
         // Incomplete-lineup penalty, ported from engine/scoring.ts's
         // computeIncompleteLineupPenalty (see chat): once the week is fully
@@ -555,7 +601,7 @@ Deno.serve(async (req) => {
         advancement = { from: `${league.season_phase} ${weekStr}`, to: `${newPhase} ${newWeek}`, updateErr: updateErr?.message ?? null };
       }
 
-      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement, errors });
+      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement, errors, skipped });
     }
   }
 
