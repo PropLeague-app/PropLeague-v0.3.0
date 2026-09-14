@@ -37,5 +37,5 @@ export function WagerResultTicker({
           : status === 'voided'
             ? 'text-accent'
             : 'text-text-muted'; // pending/live -- provisional, not a verdict yet
-  return <span className={`text-[11px] font-semibold whitespace-nowrap ${colorClass}`}>{value}</span>;
+  return <span className={`text-[10px] font-semibold whitespace-nowrap ${colorClass}`}>{value}</span>;
 }

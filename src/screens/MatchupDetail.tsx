@@ -22,7 +22,7 @@ export function MatchupDetail() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
-  const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
   const loadRealPlayerStatsForWeek = useAppStore((s) => s.loadRealPlayerStatsForWeek);
   const realGamesById = useAppStore((s) => s.realGamesById);
   const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
@@ -65,12 +65,20 @@ export function MatchupDetail() {
 
   const hidePicks = league.settings.hidePicks;
 
+  // Was: fetch a game's real score/status only if this client had never seen
+  // that game id before (!realGamesById[gameId]). That guard meant once a game
+  // got cached here -- even while it was still genuinely live -- this screen
+  // NEVER refreshed it again, no matter how many times the game actually went
+  // final or how many times the user refreshed elsewhere in the app (see
+  // chat: Vikings/Packers, Cardinals/Chargers sitting stuck on "Live" for
+  // hours after the backend already had them correctly marked final). Match
+  // LeagueHome/NFLSlate's pattern instead: unconditionally re-pull the whole
+  // week's real games every time this screen is shown, so it can never get
+  // stuck on a stale cached status again.
   useEffect(() => {
-    for (const slot of [...rosterA.slots, ...rosterB.slots]) {
-      if (slot.wager && !realGamesById[slot.wager.gameId]) loadRealGame(slot.wager.gameId);
-    }
+    if (matchup) loadRealGamesForWeek(matchup.week);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rosterA, rosterB]);
+  }, [matchup?.week]);
 
   // manual v0.2.1 §5 #8: before any real score exists at all, fall back to the same
   // expectedWeeklyScore/DecidedGameLookup pattern MatchupCard.tsx already uses on the
@@ -215,14 +223,32 @@ function SlotMini({
           {wagerLineDescription(wager)} · ${wager.stake.toFixed(2)}
         </p>
       </div>
-      <div className={`mt-1 flex items-center gap-1.5 ${reverse ? 'flex-row-reverse justify-end' : 'justify-start'}`}>
-        <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
-        <WagerResultTicker
-          marketKey={wager.marketKey}
-          status={wager.status}
-          stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
-          game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
-        />
+      <div className={`mt-1 flex items-center gap-1.5 ${reverse ? 'justify-end' : 'justify-start'}`}>
+        {/* JSX order (not flex-row-reverse) decides left-vs-right reading order here --
+            flex-row-reverse + justify-end fights itself (row-reverse flips which edge
+            "end" even means), which is what pushed the right column's pill/ticker pair
+            to the left edge instead of mirroring the left column (see chat). */}
+        {reverse ? (
+          <>
+            <WagerResultTicker
+              marketKey={wager.marketKey}
+              status={wager.status}
+              stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
+              game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
+            />
+            <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
+          </>
+        ) : (
+          <>
+            <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
+            <WagerResultTicker
+              marketKey={wager.marketKey}
+              status={wager.status}
+              stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
+              game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
+            />
+          </>
+        )}
       </div>
     </div>
   );

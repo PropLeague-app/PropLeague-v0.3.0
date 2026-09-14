@@ -220,6 +220,20 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
 }
 
 Deno.serve(async (req) => {
+  // Top-level safety net (added Sept 2026, see chat) -- everything below this
+  // point only ever failed via its own explicit {data,error} check; an actual
+  // thrown exception anywhere in this handler (a raw fetch rejecting, an
+  // unexpected null deref, a Supabase client throw instead of returning
+  // {error}) had nothing catching it, so it surfaced as a bare, contentless
+  // 500 -- unrecoverable from either the Invocations or Logs tab, and the
+  // actual cause behind more than one "silent 500, can't find the error"
+  // debugging session. The try/catch wrapping the rest of this function
+  // turns any future one of those into a normal JSON response carrying the
+  // real error message and stack. Deliberately NOT re-indented (would be a
+  // huge, hard-to-review diff for a change that's purely about the error
+  // path) -- everything from here to the matching catch below is still the
+  // same code at its original indentation, just now inside a try block.
+  try {
   let body: { week?: string | number; season?: number } = {};
   try {
     body = await req.json();
@@ -548,4 +562,11 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({ ok: true, weeksProcessed: weeksToProcess, leagues: summary }), {
     headers: { 'Content-Type': 'application/json' },
   });
+  } catch (err) {
+    console.error('settle-week uncaught error:', err);
+    return new Response(
+      JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
 });

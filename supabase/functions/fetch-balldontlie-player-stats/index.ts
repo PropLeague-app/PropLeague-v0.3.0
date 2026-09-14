@@ -166,6 +166,12 @@ async function fetchAllPages<T>(path: string, params: Record<string, string | st
 }
 
 Deno.serve(async (req: Request) => {
+  // Top-level safety net (added Sept 2026, see chat, same reasoning as
+  // settle-week's own copy of this comment) -- catches anything that isn't
+  // already one of the explicit try/catches below, so a genuinely
+  // unexpected throw returns a diagnosable JSON error instead of a bare,
+  // contentless 500. Not re-indented for the same reason.
+  try {
   if (!BALLDONTLIE_API_KEY) {
     return new Response(JSON.stringify({ error: 'BALLDONTLIE_API_KEY secret is not set' }), { status: 500 });
   }
@@ -242,38 +248,56 @@ Deno.serve(async (req: Request) => {
     let gamesNoMatch = 0;
     const gamesNoMatchSample: { home: string; away: string }[] = [];
     for (const g of games) {
-      let status: 'final' | 'live' | null = null;
-      if (g.status_state === 'final') status = 'final';
-      else if (g.status_state && g.status_state !== 'scheduled') status = 'live';
-      if (!status) continue; // still pregame -- nothing to update yet
+      // Per-game try/catch (added Sept 2026, see chat): this loop previously
+      // had no error boundary of its own at all -- a thrown exception on any
+      // single game (a transient network blip on one of these N sequential
+      // awaited Supabase calls, a malformed game object, etc.) crashed the
+      // ENTIRE Deno.serve handler as a bare 500 with no error text anywhere,
+      // which also meant the /stats fetch + real_player_stats upsert further
+      // down NEVER ran for that week -- exactly the symptom that showed up as
+      // games sitting "final" for hours with none of their wagers grading.
+      // Recording the failure and moving on to the next game keeps one bad
+      // game from taking the whole week's stats ingestion down with it.
+      try {
+        let status: 'final' | 'live' | null = null;
+        if (g.status_state === 'final') status = 'final';
+        else if (g.status_state && g.status_state !== 'scheduled') status = 'live';
+        if (!status) continue; // still pregame -- nothing to update yet
 
-      const patch: Record<string, unknown> = { status };
-      const homeScore = n(g.home_team_score);
-      const awayScore = n(g.visitor_team_score);
-      if (homeScore != null) patch.home_score = homeScore;
-      if (awayScore != null) patch.away_score = awayScore;
+        const patch: Record<string, unknown> = { status };
+        const homeScore = n(g.home_team_score);
+        const awayScore = n(g.visitor_team_score);
+        if (homeScore != null) patch.home_score = homeScore;
+        if (awayScore != null) patch.away_score = awayScore;
 
-      if (status === 'final') {
-        const existingFinalSince = existingFinalSinceByKey.get(`${g.home_team.full_name}::${g.visitor_team.full_name}`);
-        if (!existingFinalSince) patch.final_since = nowIso;
-      }
+        if (status === 'final') {
+          const existingFinalSince = existingFinalSinceByKey.get(`${g.home_team.full_name}::${g.visitor_team.full_name}`);
+          if (!existingFinalSince) patch.final_since = nowIso;
+        }
 
-      const { data: matched, error: syncErr } = await supabase
-        .from('real_games')
-        .update(patch)
-        .eq('week', weekStr)
-        .eq('home_team', g.home_team.full_name)
-        .eq('away_team', g.visitor_team.full_name)
-        .select('id');
+        const { data: matched, error: syncErr } = await supabase
+          .from('real_games')
+          .update(patch)
+          .eq('week', weekStr)
+          .eq('home_team', g.home_team.full_name)
+          .eq('away_team', g.visitor_team.full_name)
+          .select('id');
 
-      if (syncErr) {
-        gamesNoMatch++; // counts as unmatched for visibility; message goes in perWeek below
-        gamesNoMatchSample.push({ home: g.home_team.full_name, away: `${g.visitor_team.full_name} (error: ${syncErr.message})` });
-      } else if (!matched || matched.length === 0) {
+        if (syncErr) {
+          gamesNoMatch++; // counts as unmatched for visibility; message goes in perWeek below
+          gamesNoMatchSample.push({ home: g.home_team.full_name, away: `${g.visitor_team.full_name} (error: ${syncErr.message})` });
+        } else if (!matched || matched.length === 0) {
+          gamesNoMatch++;
+          if (gamesNoMatchSample.length < 5) gamesNoMatchSample.push({ home: g.home_team.full_name, away: g.visitor_team.full_name });
+        } else {
+          gamesUpdated++;
+        }
+      } catch (err) {
         gamesNoMatch++;
-        if (gamesNoMatchSample.length < 5) gamesNoMatchSample.push({ home: g.home_team.full_name, away: g.visitor_team.full_name });
-      } else {
-        gamesUpdated++;
+        gamesNoMatchSample.push({
+          home: g.home_team?.full_name ?? '?',
+          away: `${g.visitor_team?.full_name ?? '?'} (threw: ${err instanceof Error ? err.message : String(err)})`,
+        });
       }
     }
     const scoreSync = { gamesUpdated, gamesNoMatch, gamesNoMatchSample: gamesNoMatchSample.slice(0, 5) };
@@ -324,15 +348,52 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    const { error: upsertErr } = await supabase.from('real_player_stats').upsert(rows, { onConflict: 'season,week,player_name' });
+    // Two different real players can share an exact name (see
+    // engine/playerNameMatch.ts's own comment on this same risk) -- rare, but
+    // real_player_stats is keyed only on (season, week, player_name), with no
+    // player id or team in the conflict target to disambiguate. When the
+    // /stats response contains two rows that collide on that key, Postgres's
+    // multi-row ON CONFLICT DO UPDATE doesn't just drop the colliding pair --
+    // it fails the ENTIRE upsert statement, which is exactly what blocked
+    // every player from all of this week's final games (not just the
+    // collision) and left two real, final games' wagers sitting ungraded for
+    // hours (see chat, Sept 2026 -- confirmed via this function's own
+    // now-caught error: "ON CONFLICT DO UPDATE command cannot affect row a
+    // second time"). Deduping here trades "the colliding player(s) might get
+    // the wrong one of the two lines" for "everyone else's real stats still
+    // get saved" -- the right call until real_player_stats has a better key.
+    const seen = new Map<string, PlayerStatRow>();
+    const duplicateNames: string[] = [];
+    for (const row of rows) {
+      const key = `${row.season}|${row.week}|${row.player_name.trim().toLowerCase()}`;
+      if (seen.has(key)) duplicateNames.push(row.player_name);
+      seen.set(key, row); // last one wins
+    }
+    const dedupedRows = [...seen.values()];
+
+    const { error: upsertErr } = await supabase.from('real_player_stats').upsert(dedupedRows, { onConflict: 'season,week,player_name' });
     if (upsertErr) {
       perWeek.push({ week: weekStr, error: upsertErr.message, ...scoreSync });
       continue;
     }
-    perWeek.push({ week: weekStr, gamesThisWeek: games.length, finalGames: finalGameIds.length, upserted: rows.length, ...scoreSync });
+    perWeek.push({
+      week: weekStr,
+      gamesThisWeek: games.length,
+      finalGames: finalGameIds.length,
+      upserted: dedupedRows.length,
+      ...(duplicateNames.length > 0 ? { duplicateNames } : {}),
+      ...scoreSync,
+    });
   }
 
   return new Response(JSON.stringify({ ok: true, season, weeksProcessed: weeksToProcess, results: perWeek }), {
     headers: { 'Content-Type': 'application/json' },
   });
+  } catch (err) {
+    console.error('fetch-balldontlie-player-stats uncaught error:', err);
+    return new Response(
+      JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
 });
