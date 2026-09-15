@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
   // path) -- everything from here to the matching catch below is still the
   // same code at its original indentation, just now inside a try block.
   try {
-  let body: { week?: string | number; season?: number } = {};
+  let body: { week?: string | number; season?: number; forceLeagueId?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -351,11 +351,29 @@ Deno.serve(async (req) => {
     // different upstream sources that don't always agree on formatting.
     const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [normalizePlayerName(r.player_name), r]));
 
-    const { data: leagues, error: leaguesErr } = await supabase
+    // Manual backfill escape hatch (see chat, Sept 2026 -- generating Week 1 Moments
+    // after leagues had already advanced past it): normally this only ever matches a
+    // league whose current_week IS weekStr, so a past, already-advanced week can never
+    // be reprocessed. body.forceLeagueId targets one specific league by id instead,
+    // regardless of its current_week/season_phase. Everything this function does for
+    // that league when reprocessing an already-settled week is a safe no-op --
+    // wagers are already non-'pending' so the grading loop just re-sums them (no RPC
+    // calls); upsert_matchup/upsert_standing recompute deterministically from the same
+    // source data, so rerunning them just rewrites the same values; and the one write
+    // that COULD move state, the season-advancement `leagues` update at the bottom, is
+    // separately guarded by `.eq('current_week', weekStr)`, which won't match this
+    // league's real (later) current_week, so that write naturally affects zero rows
+    // instead of moving the league backward. Only the NEW Weekly Moments block below
+    // actually does something on a forced rerun (it's idempotent too, via
+    // notification_dedup). Cron invocations never send a body, so this can only ever
+    // fire from an explicit manual call.
+    let leaguesQuery = supabase
       .from('leagues')
-      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count')
-      .eq('current_week', weekStr)
-      .in('season_phase', ['regular', 'playoffs']);
+      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count');
+    leaguesQuery = body.forceLeagueId
+      ? leaguesQuery.eq('id', body.forceLeagueId)
+      : leaguesQuery.eq('current_week', weekStr).in('season_phase', ['regular', 'playoffs']);
+    const { data: leagues, error: leaguesErr } = await leaguesQuery;
     if (leaguesErr) {
       summary.push({ week: weekStr, error: leaguesErr.message });
       continue;
