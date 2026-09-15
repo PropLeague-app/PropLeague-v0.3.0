@@ -17,10 +17,11 @@
 //      deliberate copy of src/engine/playoffs.ts -- see that file's header).
 //   4. NEW: advances the league's real-dollar prize pool for the week the
 //      same way (also ported from src/engine/prizePool.ts).
-//
-// NOT done here: Weekly Moments (src/engine/moments.ts). That needs per-wager
-// roster data in a shape real settlement doesn't have a working equivalent
-// for yet -- explicitly deferred, flagged in chat, not a bug.
+//   5. NEW: once weekComplete, generates Weekly Moments and writes them to
+//      activity_items -- NOT a port of src/engine/moments.ts (that file is
+//      wired to simulation-only data this function has no equivalent of); a
+//      fresh real-data reimplementation of the same 8 categories/tie-breaks,
+//      in supabase/functions/_shared/momentsReal.ts. See that file's header.
 //
 // Incomplete-lineup penalty (per Hunter's explicit choice in chat to port
 // the original spec's stricter behavior rather than leave it unenforced):
@@ -47,6 +48,15 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { normalizePlayerName } from '../_shared/playerNameMatch.ts';
+import {
+  computeRealWeeklyMoments,
+  claimMomentOnce,
+  weekOrderReal,
+  DEFAULT_MOMENT_SETTINGS_REAL,
+  MOMENT_ICONS_REAL,
+  type MomentSettingsReal,
+  type MomentWagerInput,
+} from '../_shared/momentsReal.ts';
 import {
   type PlayoffFieldSize,
   type PlayoffBracket,
@@ -233,6 +243,44 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
   return { status: 'won', profit };
 }
 
+/** How far a lost wager's real outcome came from clearing its own line -- always a
+ * non-negative distance, same idea as engine/moments.ts's distanceForLostBet but
+ * against real game/stat data instead of a simulated GameResult. Returns null for
+ * markets with no continuous "how close" concept (player_anytime_td). Only feeds the
+ * Worst Beat weekly moment below -- never touches grading/gradeWager above. */
+function lostBetDistance(wager: WagerRow, game: RealGame, stat: StatRow | undefined): number | null {
+  const marketKey = wager.market_key as MarketKey;
+  const homeMargin = game.home_score - game.away_score;
+  const point = wager.point ?? 0;
+
+  if (marketKey === 'h2h') {
+    const sideIsHome = wager.side === game.home_team;
+    return Math.abs(sideIsHome ? homeMargin : -homeMargin);
+  }
+  if (marketKey === 'spreads') {
+    const sideIsHome = wager.side === game.home_team;
+    const sideMargin = sideIsHome ? homeMargin : -homeMargin;
+    return Math.abs(sideMargin + point);
+  }
+  if (marketKey === 'totals') {
+    return Math.abs(game.home_score + game.away_score - point);
+  }
+  if (marketKey === 'player_anytime_td') {
+    return null;
+  }
+  if (marketKey === 'player_rush_reception_yds') {
+    const actual = (stat?.rushing_yards ?? 0) + (stat?.receiving_yards ?? 0);
+    return Math.abs(actual - point);
+  }
+  if (marketKey === 'player_pass_rush_yds') {
+    const actual = (stat?.passing_yards ?? 0) + (stat?.rushing_yards ?? 0);
+    return Math.abs(actual - point);
+  }
+  const field = STAT_FIELD[marketKey];
+  if (!field) return null;
+  return Math.abs((stat?.[field] ?? 0) - point);
+}
+
 Deno.serve(async (req) => {
   // Top-level safety net (added Sept 2026, see chat) -- everything below this
   // point only ever failed via its own explicit {data,error} check; an actual
@@ -321,7 +369,7 @@ Deno.serve(async (req) => {
       // Fetched up-front (not just later for standings) so a team that placed
       // zero picks all week -- and thus has no weekly_rosters row at all -- can
       // still be caught by the incomplete-lineup penalty below.
-      const { data: teams } = await supabase.from('teams').select('id, conference_id').eq('league_id', leagueId);
+      const { data: teams } = await supabase.from('teams').select('id, conference_id, team_name').eq('league_id', leagueId);
       const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
 
       const { data: rosterRows } = await supabase
@@ -331,6 +379,15 @@ Deno.serve(async (req) => {
         .eq('week', weekStr);
 
       const weeklyScoreByTeam = new Map<string, number>();
+      // Weekly Moments (see chat, Sept 2026): wagersThisWeekByTeam holds the SAME
+      // wager objects the grading loop below mutates in place as it grades them, so
+      // by the time moments are computed after standings, every wager here already
+      // reflects its final status/settled_profit for this run -- no second query.
+      // lostDistanceByWagerId is populated alongside grading (both the skip-path for
+      // already-settled wagers and the newly-graded path) since gradeWager's return
+      // doesn't carry it and worst-beat needs it purely for Moments, not grading.
+      const wagersThisWeekByTeam = new Map<string, WagerRow[]>();
+      const lostDistanceByWagerId = new Map<string, number | null>();
       let gradedCount = 0;
       // Previously this RPC call's result was never checked -- gradedCount and
       // teamTotal got incremented unconditionally, so a failing write (RLS,
@@ -355,6 +412,13 @@ Deno.serve(async (req) => {
         for (const wager of wagers) {
           if (wager.status !== 'pending') {
             teamTotal += wager.settled_profit ?? 0;
+            if (wager.status === 'lost' && !lostDistanceByWagerId.has(wager.id)) {
+              const priorGame = gameById.get(wager.game_id);
+              if (priorGame) {
+                const priorStat = wager.player_name ? statByPlayerName.get(normalizePlayerName(String(wager.player_name))) : undefined;
+                lostDistanceByWagerId.set(wager.id, lostBetDistance(wager, priorGame, priorStat));
+              }
+            }
             continue;
           }
           const game = gameById.get(wager.game_id);
@@ -391,6 +455,8 @@ Deno.serve(async (req) => {
             }
             gradedCount++;
             skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'voided-no-stat' });
+            wager.status = 'voided';
+            wager.settled_profit = 0;
             continue; // profit is 0 either way, nothing to add to teamTotal
           }
           const { status, profit } = gradeWager(wager, game, stat);
@@ -403,6 +469,9 @@ Deno.serve(async (req) => {
           teamTotal += profit;
           gradedCount++;
           skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: `graded-${status}` });
+          wager.status = status;
+          wager.settled_profit = profit;
+          if (status === 'lost') lostDistanceByWagerId.set(wager.id, lostBetDistance(wager, game, stat));
         }
         // Incomplete-lineup penalty, ported from engine/scoring.ts's
         // computeIncompleteLineupPenalty (see chat): once the week is fully
@@ -418,6 +487,7 @@ Deno.serve(async (req) => {
             teamTotal -= unallocated;
           }
         }
+        wagersThisWeekByTeam.set((row as any).team_id, wagers);
         weeklyScoreByTeam.set((row as any).team_id, teamTotal);
       }
 
@@ -516,6 +586,78 @@ Deno.serve(async (req) => {
           p_total_wagered: s.totalWagered,
         });
         if (standingErr) errors.push(`standing ${teamId}: ${standingErr.message}`);
+      }
+
+      // --- Weekly Moments (see chat, Sept 2026 -- real-data reimplementation of
+      // src/engine/moments.ts, ported into _shared/momentsReal.ts since the client
+      // version is wired to simulation-only data this function has no equivalent of).
+      // Gated on weekComplete same as standings/advancement; idempotent per
+      // league/week/category via notification_dedup so the Tuesday failsafe rerun
+      // never double-posts. Writes activity_items directly (service role bypasses
+      // RLS) rather than through post_system_activity, which requires auth.uid() to
+      // resolve a commissioner -- there is none under this function's service-role
+      // key (confirmed via pg_get_functiondef before writing this, see chat). -----
+      if (weekComplete) {
+        const rawSettings = (league.settings && typeof league.settings === 'object') ? (league.settings as Record<string, unknown>) : {};
+        const momentSettings: MomentSettingsReal =
+          rawSettings.moments && typeof rawSettings.moments === 'object'
+            ? { ...DEFAULT_MOMENT_SETTINGS_REAL, ...(rawSettings.moments as Partial<MomentSettingsReal>) }
+            : DEFAULT_MOMENT_SETTINGS_REAL;
+        const teamNameById = new Map((teams ?? []).map((t: any) => [t.id as string, (t.team_name as string) ?? 'A team']));
+
+        const momentTeams = (teams ?? []).map((t: any) => ({
+          teamId: t.id as string,
+          teamName: teamNameById.get(t.id as string) ?? 'A team',
+          weeklyScore: weeklyScoreByTeam.get(t.id as string) ?? 0,
+          wagers: (wagersThisWeekByTeam.get(t.id as string) ?? []).map((w): MomentWagerInput => ({
+            status: w.status,
+            stake: w.stake,
+            oddsAtPlacement: w.odds_at_placement,
+            settledProfit: w.settled_profit,
+            playerName: w.player_name,
+            marketKey: w.market_key,
+            side: w.side,
+            point: w.point,
+            lostDistance: lostDistanceByWagerId.get(w.id) ?? null,
+          })),
+        }));
+        const momentStandings = [...standingsMap.values()].map((s) => ({
+          teamId: s.teamId, totalPL: s.totalPL, totalWagered: s.totalWagered, weeklyScores: s.weeklyScores,
+        }));
+        const momentMatchups = (allMatchups ?? []).map((m: any) => ({
+          week: String(m.week), teamAId: m.team_a_id, teamBId: m.team_b_id, winnerId: m.winner_id, isTie: m.is_tie,
+        }));
+
+        const generatedMoments = computeRealWeeklyMoments({
+          week: weekStr, teams: momentTeams, standings: momentStandings, matchups: momentMatchups, weekOrderOf: weekOrderReal,
+        });
+
+        for (const moment of generatedMoments) {
+          const config = momentSettings[moment.category];
+          if (!config?.enabled) continue;
+          const dedupKey = `moment:${leagueId}:${weekStr}:${moment.category}`;
+          let claimed: boolean;
+          try {
+            claimed = await claimMomentOnce(supabase, dedupKey);
+          } catch (claimErr) {
+            errors.push(`moment ${moment.category}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+            continue;
+          }
+          if (!claimed) continue;
+          const teamName = teamNameById.get(moment.teamId) ?? 'A team';
+          const { error: momentErr } = await supabase.from('activity_items').insert({
+            league_id: leagueId,
+            type: 'moment',
+            message: `${MOMENT_ICONS_REAL[moment.category]} ${config.displayName}: ${teamName} — ${moment.extra}`,
+            pinned: false,
+            moment_category: moment.category,
+            moment_display_name: config.displayName,
+            moment_week: weekStr,
+            moment_team_id: moment.teamId,
+            moment_extra: moment.extra,
+          });
+          if (momentErr) errors.push(`moment ${moment.category}: ${momentErr.message}`);
+        }
       }
 
       // --- Automatic season progression (only once every real_games row for
