@@ -15,7 +15,8 @@
 // Deploy: Supabase Dashboard -> Edge Functions -> Deploy a new function -> Via Editor
 // Secrets needed: APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, APNS_AUTH_KEY
 // (see _shared/pushNotifications.ts header for what each one is).
-// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are auto-injected, nothing to set.
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or the new SUPABASE_SECRET_KEYS,
+// see _shared/supabaseAdminKey.ts) are auto-injected, nothing to set.
 // Schedule: Dashboard -> Integrations -> Cron -> every 15 min, every day --
 // the reminder window below is intentionally wider than the cron interval
 // (30 min wide vs a 15 min cron tick) so a single slow run or a missed tick
@@ -23,6 +24,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const REMINDER_WINDOW_MIN_MS = 45 * 60 * 1000; // remind once kickoff is this close...
 const REMINDER_WINDOW_MAX_MS = 75 * 60 * 1000; // ...but not yet this close (still "about an hour out")
@@ -54,7 +56,7 @@ function notifPrefsAllow(rawPrefs: unknown, key: string): boolean {
 }
 
 Deno.serve(async (_req) => {
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getSupabaseAdminKey());
   const now = Date.now();
   const summary: Record<string, unknown>[] = [];
 

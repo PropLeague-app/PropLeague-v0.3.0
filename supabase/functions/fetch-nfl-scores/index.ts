@@ -19,10 +19,12 @@
 // correlate an Odds API event back to a real_games row.
 //
 // Secrets this needs (set once): supabase secrets set ODDS_API_KEY=... 
-// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are already injected automatically
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or the new SUPABASE_SECRET_KEYS,
+// see _shared/supabaseAdminKey.ts) are already injected automatically
 // for every edge function -- no need to set those yourself.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const ODDS_API_KEY = Deno.env.get('ODDS_API_KEY')!;
 const SPORT_KEY = 'americanfootball_nfl';
@@ -37,7 +39,7 @@ interface OddsApiScoreEvent {
 }
 
 Deno.serve(async (_req) => {
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getSupabaseAdminKey());
 
   const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=3`;
   const res = await fetch(url);

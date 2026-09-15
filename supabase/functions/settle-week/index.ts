@@ -48,6 +48,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { normalizePlayerName } from '../_shared/playerNameMatch.ts';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import {
   computeRealWeeklyMoments,
   claimMomentOnce,
@@ -303,7 +304,7 @@ Deno.serve(async (req) => {
     // Cron invocations send no body at all -- that's the normal case now.
   }
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getSupabaseAdminKey());
 
   // Auto-discover every week currently "live" for at least one league, unless
   // the caller explicitly asked for one (manual/testing invocation).

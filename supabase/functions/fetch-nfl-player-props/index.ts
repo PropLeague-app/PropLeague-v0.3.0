@@ -31,10 +31,11 @@
 // reads this data, so the crosswalk logic lives in exactly one place.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const ODDS_API_KEY = Deno.env.get('ODDS_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_ADMIN_KEY = getSupabaseAdminKey();
 
 const PLAYER_PROP_MARKETS = [
   'player_pass_yds',
@@ -118,7 +119,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ADMIN_KEY);
 
   const { data: cooldown, error: cooldownError } = await supabase
     .rpc('try_claim_refresh_cooldown', { p_function_name: 'fetch-nfl-player-props', p_cooldown_minutes: COOLDOWN_MINUTES })

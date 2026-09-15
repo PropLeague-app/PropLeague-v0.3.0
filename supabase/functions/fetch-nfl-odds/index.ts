@@ -41,10 +41,11 @@
 // markets/frequency should be a deliberate choice, not something bundled in here.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const ODDS_API_KEY = Deno.env.get('ODDS_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_ADMIN_KEY = getSupabaseAdminKey();
 
 // 2026 NFL Week 1 kicks off Wed Sept 9, 2026 (Seahawks @ Patriots). Later weeks
 // are approximated as 7-day blocks from this anchor -- close enough for
@@ -167,7 +168,7 @@ Deno.serve(async (_req: Request) => {
     return new Response(JSON.stringify({ error: 'ODDS_API_KEY secret is not set' }), { status: 500 });
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ADMIN_KEY);
 
   // Live/upcoming odds — game-level markets only (see file header for why).
   const oddsRes = await fetch(

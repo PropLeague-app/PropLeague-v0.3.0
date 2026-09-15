@@ -38,9 +38,10 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Papa from 'npm:papaparse@5';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_ADMIN_KEY = getSupabaseAdminKey();
 
 const OFFENSE_URL = 'https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv';
 const KICKING_URL = 'https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_kicking.csv';
@@ -130,7 +131,7 @@ async function fetchAndFilterCsv<T extends { season: string }>(url: string, seas
 }
 
 Deno.serve(async (_req: Request) => {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ADMIN_KEY);
   const nowIso = new Date().toISOString();
   const approxWeek = currentWeekEstimate();
 

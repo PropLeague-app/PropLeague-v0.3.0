@@ -69,10 +69,11 @@
 // real_games score sync above is skipped for those weeks too, same reason.)
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const BALLDONTLIE_API_KEY = Deno.env.get('BALLDONTLIE_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const SUPABASE_ADMIN_KEY = getSupabaseAdminKey();
 const API_BASE = 'https://api.balldontlie.io/nfl/v1';
 
 // Same anchor as the other fetch-* functions -- 2026 NFL Week 1 kicks off Wed
@@ -183,7 +184,7 @@ Deno.serve(async (req: Request) => {
     // Cron invocations send no body -- normal case.
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ADMIN_KEY);
   const season = body.season ?? CURRENT_SEASON;
 
   // Auto-discover every week currently "live" for at least one league, unless
