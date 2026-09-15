@@ -46,6 +46,7 @@
 // perturbed stat numbers, not real ones (see chat).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { normalizePlayerName } from '../_shared/playerNameMatch.ts';
 import {
   type PlayoffFieldSize,
   type PlayoffBracket,
@@ -296,7 +297,11 @@ Deno.serve(async (req) => {
     let statsQuery = supabase.from('real_player_stats').select('*').eq('week', weekStr);
     if (season != null) statsQuery = statsQuery.eq('season', season);
     const { data: statRows } = await statsQuery;
-    const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [r.player_name.trim().toLowerCase(), r]));
+    // Keyed by normalizePlayerName, not a bare .trim().toLowerCase() -- see
+    // _shared/playerNameMatch.ts's header (the Travis Kelce case, Sept 2026):
+    // wagers.player_name and real_player_stats.player_name come from two
+    // different upstream sources that don't always agree on formatting.
+    const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [normalizePlayerName(r.player_name), r]));
 
     const { data: leagues, error: leaguesErr } = await supabase
       .from('leagues')
@@ -354,7 +359,7 @@ Deno.serve(async (req) => {
           }
           const game = gameById.get(wager.game_id);
           if (!game) continue; // this wager's game isn't final yet -- leave pending
-          const stat = wager.player_name ? statByPlayerName.get(String(wager.player_name).trim().toLowerCase()) : undefined;
+          const stat = wager.player_name ? statByPlayerName.get(normalizePlayerName(String(wager.player_name))) : undefined;
           // A player-prop market with no matching stat row means the stats
           // provider hasn't ingested this player's game yet -- NOT that they
           // recorded a zero. gradeWager defaults a missing field to 0, which
@@ -462,6 +467,7 @@ Deno.serve(async (req) => {
           p_winner_id: winnerId, p_is_tie: isTie,
         });
         if (matchupErr) errors.push(`matchup ${m.team_a_id}/${m.team_b_id}: ${matchupErr.message}`);
+
       }
 
       // Recompute standings from scratch across the whole season.

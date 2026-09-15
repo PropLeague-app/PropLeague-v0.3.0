@@ -33,6 +33,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
+    // Push notifications (see chat, Sept 2026): @capacitor/push-notifications does NOT
+    // wire these up automatically just by being installed -- Capacitor's own docs call
+    // out adding these two delegate methods by hand. Without them, PushNotifications
+    // .register() in the JS layer succeeds at the native registerForRemoteNotifications()
+    // call, but the resulting APNs token (or failure) never reaches the 'registration' /
+    // 'registrationError' JS listeners in src/services/pushNotifications.ts -- silently,
+    // no error either side.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {

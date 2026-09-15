@@ -148,6 +148,15 @@ export function FullStandings() {
 
   const sorted = useMemo(() => {
     if (!league) return [];
+    // 'default' used to fall through to `[...league.standings]` completely
+    // unsorted -- whatever order the store/DB happened to return, which is
+    // NOT the same as rank order (see chat, Sept 2026: standings showing 1-0
+    // and 0-1 teams interleaved instead of grouped/ranked). sortStandings is
+    // the real W-L -> P/L -> bet record -> head-to-head -> best-week
+    // tiebreaker chain (engine/standings.ts, spec §4) -- it was already being
+    // called for the per-conference view below (line ~199) but never for the
+    // main overall list, so "default" rank was never actually rank order.
+    if (sortKey === 'default') return sortStandings(league.standings, league.matchupsByWeek);
     const rows = [...league.standings];
     if (sortKey === 'pl') rows.sort((a, b) => b.totalPL - a.totalPL);
     else if (sortKey === 'bets') rows.sort((a, b) => b.betsWon - b.betsLost - (a.betsWon - a.betsLost));

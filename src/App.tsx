@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
+import { registerForPushNotifications } from './services/pushNotifications';
 import { MobileShell } from './components/layout/MobileShell';
 
 import { Welcome } from './screens/onboarding/Welcome';
@@ -104,6 +105,18 @@ function App() {
   useEffect(() => {
     useAuthStore.getState().init();
   }, []);
+
+  // Registers this device for push once there's a real, fully-onboarded
+  // session (see chat, Sept 2026 -- same gating as RootRedirect's
+  // hydrateMyLeagues, for the same reason: nothing to register against
+  // before that). Lives here rather than in RootRedirect so it isn't tied to
+  // that component's routing re-renders -- App() mounts once for the whole
+  // app lifetime.
+  const pushSession = useAuthStore((s) => s.session);
+  const pushProfile = useAuthStore((s) => s.profile);
+  useEffect(() => {
+    if (pushSession && pushProfile?.onboarded) void registerForPushNotifications(pushProfile.id);
+  }, [pushSession, pushProfile?.onboarded, pushProfile?.id]);
 
   return (
     <Routes>

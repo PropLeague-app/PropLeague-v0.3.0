@@ -3,12 +3,18 @@ import type { League } from '../../types';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
 import { formatCents } from '../../engine/oddsMath';
+import { sortStandings } from '../../engine/standings';
 
 export function StandingsPreview({ league }: { league: League }) {
   const navigate = useNavigate();
-  const top4 = league.standings.slice(0, 4);
+  // league.standings itself is NOT stored in rank order -- see chat, Sept
+  // 2026 (same bug FullStandings.tsx's default view had): sort here with the
+  // real W-L -> P/L -> bet record tiebreaker chain before taking the top 4,
+  // rather than slicing whatever order the store happens to hold.
+  const ranked = sortStandings(league.standings, league.matchupsByWeek);
+  const top4 = ranked.slice(0, 4);
   const userTeam = league.teams.find((t) => t.isUser);
-  const userRank = userTeam ? league.standings.findIndex((s) => s.teamId === userTeam.id) + 1 : 0;
+  const userRank = userTeam ? ranked.findIndex((s) => s.teamId === userTeam.id) + 1 : 0;
   const userInTop4 = userRank > 0 && userRank <= 4;
 
   return (
@@ -43,7 +49,7 @@ export function StandingsPreview({ league }: { league: League }) {
               {userTeam.teamName}
             </span>
             <span className="text-text-muted">
-              {league.standings[userRank - 1]?.wins}-{league.standings[userRank - 1]?.losses}
+              {ranked[userRank - 1]?.wins}-{ranked[userRank - 1]?.losses}
             </span>
           </div>
         )}

@@ -18,6 +18,7 @@ import { abbrevFromName } from '../data/simulatedTeamNames';
 import { HowItWorksSheet } from '../components/common/HowItWorksSheet';
 import { initialsFromLeagueName } from '../components/common/LeagueLogo';
 import { CorrelationRulesEditor } from '../components/settings/CorrelationRulesEditor';
+import { fetchNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from '../services/notificationPrefs';
 import logoMark from '../assets/logo-mono-muted.png';
 import { PayoutSplitEditor } from '../components/settings/PayoutSplitEditor';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
@@ -163,9 +164,35 @@ export function SettingsHome() {
   const leaveLeague = useAppStore((s) => s.leaveLeague);
   const startSeason = useAppStore((s) => s.startSeason);
   const authUpdateProfile = useAuthStore((s) => s.updateProfile);
+  const authProfileId = useAuthStore((s) => s.profile?.id);
 
-  const [notifLineup, setNotifLineup] = useState(true);
-  const [notifSettled, setNotifSettled] = useState(true);
+  // Persisted to profiles.notification_prefs (see migration 0008, chat Sept
+  // 2026) rather than local-only state -- these used to be pure useState
+  // stubs with no backend behind them at all. Starts from the same
+  // every-on default the server-side senders use, then syncs to whatever's
+  // actually saved once authProfileId is known.
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
+  useEffect(() => {
+    if (!authProfileId) return;
+    let cancelled = false;
+    void fetchNotificationPrefs(authProfileId).then((prefs) => {
+      if (!cancelled) setNotificationPrefs(prefs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authProfileId]);
+
+  function toggleNotificationPref(key: keyof NotificationPrefs, value: boolean) {
+    setNotificationPrefs((prev) => ({ ...prev, [key]: value })); // optimistic -- reverted below if the save fails
+    if (!authProfileId) return;
+    void updateNotificationPrefs(authProfileId, { [key]: value }).then((result) => {
+      if (!result.ok) {
+        console.error('[settings] failed to save notification preference:', result.error);
+        setNotificationPrefs((prev) => ({ ...prev, [key]: !value }));
+      }
+    });
+  }
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [teamIdentityDirty, setTeamIdentityDirty] = useState(false);
@@ -443,8 +470,9 @@ export function SettingsHome() {
             ))}
           </div>
         </div>
-        <ToggleRow label="Lineup reminders" value={notifLineup} onChange={setNotifLineup} />
-        <ToggleRow label="Settled-bet alerts" value={notifSettled} onChange={setNotifSettled} />
+        <ToggleRow label="Lineup reminders" value={notificationPrefs.lineupReminders} onChange={(v) => toggleNotificationPref('lineupReminders', v)} />
+        <ToggleRow label="Settled-bet alerts" value={notificationPrefs.wagerSettled} onChange={(v) => toggleNotificationPref('wagerSettled', v)} />
+        <ToggleRow label="Week results ready" value={notificationPrefs.weekResults} onChange={(v) => toggleNotificationPref('weekResults', v)} />
       </div>
 
       {league && settings && (
