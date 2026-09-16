@@ -107,9 +107,17 @@ export interface MomentWagerInput {
   point: number | null;
   /** Only meaningful when status === 'lost'. Computed by the caller (settle-week
    * already has the real game/stat data needed) -- see lostBetDistance() there.
-   * null means "no continuous distance for this market" (player_anytime_td) or
-   * "couldn't be computed" -- either way, excluded from Worst Beat. */
+   * Raw distance, for DISPLAY only ("missed by 0.5") -- not comparable across
+   * markets with different scales, see lostDistanceRatio for that. null means
+   * "no continuous distance for this market" (player_anytime_td) or "couldn't
+   * be computed" -- either way, excluded from Worst Beat. */
   lostDistance: number | null;
+  /** Same null-ness as lostDistance, but normalized (distance / line, or for
+   * h2h/spreads distance / combined score) so a close miss on a small-number
+   * market (FG count) doesn't out-rank a proportionally-closer miss on a
+   * large-number market (receiving yards). THIS is what Worst Beat ranks on,
+   * lostDistance is display-only -- see chat, Sept 2026. */
+  lostDistanceRatio: number | null;
 }
 
 export interface MomentTeamWeekInput {
@@ -256,8 +264,8 @@ export function computeRealWeeklyMoments(input: RealMomentInput): GeneratedMomen
   const worstBeatCandidates: Candidate[] = [];
   for (const t of teams) {
     for (const w of t.wagers) {
-      if (w.status !== 'lost' || w.lostDistance == null) continue;
-      worstBeatCandidates.push({ teamId: t.teamId, value: -w.lostDistance, extra: `${ticketLabelReal(w)} — missed by ${w.lostDistance.toFixed(1)}` });
+      if (w.status !== 'lost' || w.lostDistanceRatio == null || w.lostDistance == null) continue;
+      worstBeatCandidates.push({ teamId: t.teamId, value: -w.lostDistanceRatio, extra: `${ticketLabelReal(w)} — missed by ${w.lostDistance.toFixed(1)}` });
     }
   }
   const worstBeat = pick(worstBeatCandidates);

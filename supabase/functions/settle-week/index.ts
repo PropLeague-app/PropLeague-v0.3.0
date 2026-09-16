@@ -249,37 +249,57 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
  * against real game/stat data instead of a simulated GameResult. Returns null for
  * markets with no continuous "how close" concept (player_anytime_td). Only feeds the
  * Worst Beat weekly moment below -- never touches grading/gradeWager above. */
-function lostBetDistance(wager: WagerRow, game: RealGame, stat: StatRow | undefined): number | null {
+// Returns both the raw distance (for display -- "missed by 0.5") and a
+// ratio (for ranking which lost bet was the closest miss ACROSS markets with
+// very different scales -- see chat, Sept 2026: a 0.5 miss on a 1.5-FG line
+// is a 33% miss, while a 0.5 miss on a 39.5-receiving-yard line is a 1.3%
+// miss, so raw distance alone made the FG miss look "closer" than it really
+// was). h2h has no point/line to divide by -- treated as a "+/-0 spread"
+// per Hunter's call, normalized against the game's combined score instead,
+// so a 1-point loss in a 40-39 shootout ranks closer than a 1-point loss in
+// an 11-10 defensive game. spreads use that same combined-score denominator
+// since a spread is fundamentally a margin bet like h2h, just offset by a
+// handicap -- NOT the point value itself (unlike totals/player props, where
+// the point IS the thing being bet on, so it's the natural denominator).
+function lostBetDistance(
+  wager: WagerRow,
+  game: RealGame,
+  stat: StatRow | undefined,
+): { raw: number; ratio: number } | null {
   const marketKey = wager.market_key as MarketKey;
   const homeMargin = game.home_score - game.away_score;
+  const totalCombined = game.home_score + game.away_score;
   const point = wager.point ?? 0;
+
+  const marginBased = (raw: number) => ({ raw, ratio: totalCombined > 0 ? raw / totalCombined : raw });
+  const lineBased = (raw: number) => ({ raw, ratio: point !== 0 ? raw / Math.abs(point) : raw });
 
   if (marketKey === 'h2h') {
     const sideIsHome = wager.side === game.home_team;
-    return Math.abs(sideIsHome ? homeMargin : -homeMargin);
+    return marginBased(Math.abs(sideIsHome ? homeMargin : -homeMargin));
   }
   if (marketKey === 'spreads') {
     const sideIsHome = wager.side === game.home_team;
     const sideMargin = sideIsHome ? homeMargin : -homeMargin;
-    return Math.abs(sideMargin + point);
+    return marginBased(Math.abs(sideMargin + point));
   }
   if (marketKey === 'totals') {
-    return Math.abs(game.home_score + game.away_score - point);
+    return lineBased(Math.abs(totalCombined - point));
   }
   if (marketKey === 'player_anytime_td') {
     return null;
   }
   if (marketKey === 'player_rush_reception_yds') {
     const actual = (stat?.rushing_yards ?? 0) + (stat?.receiving_yards ?? 0);
-    return Math.abs(actual - point);
+    return lineBased(Math.abs(actual - point));
   }
   if (marketKey === 'player_pass_rush_yds') {
     const actual = (stat?.passing_yards ?? 0) + (stat?.rushing_yards ?? 0);
-    return Math.abs(actual - point);
+    return lineBased(Math.abs(actual - point));
   }
   const field = STAT_FIELD[marketKey];
   if (!field) return null;
-  return Math.abs((stat?.[field] ?? 0) - point);
+  return lineBased(Math.abs((stat?.[field] ?? 0) - point));
 }
 
 Deno.serve(async (req) => {
@@ -406,7 +426,7 @@ Deno.serve(async (req) => {
       // already-settled wagers and the newly-graded path) since gradeWager's return
       // doesn't carry it and worst-beat needs it purely for Moments, not grading.
       const wagersThisWeekByTeam = new Map<string, WagerRow[]>();
-      const lostDistanceByWagerId = new Map<string, number | null>();
+      const lostDistanceByWagerId = new Map<string, { raw: number; ratio: number } | null>();
       let gradedCount = 0;
       // Previously this RPC call's result was never checked -- gradedCount and
       // teamTotal got incremented unconditionally, so a failing write (RLS,
@@ -637,7 +657,8 @@ Deno.serve(async (req) => {
             marketKey: w.market_key,
             side: w.side,
             point: w.point,
-            lostDistance: lostDistanceByWagerId.get(w.id) ?? null,
+            lostDistance: lostDistanceByWagerId.get(w.id)?.raw ?? null,
+            lostDistanceRatio: lostDistanceByWagerId.get(w.id)?.ratio ?? null,
           })),
         }));
         const momentStandings = [...standingsMap.values()].map((s) => ({

@@ -567,11 +567,29 @@ export const useAppStore = create<AppState>()(
         ]);
         set((state) =>
           updateLeague(state, leagueId, (league) => {
-            // Real synced items plus whatever local-only items (settlement/moment
-            // messages — see chat for that accepted boundary) aren't in the fetched
-            // set yet, re-sorted together rather than one replacing the other.
+            // The server is authoritative for anything it has ever persisted. The
+            // ONLY activity items that legitimately never show up in a fetch are
+            // purely-local synthetic notices with no backing DB row at all -- today
+            // that's just the "voided pick" notice from syncVoidedPicks (id prefixed
+            // `voided-`). Anything else missing from the fresh fetch was either
+            // never actually synced, or has since been deleted/corrected
+            // server-side (e.g. a moment manually corrected via SQL, as happened
+            // with the Week 1 Heartbreaker) -- in both cases the server's current
+            // list must win. Previously this filter preserved ANY local item not
+            // present in the fresh fetch, which meant a server-deleted item (like
+            // the stale Drew Stevens Heartbreaker) got permanently resurrected from
+            // the persisted local cache on every load, surviving refreshes and even
+            // app restarts since the store is Zustand-persisted.
+            const LOCAL_ONLY_ACTIVITY_ID_PREFIXES = ['voided-'];
             const activity = activityResult.ok
-              ? [...activityResult.activity, ...league.activity.filter((item) => !activityResult.activity.some((f) => f.id === item.id))]
+              ? [
+                  ...activityResult.activity,
+                  ...league.activity.filter(
+                    (item) =>
+                      LOCAL_ONLY_ACTIVITY_ID_PREFIXES.some((prefix) => item.id.startsWith(prefix)) &&
+                      !activityResult.activity.some((f) => f.id === item.id),
+                  ),
+                ]
                   .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
                   .slice(0, 40)
               : league.activity;
