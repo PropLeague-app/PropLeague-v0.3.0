@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, NFLGame, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
+import { TEAM_LOGO_EMOJIS } from '../types';
 import * as leagueService from '../services/leagueService';
 import * as simulationService from '../services/simulationService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -603,21 +604,51 @@ export const useAppStore = create<AppState>()(
             // value -- from this device or any other member's). An uploaded image
             // still wins over a plain color/emoji choice, same as before.
             const teams = teamsResult.ok
-              ? league.teams.map((localTeam) => {
-                  const fresh = teamsResult.teams.find((t) => t.id === localTeam.id);
-                  if (!fresh) return localTeam;
-                  if (fresh.logoStoragePath) {
-                    return { ...localTeam, teamName: fresh.teamName, abbrev: fresh.abbrev, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(fresh.logoStoragePath) };
-                  }
-                  return {
-                    ...localTeam,
-                    teamName: fresh.teamName,
-                    abbrev: fresh.abbrev,
-                    logoMode: (fresh.logoMode as LeagueTeam['logoMode']) ?? localTeam.logoMode,
-                    logoEmoji: fresh.logoEmoji ?? localTeam.logoEmoji,
-                    logoColor: fresh.logoColor,
-                  };
-                })
+              ? [
+                  ...league.teams.map((localTeam) => {
+                    const fresh = teamsResult.teams.find((t) => t.id === localTeam.id);
+                    if (!fresh) return localTeam;
+                    if (fresh.logoStoragePath) {
+                      return { ...localTeam, teamName: fresh.teamName, abbrev: fresh.abbrev, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(fresh.logoStoragePath) };
+                    }
+                    return {
+                      ...localTeam,
+                      teamName: fresh.teamName,
+                      abbrev: fresh.abbrev,
+                      logoMode: (fresh.logoMode as LeagueTeam['logoMode']) ?? localTeam.logoMode,
+                      logoEmoji: fresh.logoEmoji ?? localTeam.logoEmoji,
+                      logoColor: fresh.logoColor,
+                    };
+                  }),
+                  // A team present in the fresh server list but not yet in local
+                  // state -- someone joined (or the commissioner added a
+                  // simulated team) after this device last built its team list.
+                  // The .map() above only ever UPDATES an existing local team by
+                  // id, it never adds one, so without this a newly-joined member
+                  // stayed invisible on every other device until that device's
+                  // user signed out and back in (the only other place the team
+                  // list gets rebuilt from scratch -- see hydrateMyLeagues's
+                  // leaguesHydrated guard) -- and matchups involving them looked
+                  // broken/missing too, since they reference a team id this
+                  // array didn't have an entry for at all.
+                  ...teamsResult.teams
+                    .filter((fresh) => !league.teams.some((t) => t.id === fresh.id))
+                    .map(
+                      (fresh): LeagueTeam => ({
+                        id: fresh.id,
+                        ownerName: fresh.ownerName,
+                        teamName: fresh.teamName,
+                        abbrev: fresh.abbrev,
+                        logoMode: fresh.logoStoragePath ? 'image' : ((fresh.logoMode as LeagueTeam['logoMode']) ?? 'initials'),
+                        logoEmoji: fresh.logoEmoji ?? TEAM_LOGO_EMOJIS[0],
+                        logoColor: fresh.logoColor,
+                        logoDataUrl: fresh.logoStoragePath ? getLogoPublicUrl(fresh.logoStoragePath) : null,
+                        isUser: false,
+                        isSimulated: fresh.isSimulated,
+                        conferenceId: fresh.conferenceId,
+                      }),
+                    ),
+                ]
               : league.teams;
             const leagueLogo = !progressResult.ok
               ? {}

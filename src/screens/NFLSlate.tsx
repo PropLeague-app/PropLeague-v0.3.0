@@ -6,6 +6,7 @@ import { WeekSelector } from '../components/slate/WeekSelector';
 import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
 import { EmptyState } from '../components/common/EmptyState';
+import { useOddsRefresh } from '../hooks/useOddsRefresh';
 
 const DAY_LABELS: Record<DaySlot, string> = {
   WED: 'Wednesday',
@@ -35,6 +36,16 @@ export function NFLSlate() {
   const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
 
   const activeWeek = week ?? league?.currentWeek ?? 1;
+  // Player-props odds refresh is manual-only (see fetch-nfl-player-props),
+  // and used to only be reachable from MarketBrowser, which requires an
+  // empty roster slot to even open -- a user with a full/submitted lineup
+  // had no way to trigger it at all (see chat, Sept 2026). This screen has
+  // no such requirement, so it's a natural second entry point; the 15-min
+  // refresh cooldown is global and server-side, so two buttons hitting it
+  // is safe (see useOddsRefresh).
+  const { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds } = useOddsRefresh(() => {
+    loadRealGamesForWeek(activeWeek);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +72,22 @@ export function NFLSlate() {
   return (
     <>
       <div className="px-4 pt-2 pb-3 space-y-3 sticky top-0 bg-bg-raised z-10">
-        <h1 className="text-xl font-bold">NFL Slate</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold flex-1">NFL Slate</h1>
+          <button
+            onClick={handleRefreshOdds}
+            disabled={refreshing}
+            className="text-xs text-primary font-medium border border-border rounded-lg px-2.5 py-1.5 disabled:opacity-40 shrink-0"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh Odds'}
+          </button>
+        </div>
+        {(refreshMessage || refreshErrorDetail) && (
+          <div className="space-y-0.5">
+            {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}
+            {refreshErrorDetail && <p className="text-xs text-loss">{refreshErrorDetail}</p>}
+          </div>
+        )}
         <WeekSelector value={activeWeek} onChange={setWeek} />
       </div>
 

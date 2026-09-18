@@ -611,7 +611,16 @@ Deno.serve(async (req) => {
         for (const w of (row as any).wagers ?? []) {
           if (w.status === 'won') s.betsWon++;
           else if (w.status === 'lost') s.betsLost++;
-          else if (w.status === 'push') s.betsPushed++;
+          // A voided wager (DNP/inactive, or a manual correction like a
+          // sportsbook-mirrored void) is a no-decision exactly like a push --
+          // no win, no loss, stake still counted as wagered below -- so it
+          // belongs in the same bucket. Before this, 'voided' matched none of
+          // these branches and silently vanished from the record entirely:
+          // a team's bet count (e.g. "5-4-0") would undercount its actual
+          // total wagers by however many were voided, while totalWagered
+          // below still included their stake -- confirmed via the Standings
+          // screen after voiding the DJ Moore wager (Sept 2026, see chat).
+          else if (w.status === 'push' || w.status === 'voided') s.betsPushed++;
           // Every wager placed counts toward total wagered regardless of status
           // (matches the client's old totalWageredByTeam semantics -- see chat).
           s.totalWagered += w.stake ?? 0;
