@@ -15,12 +15,20 @@
   --color-text: #e8ecf5;
   --color-text-muted: #8a94a8;
 
-  --color-pos-qb: #f55c5c;
-  --color-pos-rb: #3ddc84;
+  /* Used to be identical to --color-loss above on purpose, back when QB was
+     just "the red position" -- but that's exactly the problem: an invalid
+     lineup slot ALSO turns red (see chat, Sept 2026), so a QB slot looked
+     permanently "in error" even when it was perfectly valid. Pink/salmon
+     reads as its own distinct color, not a duplicate of the error state. */
+  --color-pos-qb: #f472b6;
+  /* RB/TE swapped and ML changed to yellow to match ESPN/Sleeper's scheme
+     (RB-orange, TE-green, D/ST-yellow -- ML is this app's closest equivalent
+     to a D/ST slot) -- see chat, Sept 2026. */
+  --color-pos-rb: #f5a45c;
   --color-pos-wr: #4c8df5;
-  --color-pos-te: #f5a45c;
+  --color-pos-te: #3ddc84;
   --color-pos-k: #9d4eed;
-  --color-pos-ml: #4ce0d6;
+  --color-pos-ml: #facc15;
 }
 
 html,

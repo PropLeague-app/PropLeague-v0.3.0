@@ -88,7 +88,12 @@ export function RosterSlotCard({
       >
         <div className="flex items-center gap-2">
           <PositionBadge position={slot.position} />
-          <span className="text-text-muted text-sm">Add your {slot.position} prop</span>
+          <span className="text-text-muted text-sm">
+            {/* The ML slot actually covers both moneyline AND spread bets --
+                "Add your ML prop" read as if spread wasn't allowed there
+                (see chat, Sept 2026). */}
+            {slot.position === 'ML' ? 'Add your ML/Spread' : `Add your ${slot.position} prop`}
+          </span>
         </div>
         <span className="text-primary text-xl">+</span>
       </div>

@@ -161,7 +161,12 @@ export function MarketBrowser() {
             <span className="text-xl leading-none">‹</span>
             <span className="text-sm">Back</span>
           </button>
-          <h1 className="text-lg font-bold flex-1">Add {slot.position} Pick</h1>
+          <h1 className="text-lg font-bold flex-1">
+            {/* Shorter than "Add ML/Spread Pick" on purpose -- this header row
+                already shares space with the Back button and Refresh Odds
+                button, and "Pick" doesn't add much here (see chat, Sept 2026). */}
+            {slot.position === 'ML' ? 'Add ML/Spread' : `Add ${slot.position} Pick`}
+          </h1>
           <button
             onClick={handleRefreshOdds}
             disabled={refreshing}
