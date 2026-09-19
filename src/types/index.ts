@@ -127,6 +127,14 @@ export interface NFLGame {
   homeScore: number | null;
   awayScore: number | null;
   bookmakers: OddsBookmaker[];
+  /** When this game's player-prop markets were last manually refreshed (via
+      the in-app "Refresh Odds" button -> fetch-nfl-player-props), as an ISO
+      timestamp -- NOT the same as an "odds last touched at all" timestamp,
+      since the automatic hourly game-lines cron never sets this. Null means
+      props have never been refreshed for this game (see
+      0009_props_updated_at.sql). Powers the staleness warning on
+      MarketBrowser/NFLSlate (see useOddsFreshness). */
+  propsUpdatedAt: string | null;
 }
 
 // --- League configuration -------------------------------------------------

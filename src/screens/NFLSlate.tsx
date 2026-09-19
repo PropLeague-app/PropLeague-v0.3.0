@@ -7,6 +7,7 @@ import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
 import { EmptyState } from '../components/common/EmptyState';
 import { useOddsRefresh } from '../hooks/useOddsRefresh';
+import { useOddsFreshness, oddsFreshnessMessage } from '../hooks/useOddsFreshness';
 
 const DAY_LABELS: Record<DaySlot, string> = {
   WED: 'Wednesday',
@@ -61,6 +62,9 @@ export function NFLSlate() {
 
   const games = realGamesForWeek ?? [];
 
+  const freshness = useOddsFreshness(games);
+  const freshnessMessage = oddsFreshnessMessage(freshness);
+
   const grouped = DAY_ORDER.map((day) => ({
     day,
     // Sorted by kickoff within each day slot -- the real-data source doesn't
@@ -82,6 +86,7 @@ export function NFLSlate() {
             {refreshing ? 'Refreshing…' : 'Refresh Odds'}
           </button>
         </div>
+        {freshnessMessage && <p className="text-[11px] text-warning font-medium">{freshnessMessage}</p>}
         {(refreshMessage || refreshErrorDetail) && (
           <div className="space-y-0.5">
             {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}

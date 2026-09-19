@@ -256,5 +256,10 @@ export function toNFLGame(scheduled: ScheduledGame): NFLGame {
     homeScore: null,
     awayScore: null,
     bookmakers: generateBookmakersForGame(scheduled),
+    // Simulated/local-generated game, not a real_games row from Supabase --
+    // there's no real "last manually refreshed" odds event to record, and
+    // the two screens that read propsUpdatedAt (MarketBrowser/NFLSlate) only
+    // ever look at real games anyway (see chat, Sept 2026).
+    propsUpdatedAt: null,
   };
 }

@@ -21,6 +21,8 @@ export function LeagueHome() {
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
   const postChatMessage = useAppStore((s) => s.postChatMessage);
+  const lastSeenChatByLeague = useAppStore((s) => s.lastSeenChatByLeague);
+  const markChatSeen = useAppStore((s) => s.markChatSeen);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
   const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
@@ -66,6 +68,14 @@ export function LeagueHome() {
   }
 
   const userTeam = league.teams.find((t) => t.isUser);
+  // Unread-chat badge on the Chat tab pill (see ActivityFeed) -- a message
+  // counts as unread if it's from someone else and newer than the last time
+  // this device looked at the Chat tab for this league (see chat, Sept 2026).
+  const lastSeenChatTs = lastSeenChatByLeague[league.id];
+  const lastSeenChatMs = lastSeenChatTs ? new Date(lastSeenChatTs).getTime() : 0;
+  const chatUnreadCount = league.chat.filter(
+    (m) => m.teamId !== userTeam?.id && new Date(m.ts).getTime() > lastSeenChatMs,
+  ).length;
 
   // Client-side-only refresh: re-reads whatever's already in Supabase (scores,
   // wager/roster status, standings) -- does NOT touch the odds/lines
@@ -238,8 +248,10 @@ export function LeagueHome() {
             league={league}
             items={league.activity}
             chat={league.chat}
+            chatUnreadCount={chatUnreadCount}
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
             onSendChat={(message) => postChatMessage(league.id, message)}
+            onSeenChat={() => markChatSeen(league.id)}
           />
         </div>
       </div>

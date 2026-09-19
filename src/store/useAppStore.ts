@@ -72,6 +72,12 @@ interface AppState {
    * even checked, and gets reset on sign-out so a different person logging in
    * on the same device gets their own leagues, not a stale skip. */
   leaguesHydrated: boolean;
+  /** Per-league "last time the user looked at the Chat tab" timestamp (ISO
+      string), used only to compute an unread-count badge on that tab (see
+      chat, Sept 2026: "unread chats" bubble, distinct from the lineup-needed
+      indicator). Persisted like the rest of the store so the badge doesn't
+      reset every time the app restarts. */
+  lastSeenChatByLeague: Record<string, string>;
 
   setProfile: (profile: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
@@ -114,6 +120,7 @@ interface AppState {
   postAnnouncement: (leagueId: string, message: string) => Promise<void>;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
   postChatMessage: (leagueId: string, message: string) => Promise<void>;
+  markChatSeen: (leagueId: string) => void;
 
   loadRealGamesForWeek: (week: WeekId) => Promise<void>;
   loadRealGame: (gameId: string) => Promise<void>;
@@ -177,6 +184,7 @@ export const useAppStore = create<AppState>()(
       realGamesById: {},
       realPlayerStatsByWeek: {},
       leaguesHydrated: false,
+      lastSeenChatByLeague: {},
 
       setProfile: (profile) => set({ profile }),
       updateProfile: (partial) =>
@@ -745,7 +753,7 @@ export const useAppStore = create<AppState>()(
       // manual v0.1.1 §7 #11: wipes every persisted field (profile, leagues,
       // currentLeagueId) and drops back to onboarding — distinct from Reset Season,
       // which only rewinds one league's season data and keeps the profile/league intact.
-      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false }),
+      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {} }),
 
       setGameOverride: (leagueId, gameId, status) =>
         set((state) =>
@@ -804,6 +812,9 @@ export const useAppStore = create<AppState>()(
           })),
         );
       },
+
+      markChatSeen: (leagueId) =>
+        set((state) => ({ lastSeenChatByLeague: { ...state.lastSeenChatByLeague, [leagueId]: new Date().toISOString() } })),
 
       loadRealGamesForWeek: async (week) => {
         const games = await fetchRealGamesForWeek(week);

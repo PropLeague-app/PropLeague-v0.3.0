@@ -129,6 +129,7 @@ interface RealGameRow {
   home_score: number | null;
   away_score: number | null;
   bookmakers: RawBookmaker[];
+  props_updated_at: string | null;
 }
 
 const GAME_LEVEL_KEYS = new Set(['h2h', 'spreads', 'totals']);
@@ -266,6 +267,7 @@ function mapRow(row: RealGameRow, roster: RosterCandidate[]): NFLGame {
     homeScore: row.home_score,
     awayScore: row.away_score,
     bookmakers: mergeBookmakersWithFallback(row.bookmakers).map((b) => mapBookmaker(b, homeAbbrev, awayAbbrev, roster)),
+    propsUpdatedAt: row.props_updated_at,
   };
 }
 

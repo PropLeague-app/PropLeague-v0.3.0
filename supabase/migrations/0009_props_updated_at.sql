@@ -1,0 +1,21 @@
+-- Adds a dedicated "when were this game's player props last manually
+-- refreshed" timestamp, separate from real_games.updated_at.
+--
+-- Why a separate column: updated_at is ALSO bumped by fetch-nfl-odds, which
+-- runs on the automatic hourly cron for game-level lines (h2h/spreads/
+-- totals) only -- it preserves existing player-prop markets untouched but
+-- still stamps updated_at every run. That makes updated_at useless as a
+-- "how stale are the player props" signal: it looks fresh within the hour
+-- even if props themselves haven't been through a manual Refresh Odds in
+-- days (see chat, Sept 2026 -- the "Odds have not been refreshed in N
+-- hours" warning on MarketBrowser/NFLSlate).
+--
+-- props_updated_at is written ONLY by fetch-nfl-player-props (see that
+-- function's update() call), so it tracks exactly what it needs to and
+-- nothing else. Nullable, no default: NULL means "props have never been
+-- manually refreshed for this game" (true for every row that exists before
+-- this migration ships, and for any brand-new game fetch-nfl-odds creates
+-- before Refresh Odds is ever pressed for it) -- the client treats NULL the
+-- same as "very stale" rather than crashing or silently ignoring it.
+alter table public.real_games
+  add column if not exists props_updated_at timestamptz;

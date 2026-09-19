@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { getPlayerPropGroups } from '../services/oddsService';
 import { useOddsRefresh } from '../hooks/useOddsRefresh';
+import { useOddsFreshness, oddsFreshnessMessage } from '../hooks/useOddsFreshness';
 import { nflTeamById } from '../data/nflTeams';
 import { MARKETS_BY_POSITION, MARKET_LABELS } from '../data/propsGenerator';
 import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
@@ -86,6 +87,9 @@ export function MarketBrowser() {
     return [...base].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   }, [league, realGamesForWeek]);
 
+  const freshness = useOddsFreshness(games);
+  const freshnessMessage = oddsFreshnessMessage(freshness);
+
   const filteredGames =
     (gameFilter === 'all' ? games : games.filter((g) => g.id === gameFilter)).filter((g) =>
       slot?.position === 'ML' && search.trim()
@@ -166,6 +170,7 @@ export function MarketBrowser() {
             {refreshing ? 'Refreshing…' : 'Refresh Odds'}
           </button>
         </div>
+        {freshnessMessage && <p className="mb-1.5 text-[11px] text-warning font-medium">{freshnessMessage}</p>}
         {(refreshMessage || refreshErrorDetail) && (
           <div className="mb-2 space-y-0.5">
             {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}

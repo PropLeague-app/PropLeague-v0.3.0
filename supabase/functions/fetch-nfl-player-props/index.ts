@@ -181,9 +181,16 @@ Deno.serve(async (req: Request) => {
         markets: b.markets.map((m) => ({ key: m.key, outcomes: m.outcomes })),
       }));
 
+      // props_updated_at is separate from updated_at on purpose -- updated_at
+      // also gets bumped by fetch-nfl-odds's hourly game-lines cron, which
+      // would make every game look freshly-refreshed even when props
+      // specifically haven't been touched in days (see 0009_props_updated_at.sql
+      // and the client's useOddsFreshness -- the "Odds have not been refreshed
+      // in N hours" warning needs a timestamp only THIS function ever writes).
+      const now = new Date().toISOString();
       const { error: updateError } = await supabase
         .from('real_games')
-        .update({ bookmakers, updated_at: new Date().toISOString() })
+        .update({ bookmakers, updated_at: now, props_updated_at: now })
         .eq('id', game.id);
       if (updateError) {
         gameErrors.push({ gameId: game.id, matchup: `${game.away_team} @ ${game.home_team}`, error: updateError.message });

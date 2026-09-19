@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
@@ -166,18 +166,34 @@ export function ActivityFeed({
   league,
   items,
   chat,
+  chatUnreadCount = 0,
   onReact,
   onSendChat,
+  onSeenChat,
 }: {
   league: League;
   items: ActivityItem[];
   chat?: ChatMessage[];
+  /** Count of chat messages the user hasn't seen yet (computed by the caller,
+      which is the one that knows the user's own team id and the per-league
+      "last seen" cursor -- see useAppStore's lastSeenChatByLeague). Shown as a
+      small badge on the Chat tab pill itself. */
+  chatUnreadCount?: number;
   onReact?: (itemId: string, emoji: string) => void;
   onSendChat?: (message: string) => void;
+  /** Called whenever the Chat tab is the active tab and there are messages to
+      have seen -- both right when the user switches to it, and again if a new
+      message arrives while they're still looking at it. */
+  onSeenChat?: () => void;
 }) {
   const [tab, setTab] = useState<FeedTab>('all');
   const [chatText, setChatText] = useState('');
   const chatItems = chat ?? [];
+
+  useEffect(() => {
+    if (tab === 'chat' && chatItems.length > 0) onSeenChat?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, chatItems.length]);
 
   if (items.length === 0 && chatItems.length === 0) {
     return <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No activity yet" subtitle="League announcements and bet alerts will show up here." />;
@@ -194,9 +210,18 @@ export function ActivityFeed({
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-3 py-1.5 text-xs font-semibold ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
+            className={`px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
           >
             {FEED_TAB_LABELS[t]}
+            {/* Orange, not the lineup-needed indicator's red (bg-loss) -- this is
+                an FYI, not an alert (see chat, Sept 2026; swapped from an earlier
+                purple after Hunter didn't love it). Reuses the same --color-warning
+                token as the odds-staleness text on MarketBrowser/NFLSlate. */}
+            {t === 'chat' && chatUnreadCount > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-warning text-white text-[9px] font-bold leading-none">
+                {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
