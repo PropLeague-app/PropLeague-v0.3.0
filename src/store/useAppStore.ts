@@ -540,6 +540,15 @@ export const useAppStore = create<AppState>()(
             // voiding a wager whose game may already be live.
             const game = resolveGame(slot.wager.gameId, state.realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
             if (!game || gameHasStarted(game)) return slot;
+            // isWagerScratched() is the SIMULATOR's fake "player ruled out" roll (a
+            // deterministic ~3% hash of the wager id, see engine/settlement.ts) --
+            // it means nothing for a real game. Applied to real picks it locally
+            // wiped ~3% of them and posted a bogus "voided, credits returned"
+            // notice every time the Lineup screen mounted (the refetch from
+            // Supabase restored the pick, so it re-fired each visit). Real
+            // scratches are handled server-side: settle-week voids a pick whose
+            // player has no stat line once the game is final.
+            if (state.realGamesById[slot.wager.gameId]) return slot;
             if (!isWagerScratched(slot.wager.id)) return slot;
             changed = true;
             return { ...slot, wager: null };

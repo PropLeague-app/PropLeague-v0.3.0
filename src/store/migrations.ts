@@ -116,6 +116,14 @@ export function migrateLeague(raw: Record<string, unknown>): League {
     logoEmoji: (raw.logoEmoji as string | undefined) ?? '🏆',
     prizePool: (raw.prizePool as League['prizePool'] | undefined) ?? null,
     manualGameOverrides: (raw.manualGameOverrides as League['manualGameOverrides'] | undefined) ?? {},
+    // Purges the bogus local-only "voided before kickoff" notices that
+    // syncVoidedPicks used to post for real picks (see useAppStore). They have no
+    // server row, so loadLeagueData kept re-preserving them from the persisted
+    // cache forever. Runs on every load (normalizeLeagues), and is a no-op once
+    // they're gone.
+    activity: Array.isArray(raw.activity)
+      ? (raw.activity as { id?: unknown }[]).filter((item) => !(typeof item.id === 'string' && item.id.startsWith('voided-')))
+      : raw.activity,
     teams,
     bracket,
     seasonPhase,
