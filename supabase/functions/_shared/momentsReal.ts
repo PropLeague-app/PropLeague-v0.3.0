@@ -94,6 +94,11 @@ const MARKET_SHORT_LABELS_REAL: Partial<Record<string, string>> = {
   player_rush_reception_yds: 'rush+rec yds',
   player_kicking_points: 'kicking pts',
   player_field_goals: 'FGs made',
+  player_pass_attempts: 'pass att',
+  player_pass_completions: 'completions',
+  player_rush_longest: 'longest rush',
+  player_reception_longest: 'longest rec',
+  player_pats: 'XPs made',
 };
 
 export interface MomentWagerInput {

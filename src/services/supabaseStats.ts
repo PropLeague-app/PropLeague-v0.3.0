@@ -29,6 +29,11 @@ interface RealPlayerStatRow {
   receptions?: number | null;
   field_goals_made?: number | null;
   kicking_points?: number | null;
+  passing_attempts?: number | null;
+  passing_completions?: number | null;
+  long_rushing?: number | null;
+  long_reception?: number | null;
+  extra_points_made?: number | null;
 }
 
 function mapRow(row: RealPlayerStatRow): RealPlayerStatLine {
@@ -46,6 +51,11 @@ function mapRow(row: RealPlayerStatRow): RealPlayerStatLine {
     receptions: row.receptions ?? undefined,
     fieldGoalsMade: row.field_goals_made ?? undefined,
     kickingPoints: row.kicking_points ?? undefined,
+    passingAttempts: row.passing_attempts ?? undefined,
+    passingCompletions: row.passing_completions ?? undefined,
+    longRushing: row.long_rushing ?? undefined,
+    longReception: row.long_reception ?? undefined,
+    extraPointsMade: row.extra_points_made ?? undefined,
   };
 }
 

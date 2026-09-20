@@ -21,6 +21,11 @@ export const MARKET_LABELS: Record<MarketKey, string> = {
   player_rush_reception_yds: 'Rush + Rec Yards',
   player_kicking_points: 'Kicking Points',
   player_field_goals: 'Field Goals Made',
+  player_pass_attempts: 'Pass Attempts',
+  player_pass_completions: 'Pass Completions',
+  player_rush_longest: 'Longest Rush',
+  player_reception_longest: 'Longest Reception',
+  player_pats: 'Extra Points Made',
 };
 
 /** Compact stat-context suffix for player-prop wagers (manual v0.1.1 §3 #6) — used
@@ -41,6 +46,11 @@ export const MARKET_SHORT_LABELS: Partial<Record<MarketKey, string>> = {
   player_rush_reception_yds: 'rush+rec yds',
   player_kicking_points: 'kicking pts',
   player_field_goals: 'FGs made',
+  player_pass_attempts: 'pass att',
+  player_pass_completions: 'completions',
+  player_rush_longest: 'longest rush',
+  player_reception_longest: 'longest rec',
+  player_pats: 'XPs made',
 };
 
 /** Renders a wager as a compact, self-explanatory phrase — "Puka Nacua over 68 rec
@@ -84,11 +94,11 @@ export function wagerLineDescription(wager: { marketKey: MarketKey; side: string
 // for that specific player, so this is purely "stop hiding real markets that
 // exist," never "invent ones that don't."
 export const MARKETS_BY_POSITION: Record<Position, MarketKey[]> = {
-  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_pass_rush_yds', 'player_anytime_td'],
-  RB: ['player_rush_yds', 'player_rush_attempts', 'player_reception_yds', 'player_receptions', 'player_rush_reception_yds', 'player_anytime_td'],
-  WR: ['player_reception_yds', 'player_receptions', 'player_rush_yds', 'player_rush_attempts', 'player_anytime_td'],
-  TE: ['player_reception_yds', 'player_receptions', 'player_anytime_td'],
-  K: ['player_kicking_points', 'player_field_goals'],
+  QB: ['player_pass_yds', 'player_pass_tds', 'player_pass_attempts', 'player_pass_completions', 'player_pass_interceptions', 'player_rush_yds', 'player_rush_attempts', 'player_rush_longest', 'player_pass_rush_yds', 'player_anytime_td'],
+  RB: ['player_rush_yds', 'player_rush_attempts', 'player_rush_longest', 'player_reception_yds', 'player_receptions', 'player_reception_longest', 'player_rush_reception_yds', 'player_anytime_td'],
+  WR: ['player_reception_yds', 'player_receptions', 'player_reception_longest', 'player_rush_yds', 'player_rush_attempts', 'player_rush_longest', 'player_anytime_td'],
+  TE: ['player_reception_yds', 'player_receptions', 'player_reception_longest', 'player_anytime_td'],
+  K: ['player_kicking_points', 'player_field_goals', 'player_pats'],
 };
 
 function juice(rng: Rng): number {

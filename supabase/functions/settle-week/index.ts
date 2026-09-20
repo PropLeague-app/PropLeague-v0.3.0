@@ -82,7 +82,9 @@ type MarketKey =
   | 'player_pass_yds' | 'player_pass_tds' | 'player_pass_interceptions'
   | 'player_rush_yds' | 'player_rush_attempts' | 'player_pass_rush_yds' | 'player_anytime_td'
   | 'player_reception_yds' | 'player_receptions' | 'player_rush_reception_yds'
-  | 'player_kicking_points' | 'player_field_goals';
+  | 'player_kicking_points' | 'player_field_goals'
+  | 'player_pass_attempts' | 'player_pass_completions' | 'player_rush_longest'
+  | 'player_reception_longest' | 'player_pats';
 
 interface RealGame { id: string; home_team: string; away_team: string; home_score: number; away_score: number; final_since: string | null }
 
@@ -120,6 +122,8 @@ interface StatRow {
   rushing_yards?: number; rushing_tds?: number; rushing_attempts?: number;
   receiving_yards?: number; receiving_tds?: number; receptions?: number;
   field_goals_made?: number; kicking_points?: number;
+  passing_attempts?: number; passing_completions?: number;
+  long_rushing?: number; long_reception?: number; extra_points_made?: number;
 }
 
 const STAT_FIELD: Partial<Record<MarketKey, keyof StatRow>> = {
@@ -132,6 +136,11 @@ const STAT_FIELD: Partial<Record<MarketKey, keyof StatRow>> = {
   player_receptions: 'receptions',
   player_kicking_points: 'kicking_points',
   player_field_goals: 'field_goals_made',
+  player_pass_attempts: 'passing_attempts',
+  player_pass_completions: 'passing_completions',
+  player_rush_longest: 'long_rushing',
+  player_reception_longest: 'long_reception',
+  player_pats: 'extra_points_made',
 };
 
 interface WagerRow {

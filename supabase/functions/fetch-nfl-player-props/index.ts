@@ -50,6 +50,11 @@ const PLAYER_PROP_MARKETS = [
   'player_rush_reception_yds',
   'player_kicking_points',
   'player_field_goals',
+  'player_pass_attempts',
+  'player_pass_completions',
+  'player_rush_longest',
+  'player_reception_longest',
+  'player_pats',
 ].join(',');
 const ALL_MARKETS = `h2h,spreads,totals,${PLAYER_PROP_MARKETS}`;
 

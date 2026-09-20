@@ -9,6 +9,7 @@ import { GameLinesTable } from '../components/roster/GameLinesTable';
 import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { StatusPill } from '../components/common/StatusPill';
+import { useLiveGamePolling } from '../hooks/useLiveGamePolling';
 import { TeamMark } from '../components/common/TeamMark';
 import { BackHeader } from '../components/layout/BackHeader';
 import type { OddsMarket, OddsOutcome, Position } from '../types';
@@ -34,6 +35,15 @@ export function GameDetail() {
     if (gameId && !realGamesById[gameId]) loadRealGame(gameId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
+
+  // This screen previously never refetched an already-loaded game for the
+  // rest of the session at all -- worse than NFLSlate, which at least
+  // reloads on mount/week-change (see chat, Sept 2026). Gated on the REAL
+  // game specifically (not the simulated-fallback `game` below), since
+  // there's nothing real to refetch for a game real_games doesn't have.
+  useLiveGamePolling(gameId ? realGamesById[gameId]?.status === 'live' : false, gameId ?? '', () => {
+    if (gameId) loadRealGame(gameId);
+  });
 
   const game = gameId
     ? (realGamesById[gameId] ??

@@ -73,7 +73,12 @@ export type MarketKey =
   | 'player_receptions'
   | 'player_rush_reception_yds'
   | 'player_kicking_points'
-  | 'player_field_goals';
+  | 'player_field_goals'
+  | 'player_pass_attempts'
+  | 'player_pass_completions'
+  | 'player_rush_longest'
+  | 'player_reception_longest'
+  | 'player_pats';
 
 export interface AltLine {
   point: number;
@@ -180,6 +185,11 @@ export const MARKET_ALLOWED_SIDES: Record<MarketKey, CorrelationSide[]> = {
   player_rush_reception_yds: ['Over', 'Under'],
   player_kicking_points: ['Over', 'Under'],
   player_field_goals: ['Over', 'Under'],
+  player_pass_attempts: ['Over', 'Under'],
+  player_pass_completions: ['Over', 'Under'],
+  player_rush_longest: ['Over', 'Under'],
+  player_reception_longest: ['Over', 'Under'],
+  player_pats: ['Over', 'Under'],
 };
 
 /** One entry in the correlated-picks blocklist (manual v0.1.1 §5 B) — a market-pair +

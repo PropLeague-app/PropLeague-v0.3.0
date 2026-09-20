@@ -16,6 +16,11 @@ const MARKET_OPTIONS: MarketKey[] = [
   'player_receptions',
   'player_kicking_points',
   'player_field_goals',
+  'player_pass_attempts',
+  'player_pass_completions',
+  'player_rush_longest',
+  'player_reception_longest',
+  'player_pats',
 ];
 const SIDE_LABELS: Record<CorrelationSide, string> = {
   Over: 'Over',

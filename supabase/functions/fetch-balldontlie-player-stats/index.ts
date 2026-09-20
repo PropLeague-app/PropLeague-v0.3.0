@@ -116,6 +116,13 @@ interface BdlStatRow {
   receptions: number | null;
   field_goals_made: number | null;
   extra_points_made: number | null;
+  // Added with the pass attempts/completions, longest rush/reception and XP markets.
+  // Typed loosely (number | string) so an unexpected string value degrades gracefully
+  // via nLoose() below instead of silently becoming null.
+  passing_attempts?: number | string | null;
+  passing_completions?: number | string | null;
+  long_rushing?: number | string | null;
+  long_reception?: number | string | null;
 }
 interface BdlMeta {
   next_cursor?: string | number | null;
@@ -138,11 +145,24 @@ interface PlayerStatRow {
   receptions: number | null;
   field_goals_made: number | null;
   kicking_points: number | null;
+  passing_attempts: number | null;
+  passing_completions: number | null;
+  long_rushing: number | null;
+  long_reception: number | null;
+  extra_points_made: number | null;
   updated_at: string;
 }
 
 function n(v: number | null | undefined): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+// For the newer columns only: also accepts a numeric string ("23"), which n() above
+// would silently turn into null.
+function nLoose(v: number | string | null | undefined): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+  return null;
 }
 
 async function fetchAllPages<T>(path: string, params: Record<string, string | string[]>): Promise<T[]> {
@@ -337,6 +357,11 @@ Deno.serve(async (req: Request) => {
         receiving_tds: n(r.receiving_touchdowns),
         receptions: n(r.receptions),
         field_goals_made: fgMade,
+        passing_attempts: nLoose(r.passing_attempts),
+        passing_completions: nLoose(r.passing_completions),
+        long_rushing: nLoose(r.long_rushing),
+        long_reception: nLoose(r.long_reception),
+        extra_points_made: xpMade,
         // Same standard-scoring approximation the earlier fetch-* functions
         // used: 3 pts/FG regardless of distance, 1 pt/XP.
         kicking_points: fgMade != null && xpMade != null ? fgMade * 3 + xpMade : null,

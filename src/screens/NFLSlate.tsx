@@ -8,6 +8,7 @@ import { SkeletonCard } from '../components/common/SkeletonLoader';
 import { EmptyState } from '../components/common/EmptyState';
 import { useOddsRefresh } from '../hooks/useOddsRefresh';
 import { useOddsFreshness, oddsFreshnessMessage } from '../hooks/useOddsFreshness';
+import { useLiveGamePolling, anyGameLive } from '../hooks/useLiveGamePolling';
 
 const DAY_LABELS: Record<DaySlot, string> = {
   WED: 'Wednesday',
@@ -61,6 +62,11 @@ export function NFLSlate() {
   }, [activeWeek]);
 
   const games = realGamesForWeek ?? [];
+
+  // Auto-refreshes while any of this week's games are actually in progress,
+  // so a game going final while the user is sitting on this screen clears on
+  // its own (see chat, Sept 2026).
+  useLiveGamePolling(anyGameLive(games), activeWeek, () => loadRealGamesForWeek(activeWeek));
 
   const freshness = useOddsFreshness(games);
   const freshnessMessage = oddsFreshnessMessage(freshness);

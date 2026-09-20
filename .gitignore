@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Files the Claude desktop app auto-saves into the connected folder when a
+# chat sends a file (e.g. handoff briefs) -- not part of the app itself.
+Claude outputs/

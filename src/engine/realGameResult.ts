@@ -21,6 +21,11 @@ export interface RealPlayerStatLine {
   receptions?: number;
   fieldGoalsMade?: number;
   kickingPoints?: number;
+  passingAttempts?: number;
+  passingCompletions?: number;
+  longRushing?: number;
+  longReception?: number;
+  extraPointsMade?: number;
 }
 
 const STAT_FIELD_FOR_MARKET: Partial<Record<MarketKey, keyof RealPlayerStatLine>> = {
@@ -33,6 +38,11 @@ const STAT_FIELD_FOR_MARKET: Partial<Record<MarketKey, keyof RealPlayerStatLine>
   player_receptions: 'receptions',
   player_kicking_points: 'kickingPoints',
   player_field_goals: 'fieldGoalsMade',
+  player_pass_attempts: 'passingAttempts',
+  player_pass_completions: 'passingCompletions',
+  player_rush_longest: 'longRushing',
+  player_reception_longest: 'longReception',
+  player_pats: 'extraPointsMade',
   // player_pass_rush_yds and player_rush_reception_yds are each two stat fields
   // added together -- handled as dedicated branches in buildRealGameResult below,
   // same as player_anytime_td, rather than through this single-field lookup.
