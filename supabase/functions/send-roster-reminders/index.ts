@@ -62,7 +62,7 @@ Deno.serve(async (_req) => {
 
   const { data: leagues, error: leaguesErr } = await supabase
     .from('leagues')
-    .select('id, current_week, settings')
+    .select('id, name, current_week, settings')
     .in('season_phase', ['regular', 'playoffs']);
   if (leaguesErr) return new Response(JSON.stringify({ ok: false, error: leaguesErr.message }), { status: 500 });
 
@@ -99,8 +99,8 @@ Deno.serve(async (_req) => {
       continue;
     }
 
-    const { data: teams } = await supabase.from('teams').select('id, membership_id, is_simulated').eq('league_id', leagueId);
-    const realTeams = (teams ?? []).filter((t) => !t.is_simulated && t.membership_id) as { id: string; membership_id: string }[];
+    const { data: teams } = await supabase.from('teams').select('id, membership_id, is_simulated, team_name').eq('league_id', leagueId);
+    const realTeams = (teams ?? []).filter((t) => !t.is_simulated && t.membership_id) as { id: string; membership_id: string; team_name: string | null }[];
     if (realTeams.length === 0) continue;
 
     const teamIds = realTeams.map((t) => t.id);
@@ -146,9 +146,13 @@ Deno.serve(async (_req) => {
         if (!claimed) continue;
 
         const minutesOut = Math.round((kickoffMs - now) / 60000);
+        // Someone in several leagues gets one push per league, so the title
+        // names the league and the body names their team there.
+        const leagueName = (league.name as string | null) ?? 'your league';
+        const teamName = realTeams.find((t) => t.id === teamId)?.team_name;
         await sendPushToProfile(supabase, profileId, {
-          title: 'Lineup reminder',
-          body: `${DAY_SLOT_LABELS[daySlot] ?? daySlot} kicks off in about ${minutesOut} minutes -- finish your Week ${weekStr} lineup before it locks.`,
+          title: `Lineup reminder: ${leagueName}`,
+          body: `${teamName ? `${teamName}: ` : ''}${DAY_SLOT_LABELS[daySlot] ?? daySlot} kicks off in about ${minutesOut} minutes -- finish your Week ${weekStr} lineup before it locks.`,
           data: { screen: 'lineup', leagueId, week: weekStr },
         });
         remindersSent++;

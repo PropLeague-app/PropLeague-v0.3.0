@@ -28,7 +28,11 @@ function pickProgress(roster: WeeklyRoster | undefined, totalSlots: number): { a
     if (status === 'pending') active++;
     else if (status === 'won') won++;
     else if (status === 'lost') lost++;
-    else if (status === 'push') pushed++;
+    // Voided folds into the push bucket, same as the Standings screen and
+    // settle-week's standings tally (a voided pick is $0, stake spent, slot
+    // not reopened) -- before, it matched no branch, so it vanished from the
+    // settled record and its slot was miscounted as still open.
+    else if (status === 'push' || status === 'voided') pushed++;
   }
   const placed = active + won + lost + pushed;
   return { active, won, lost, pushed, open: Math.max(0, totalSlots - placed) };

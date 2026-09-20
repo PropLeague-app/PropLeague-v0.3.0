@@ -205,20 +205,23 @@ export function ActivityFeed({
 
   return (
     <div className="space-y-3">
-      <div className="flex bg-bg-card rounded-lg overflow-hidden w-fit">
-        {(['all', 'moments', 'news', 'chat'] as FeedTab[]).map((t) => (
+      {/* No overflow-hidden on the wrapper: the unread badge sits on the chat
+          pill's top-right corner and would be clipped by it, so the first and
+          last pills round their own outer corners instead. */}
+      <div className="flex bg-bg-card rounded-lg w-fit">
+        {(['all', 'moments', 'news', 'chat'] as FeedTab[]).map((t, i, all) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
+            className={`relative px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${i === 0 ? 'rounded-l-lg' : ''} ${i === all.length - 1 ? 'rounded-r-lg' : ''} ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
           >
             {FEED_TAB_LABELS[t]}
-            {/* Orange, not the lineup-needed indicator's red (bg-loss) -- this is
-                an FYI, not an alert (see chat, Sept 2026; swapped from an earlier
-                purple after Hunter didn't love it). Reuses the same --color-warning
-                token as the odds-staleness text on MarketBrowser/NFLSlate. */}
+            {/* Top-right corner of the pill, same red (bg-loss) and placement as the
+                lineup-needed "!" on the footer tabs, to keep the app's notification
+                colors to one scheme (see chat, Sept 2026; supersedes the earlier
+                inline orange/purple badge). */}
             {t === 'chat' && chatUnreadCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-warning text-white text-[9px] font-bold leading-none">
+              <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-loss text-white text-[9px] font-bold leading-none">
                 {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
               </span>
             )}
