@@ -116,6 +116,51 @@ const FINAL_GRACE_MS = 15 * 60 * 1000; // 15 min -- adjust freely, see chat
 // un-void as cleanly, so this errs slow.
 const VOID_GRACE_MS = 3 * 60 * 60 * 1000; // 3 hours -- adjust freely, see chat
 
+// Delays the WEEK-level reveal -- matchup winner/tie, standings W-L, Weekly
+// Moments, incomplete-lineup penalty, prize pool advancement, and moving
+// current_week forward -- until Tuesday morning ET, mirroring ESPN Fantasy's
+// Tuesday results reveal (see chat, Sept 2026). Individual wager grading and
+// the live in-progress score shown all week are NOT gated by this -- a prop
+// still grades the moment its game goes final+FINAL_GRACE_MS, same as
+// always, and MatchupCard/MatchupDetail keep showing the running score --
+// only the "this week is OVER, here's who won" moment (and everything that
+// moment triggers, including the client's win/loss popup) waits.
+//
+// Was: weekComplete flipped true the instant every real_games row for a week
+// hit FINAL_GRACE_MS, which for a Monday-night-closing week could be minutes
+// after the final whistle -- long before every player's stat line had
+// necessarily landed (see the Cam Skattebo/Rams-Giants incident, Sept 2026:
+// weekComplete advanced current_week to the next week in the SAME run that
+// left his wager pending on "no stat yet", and once current_week moved on
+// the normal cron never asked about that week again). A Tuesday-morning
+// floor doesn't make grading itself any more correct on its own (that's what
+// the stray-week reprocessing above is for), but it buys real_player_stats
+// several extra hours before the week-ending stuff below reads it, which is
+// the actual fix for why this kept happening on MNF specifically.
+const RESULTS_REVEAL_CUTOFF_HOUR_ET = 10; // 10am ET Tuesday -- adjust freely, see chat
+
+/** True once it's Tuesday at/after RESULTS_REVEAL_CUTOFF_HOUR_ET in America/New_York,
+ * or any later day of that same NFL week (Wed-Sat) -- i.e. false only for Sun, Mon, or
+ * an early-Tuesday cron tick. Uses Intl rather than a fixed UTC offset so this doesn't
+ * silently drift by an hour across the EST/EDT change. hour12:false can format
+ * midnight as "24" rather than "0" in this engine's ICU data (a known Intl quirk, not
+ * a bug in the below) -- normalized explicitly rather than trusting Number("24") to
+ * mean midnight. */
+function pastResultsRevealCutoff(now: Date): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(now);
+  const weekday = parts.find((p) => p.type === 'weekday')?.value;
+  const rawHour = parts.find((p) => p.type === 'hour')?.value ?? '0';
+  const hour = rawHour === '24' ? 0 : Number(rawHour);
+  if (weekday === 'Sun' || weekday === 'Mon') return false;
+  if (weekday === 'Tue' && hour < RESULTS_REVEAL_CUTOFF_HOUR_ET) return false;
+  return true;
+}
+
 interface StatRow {
   player_name: string;
   passing_yards?: number; passing_tds?: number; passing_interceptions?: number;
@@ -338,15 +383,45 @@ Deno.serve(async (req) => {
   // Auto-discover every week currently "live" for at least one league, unless
   // the caller explicitly asked for one (manual/testing invocation).
   let weeksToProcess: string[];
+  // strayWeekLeagues: for each numeric week W one week BEHIND an active league's
+  // current_week, the set of league ids currently sitting on W+1 -- i.e. leagues
+  // that already advanced past W. Populated below only in the auto-discover path
+  // (a manual body.week call keeps its old single-week behavior unchanged).
+  const strayWeekLeagueIds = new Map<string, string[]>();
   if (body.week != null) {
     weeksToProcess = [String(body.week)];
   } else {
     const { data: activeLeagues, error: activeErr } = await supabase
       .from('leagues')
-      .select('current_week')
+      .select('id, current_week')
       .in('season_phase', ['regular', 'playoffs']);
     if (activeErr) return new Response(JSON.stringify({ ok: false, error: activeErr.message }), { status: 500 });
-    weeksToProcess = [...new Set((activeLeagues ?? []).map((l) => String(l.current_week)))];
+    const currentWeeks = new Set((activeLeagues ?? []).map((l) => String(l.current_week)));
+    // Reprocess each active week's IMMEDIATE predecessor too (see chat, Sept 2026 --
+    // Cam Skattebo/Rams-Giants MNF: real_player_stats can still land after every
+    // real_games row for a week is already final+graced, which is the only thing
+    // weekComplete checks. That race let this function advance a league to the next
+    // week in the very same run that a wager was left pending on "no-stat-row (within
+    // void grace)" -- once current_week moved on, the OLD auto-discover here never
+    // asked about that week again, so the wager sat 'pending' forever with no
+    // automatic path to grade or void it (this is the second time this exact failure
+    // mode has bitten a real wager -- see the Brandon Aubrey/Odell Beckham Jr. TEMP
+    // DEBUG block below from the first one). A league can only ever be ONE advance
+    // ahead of a week that still has ungraded wagers -- advancing again requires that
+    // NEXT week's games to themselves go final+graced, which takes about another
+    // week of real time, plenty long for this to catch up on the very next ~15-minute
+    // cron tick after it starts lagging. Non-numeric week ids (playoff round labels)
+    // are left alone; a stuck wager there still has the forceLeagueId escape hatch.
+    for (const league of activeLeagues ?? []) {
+      const n = Number(league.current_week);
+      if (!Number.isInteger(n) || n <= 1) continue;
+      const prevWeek = String(n - 1);
+      currentWeeks.add(prevWeek);
+      const ids = strayWeekLeagueIds.get(prevWeek) ?? [];
+      ids.push(league.id as string);
+      strayWeekLeagueIds.set(prevWeek, ids);
+    }
+    weeksToProcess = [...currentWeeks];
   }
 
   const season = body.season ?? null;
@@ -365,7 +440,12 @@ Deno.serve(async (req) => {
     const finalGames = (games ?? []).filter(
       (g) => g.status === 'final' && g.final_since != null && now - new Date(g.final_since).getTime() >= FINAL_GRACE_MS,
     ) as RealGame[];
-    const weekComplete = (games ?? []).length > 0 && finalGames.length === (games ?? []).length;
+    // allGamesFinal alone used to BE weekComplete -- see RESULTS_REVEAL_CUTOFF_HOUR_ET
+    // above for why a second, time-based condition was added. finalGames itself
+    // (used just below for per-wager grading) is intentionally unaffected: a prop
+    // still grades as soon as its own game is final, all week long.
+    const allGamesFinal = (games ?? []).length > 0 && finalGames.length === (games ?? []).length;
+    const weekComplete = allGamesFinal && pastResultsRevealCutoff(new Date(now));
     if (finalGames.length === 0) {
       summary.push({ week: weekStr, note: 'no final real_games for this week yet' });
       continue;
@@ -400,9 +480,19 @@ Deno.serve(async (req) => {
     let leaguesQuery = supabase
       .from('leagues')
       .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count');
+    // strayIds: leagues one week ahead of weekStr, included here so a wager left
+    // pending on weekStr after its league already advanced still gets a grading
+    // pass (see strayWeekLeagueIds above). The season-advancement write near the
+    // bottom of this loop is separately guarded by .eq('current_week', weekStr),
+    // so re-running this for an already-advanced league grades/voids stragglers
+    // and safely no-ops on advancement/standings/moments (all idempotent) instead
+    // of moving the league backward or double-advancing it.
+    const strayIds = strayWeekLeagueIds.get(weekStr) ?? [];
     leaguesQuery = body.forceLeagueId
       ? leaguesQuery.eq('id', body.forceLeagueId)
-      : leaguesQuery.eq('current_week', weekStr).in('season_phase', ['regular', 'playoffs']);
+      : strayIds.length > 0
+        ? leaguesQuery.in('season_phase', ['regular', 'playoffs']).or(`current_week.eq.${weekStr},id.in.(${strayIds.join(',')})`)
+        : leaguesQuery.eq('current_week', weekStr).in('season_phase', ['regular', 'playoffs']);
     const { data: leagues, error: leaguesErr } = await leaguesQuery;
     if (leaguesErr) {
       summary.push({ week: weekStr, error: leaguesErr.message });

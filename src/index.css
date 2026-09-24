@@ -12,6 +12,11 @@
   --color-profit: #3ddc84;
   --color-loss: #f55c5c;
   --color-warning: #f5a45c;
+  /* Weekly-results-reveal win celebration only (see WeeklyResultPopup, Sept 2026) --
+     distinct from --color-pos-rb, which happens to be a similar orange/gold, so this
+     doesn't quietly become "the RB color" if either one is ever restyled. */
+  --color-gold: #f4c542;
+  --color-gold-soft: #7a6423;
   --color-text: #e8ecf5;
   --color-text-muted: #8a94a8;
 
@@ -110,4 +115,21 @@ body {
 .skeleton {
   animation: skeleton-pulse 1.4s ease-in-out infinite;
   background: var(--color-bg-raised);
+}
+
+/* Weekly-results win popup confetti (see WeeklyResultPopup, Sept 2026) -- pieces
+   start just above the card and fall/rotate through it once, no loop (a looping
+   celebration reads as a glitch, not a moment). */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(var(--start-rot, 0deg));
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(240px) rotate(calc(var(--start-rot, 0deg) + 340deg));
+    opacity: 0;
+  }
+}
+.confetti-piece {
+  animation: confetti-fall linear forwards;
 }

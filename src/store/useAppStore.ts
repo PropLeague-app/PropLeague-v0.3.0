@@ -78,6 +78,12 @@ interface AppState {
       indicator). Persisted like the rest of the store so the badge doesn't
       reset every time the app restarts. */
   lastSeenChatByLeague: Record<string, string>;
+  /** Matchup ids (see engine/weeklyResults.ts -- a composite `${teamAId}-${teamBId}-${week}`
+   * string, not a DB uuid) the user has already been shown the Tuesday win/loss reveal
+   * popup for. Persisted so a decided matchup doesn't pop up again on every app open
+   * (see chat, Sept 2026: "once per matchup, then never again", mirroring ESPN
+   * Fantasy's one-time Tuesday reveal rather than a recurring nag). */
+  seenMatchupResultIds: Record<string, true>;
 
   setProfile: (profile: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
@@ -118,6 +124,7 @@ interface AppState {
   setGameOverride: (leagueId: string, gameId: string, status: 'live' | 'final') => void;
   simulateDay: (leagueId: string, daySlot: string) => void;
   postAnnouncement: (leagueId: string, message: string) => Promise<void>;
+  markMatchupResultSeen: (matchupId: string) => void;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
   postChatMessage: (leagueId: string, message: string) => Promise<void>;
   markChatSeen: (leagueId: string) => void;
@@ -185,6 +192,7 @@ export const useAppStore = create<AppState>()(
       realPlayerStatsByWeek: {},
       leaguesHydrated: false,
       lastSeenChatByLeague: {},
+      seenMatchupResultIds: {},
 
       setProfile: (profile) => set({ profile }),
       updateProfile: (partial) =>
@@ -762,7 +770,9 @@ export const useAppStore = create<AppState>()(
       // manual v0.1.1 §7 #11: wipes every persisted field (profile, leagues,
       // currentLeagueId) and drops back to onboarding — distinct from Reset Season,
       // which only rewinds one league's season data and keeps the profile/league intact.
-      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {} }),
+      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {}, seenMatchupResultIds: {} }),
+      markMatchupResultSeen: (matchupId) =>
+        set((state) => ({ seenMatchupResultIds: { ...state.seenMatchupResultIds, [matchupId]: true } })),
 
       setGameOverride: (leagueId, gameId, status) =>
         set((state) =>

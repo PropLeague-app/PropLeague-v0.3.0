@@ -4,6 +4,7 @@ import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
 import { MobileShell } from './components/layout/MobileShell';
+import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
 
 import { Welcome } from './screens/onboarding/Welcome';
 import { HowItWorks } from './screens/onboarding/HowItWorks';
@@ -97,6 +98,11 @@ function AppShellLayout() {
   return (
     <MobileShell>
       <Outlet />
+      {/* Mounted once for the whole app shell, not per-screen, so a decided matchup
+          gets its Tuesday reveal popup no matter which screen the user happens to
+          open the app to (see chat, Sept 2026 -- same "lives at the shell level"
+          reasoning as push-notification registration in App() below). */}
+      <WeeklyResultReveal />
     </MobileShell>
   );
 }
