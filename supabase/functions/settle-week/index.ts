@@ -574,7 +574,26 @@ Deno.serve(async (req) => {
           const isPlayerMarket = wager.market_key !== 'h2h' && wager.market_key !== 'spreads' && wager.market_key !== 'totals';
           if (isPlayerMarket && !stat) {
             const finalSinceMs = game.final_since ? new Date(game.final_since).getTime() : null;
-            const longEnoughToVoid = finalSinceMs != null && now - finalSinceMs >= VOID_GRACE_MS;
+            const gracePassed = finalSinceMs != null && now - finalSinceMs >= VOID_GRACE_MS;
+            // Voiding now ALSO waits for the same Tuesday-morning reveal gate as
+            // weekComplete (see RESULTS_REVEAL_CUTOFF_HOUR_ET/pastResultsRevealCutoff
+            // above), not just the raw VOID_GRACE_MS clock off this one game's own
+            // final_since. VOID_GRACE_MS alone wrongly voided the Isaiah Likely/Cam
+            // Skattebo/Dominic Zvada props (Sept 2026, see chat): the stray-week
+            // reprocessing fix reran against weeks whose games had already been final
+            // for a day+, so VOID_GRACE_MS was already blown on its very first pass --
+            // before fetch-balldontlie-player-stats had caught up on backfilling those
+            // older games. Their stat rows landed shortly after, but a settled wager
+            // never re-grades (see FINAL_GRACE_MS's comment above), so the void stuck
+            // even once the real value was available. Gating on the same Tuesday floor
+            // as weekComplete gives ingestion the whole weekend+Monday to catch up
+            // before ANY void is final, matching the existing "err slow" philosophy for
+            // voiding. VOID_GRACE_MS is kept as a floor alongside it, not replaced --
+            // effectively a no-op for a normal week's own games (already final for well
+            // over 3 hours by Tuesday) but still a meaningful guard against voiding
+            // mid-week if this ever runs somewhere that isn't wall-clock-normal (a
+            // manual forceLeagueId backfill, say).
+            const longEnoughToVoid = gracePassed && pastResultsRevealCutoff(new Date(now));
             if (!longEnoughToVoid) {
               skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'no-stat-row (within void grace)' });
               continue; // stat not ingested yet -- could still be a transient gap, leave pending a while longer

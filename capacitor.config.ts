@@ -26,10 +26,14 @@ const config: CapacitorConfig = {
     // scroll view should never also apply its own.
     contentInset: 'never',
   },
-  // Matches --color-bg from index.css exactly. Without this, whatever's
+  // Matches --color-bg (dark) from index.css. Without this, whatever's
   // natively behind the webview (white, by default) shows through in the
   // safe-area regions -- the "white bar" Hunter saw once content scrolled up
-  // into that space.
+  // into that space. Deliberately NOT theme-aware even now that light mode
+  // exists (see chat, Sept 2026): this is a native, build-time value Capacitor
+  // bakes in, not something a runtime per-user setting can touch, and in
+  // practice it's only ever visible for an instant before the webview paints,
+  // so it stays dark for every user rather than being wrong half the time.
   backgroundColor: '#141c29',
 };
 

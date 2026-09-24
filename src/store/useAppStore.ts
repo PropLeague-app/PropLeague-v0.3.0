@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, NFLGame, OddsFormat, PlayoffFieldSize, UserProfile, WeekId } from '../types';
+import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, NFLGame, OddsFormat, PlayoffFieldSize, ThemeMode, UserProfile, WeekId } from '../types';
 import { TEAM_LOGO_EMOJIS } from '../types';
 import * as leagueService from '../services/leagueService';
 import * as simulationService from '../services/simulationService';
@@ -88,6 +88,7 @@ interface AppState {
   setProfile: (profile: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
   setOddsFormat: (format: OddsFormat) => void;
+  setThemeMode: (mode: ThemeMode) => void;
   updateUserTeam: (
     leagueId: string,
     partial: Partial<Pick<LeagueTeam, 'teamName' | 'abbrev' | 'logoMode' | 'logoEmoji' | 'logoColor' | 'logoDataUrl'>>,
@@ -199,6 +200,8 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ profile: state.profile ? { ...state.profile, ...partial } : state.profile })),
       setOddsFormat: (format) =>
         set((state) => ({ profile: state.profile ? { ...state.profile, oddsFormat: format } : state.profile })),
+      setThemeMode: (mode) =>
+        set((state) => ({ profile: state.profile ? { ...state.profile, themeMode: mode } : state.profile })),
       // Local set is immediate/optimistic; the remote push is fire-and-forget
       // (same pattern as updateSettings) -- was 100% local-only before (see chat),
       // which is why a team rename/logo change always reverted on the next

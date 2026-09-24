@@ -154,6 +154,7 @@ export function SettingsHome() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
   const setOddsFormat = useAppStore((s) => s.setOddsFormat);
+  const setThemeMode = useAppStore((s) => s.setThemeMode);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateUserTeam = useAppStore((s) => s.updateUserTeam);
@@ -466,6 +467,24 @@ export function SettingsHome() {
                 }`}
               >
                 {format}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Local-only, same tier as Odds format above -- never synced to Supabase,
+            doesn't follow the account to another device (see chat, Sept 2026). */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm">Appearance</p>
+          <div className="flex bg-bg-raised rounded-lg overflow-hidden">
+            {(['dark', 'light'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setThemeMode(mode)}
+                className={`px-3 py-1.5 text-xs font-semibold capitalize ${
+                  (profile?.themeMode ?? 'dark') === mode ? 'bg-primary text-white' : 'text-text-muted'
+                }`}
+              >
+                {mode}
               </button>
             ))}
           </div>

@@ -641,11 +641,18 @@ export interface League {
 // --- Profile ---------------------------------------------------------------
 
 export type OddsFormat = 'american' | 'decimal';
+export type ThemeMode = 'dark' | 'light';
 
 export interface UserProfile {
   username: string;
   avatarEmoji: string;
   oddsFormat: OddsFormat;
+  /** Local, per-device appearance choice (see chat, Sept 2026 -- a tester asked for
+   * light mode) -- same tier as oddsFormat above: never synced to Supabase, doesn't
+   * follow the account across devices. Optional/undefined on any profile persisted
+   * before this field existed; every read treats that as 'dark' (the app's original
+   * and only look) rather than needing a migration step to backfill it. */
+  themeMode?: ThemeMode;
 }
 
 // --- Validation --------------------------------------------------------------

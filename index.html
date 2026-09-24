@@ -1,5 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<!-- data-theme defaults to 'dark' as the static pre-hydration value (matches the
+     app's original and default look) -- App.tsx's effect overwrites this to 'light'
+     once the persisted profile has rehydrated and themeMode is actually 'light', so
+     a light-mode user sees one brief dark flash on cold launch rather than the
+     reverse (a dark-mode user, the overwhelming majority, never sees any flash at
+     all). class="dark" used to sit here from the initial project scaffold but drove
+     nothing -- no dark: Tailwind variant is used anywhere in this app; the whole
+     theme runs on the CSS variables in index.css instead (see chat, Sept 2026). -->
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />

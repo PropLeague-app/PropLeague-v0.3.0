@@ -36,6 +36,82 @@
   --color-pos-ml: #facc15;
 }
 
+/* Light mode (see chat, Sept 2026 -- tester request). Only the "chrome" tokens
+   (page/card/header backgrounds, borders, body text) get a light palette --
+   --color-primary/accent/profit/loss/warning/gold and the --color-pos-* position
+   colors are deliberately left untouched so brand/status colors read the same in
+   both modes, the same way ESPN/Sleeper don't recolor a team's own colors when you
+   flip their theme. This works with zero changes anywhere else in the app: every
+   screen already reads these variables through Tailwind's bg-bg/text-text/etc.
+   utility classes rather than hardcoded colors, so overriding the variables here
+   is enough to repaint everything. Applied via data-theme on <html> (see App.tsx),
+   not prefers-color-scheme -- this is a persisted, explicit in-app setting, not the
+   OS-level preference. NOTE (see chat, Sept 2026): the position-badge/lineup-slot
+   fill tints (bgSubtle/bgLit in PositionBadge.tsx) needed their own theme-aware
+   color-mix() treatment below, since they were reported as "barely visible" in
+   light mode -- see the --pos-x-subtle-bg/--pos-x-lit-bg block further down. A few
+   other spots (StatusPill badges, ToggleRow/CorrelationRulesEditor selected-state
+   bg-primary/10 buttons) use the same low-opacity-on-dark-card pattern and share
+   the same theoretical risk, but haven't been flagged as an actual problem on
+   device -- worth a look if they come up, not pre-emptively hand-tuned here. */
+/* Position badge/slot fill tints, as real (non-Tailwind-generated) CSS custom
+   properties rather than Tailwind's bg-{color}/N opacity-modifier utility (see
+   PositionBadge.tsx's POSITION_FILL_CLASSES). The opacity-modifier bakes a fixed
+   alpha at build time -- fine mixed toward a near-black dark-mode background, but
+   the same alpha produces a much smaller perceived shift mixed toward a near-white
+   light-mode one, which is why empty lineup slots read as "barely visible" in light
+   mode (see chat, Sept 2026). color-mix() lets each theme mix toward a different
+   base so the fill is actually visible in both -- and introduces no new
+   browser-support requirement, since Tailwind v4's own opacity-modifier utilities
+   already compile to color-mix() under the hood app-wide.
+   These dark-mode defaults reproduce the exact bg-pos-x/5 and bg-pos-x/10 look
+   (mixed toward transparent, same 5%/10%) -- zero dark-mode regression. */
+:root {
+  --pos-qb-subtle-bg: color-mix(in oklab, var(--color-pos-qb) 5%, transparent);
+  --pos-qb-lit-bg: color-mix(in oklab, var(--color-pos-qb) 10%, transparent);
+  --pos-rb-subtle-bg: color-mix(in oklab, var(--color-pos-rb) 5%, transparent);
+  --pos-rb-lit-bg: color-mix(in oklab, var(--color-pos-rb) 10%, transparent);
+  --pos-wr-subtle-bg: color-mix(in oklab, var(--color-pos-wr) 5%, transparent);
+  --pos-wr-lit-bg: color-mix(in oklab, var(--color-pos-wr) 10%, transparent);
+  --pos-te-subtle-bg: color-mix(in oklab, var(--color-pos-te) 5%, transparent);
+  --pos-te-lit-bg: color-mix(in oklab, var(--color-pos-te) 10%, transparent);
+  --pos-k-subtle-bg: color-mix(in oklab, var(--color-pos-k) 5%, transparent);
+  --pos-k-lit-bg: color-mix(in oklab, var(--color-pos-k) 10%, transparent);
+  --pos-ml-subtle-bg: color-mix(in oklab, var(--color-pos-ml) 5%, transparent);
+  --pos-ml-lit-bg: color-mix(in oklab, var(--color-pos-ml) 10%, transparent);
+}
+
+:root[data-theme='light'] {
+  /* Retuned from the first pass (#eef1f6/#ffffff/#ffffff/#d7dee8/#1a2233) after
+     tester feedback that pure-white cards + near-black text felt like "a wild
+     amount of contrast" on the homepage -- muting the surfaces down a notch off
+     white lets foreground colors/text stand out relative to the page instead of
+     everything competing at max contrast (see chat, Sept 2026). */
+  --color-bg: #e3e9f1;
+  --color-bg-raised: #f6f8fb;
+  --color-bg-card: #fbfcfe;
+  --color-border: #ccd5e2;
+  --color-text: #202838;
+  --color-text-muted: #5a6472;
+
+  /* Mixed toward white instead of transparent, and at a higher percentage than
+     the dark-mode defaults above, so empty lineup slots (Lineup screen) get an
+     actually-visible pastel fill instead of nearly vanishing against the lighter
+     page background (see chat, Sept 2026). */
+  --pos-qb-subtle-bg: color-mix(in oklab, var(--color-pos-qb) 14%, white);
+  --pos-qb-lit-bg: color-mix(in oklab, var(--color-pos-qb) 24%, white);
+  --pos-rb-subtle-bg: color-mix(in oklab, var(--color-pos-rb) 14%, white);
+  --pos-rb-lit-bg: color-mix(in oklab, var(--color-pos-rb) 24%, white);
+  --pos-wr-subtle-bg: color-mix(in oklab, var(--color-pos-wr) 14%, white);
+  --pos-wr-lit-bg: color-mix(in oklab, var(--color-pos-wr) 24%, white);
+  --pos-te-subtle-bg: color-mix(in oklab, var(--color-pos-te) 14%, white);
+  --pos-te-lit-bg: color-mix(in oklab, var(--color-pos-te) 24%, white);
+  --pos-k-subtle-bg: color-mix(in oklab, var(--color-pos-k) 14%, white);
+  --pos-k-lit-bg: color-mix(in oklab, var(--color-pos-k) 24%, white);
+  --pos-ml-subtle-bg: color-mix(in oklab, var(--color-pos-ml) 14%, white);
+  --pos-ml-lit-bg: color-mix(in oklab, var(--color-pos-ml) 24%, white);
+}
+
 html,
 body,
 #root {

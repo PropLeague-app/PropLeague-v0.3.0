@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
+import { applyThemeMode } from './services/theme';
 import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
 
@@ -123,6 +124,17 @@ function App() {
   useEffect(() => {
     if (pushSession && pushProfile?.onboarded) void registerForPushNotifications(pushProfile.id);
   }, [pushSession, pushProfile?.onboarded, pushProfile?.id]);
+
+  // Local appearance setting (see chat, Sept 2026 -- light mode) -- lives here
+  // rather than per-screen for the same reason push registration does: App()
+  // mounts once for the whole app lifetime, so this can't miss applying the
+  // theme just because the user's first screen after a cold launch happens not
+  // to be one that reads themeMode itself. Fires on every profile load/change,
+  // not just once, so switching the Settings toggle repaints immediately.
+  const themeMode = useAppStore((s) => s.profile?.themeMode);
+  useEffect(() => {
+    void applyThemeMode(themeMode ?? 'dark');
+  }, [themeMode]);
 
   return (
     <Routes>
