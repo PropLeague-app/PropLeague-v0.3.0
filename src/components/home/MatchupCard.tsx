@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import type { League, LeagueTeam, Matchup, WeeklyRoster } from '../../types';
+import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from '../../types';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
+import { isWagerVisibleToViewer } from '../../engine/stats';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
 import { resultForGame } from '../../data/seed';
 import { useAppStore } from '../../store/useAppStore';
@@ -79,8 +80,24 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
       gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
     resultFor: (gameId) => resultForGame(gameId),
   };
-  const scoreA = matchup.teamAScore ?? (rosterA ? expectedWeeklyScore(rosterA, league.settings, decided) : 0);
-  const scoreB = matchup.teamBScore ?? (rosterB ? expectedWeeklyScore(rosterB, league.settings, decided) : 0);
+  // hide-picks: match MatchupDetail's masking so this card's own score preview
+  // can't reveal a still-hidden opponent pick's stake before its own game has
+  // started (see engine/scoring.ts's isSlotHidden param doc).
+  const buildSlotHider = (team: LeagueTeam) => {
+    if (team.isUser || !league.settings.hidePicks) return undefined;
+    return (s: RosterSlotState) =>
+      !!s.wager &&
+      !isWagerVisibleToViewer({
+        isOwnTeam: false,
+        hidePicks: league.settings.hidePicks,
+        wagerWeek: matchup.week,
+        currentWeek: league.currentWeek,
+        wagerStatus: s.wager.status,
+        gameStarted: decided.isDecided(s.wager.gameId),
+      });
+  };
+  const scoreA = matchup.teamAScore ?? (rosterA ? expectedWeeklyScore(rosterA, league.settings, decided, buildSlotHider(teamA)) : 0);
+  const scoreB = matchup.teamBScore ?? (rosterB ? expectedWeeklyScore(rosterB, league.settings, decided, buildSlotHider(teamB)) : 0);
   // matchup.teamAScore now updates live all week as picks settle (see chat --
   // settle-week writes scores progressively but only sets winnerId/isTie once
   // the whole week is actually complete), so "has a score" no longer means

@@ -15,7 +15,8 @@ import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader'
 import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenerator';
 import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
-import type { League, Matchup, RosterSlotState, WagerStatus } from '../types';
+import { isWagerVisibleToViewer } from '../engine/stats';
+import type { League, LeagueTeam, Matchup, RosterSlotState, WagerStatus } from '../types';
 import { weekLabel } from '../types';
 
 export function MatchupDetail() {
@@ -111,8 +112,25 @@ export function MatchupDetail() {
         getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides))?.status !== 'upcoming',
     resultFor: (gameId) => resultForGame(gameId),
   };
-  const scoreA = matchup.teamAScore ?? expectedWeeklyScore(rosterA, league.settings, decided);
-  const scoreB = matchup.teamBScore ?? expectedWeeklyScore(rosterB, league.settings, decided);
+  // hide-picks: a not-yet-live opponent pick must not leak its stake into the
+  // team-level score either, matching what its own roster card already shows
+  // (see engine/scoring.ts's isSlotHidden param doc). Only ever built for a
+  // non-owner's roster -- the viewer's own team's score is always the real one.
+  const buildSlotHider = (team: LeagueTeam) => {
+    if (team.isUser || !hidePicks) return undefined;
+    return (s: RosterSlotState) =>
+      !!s.wager &&
+      !isWagerVisibleToViewer({
+        isOwnTeam: false,
+        hidePicks,
+        wagerWeek: matchup.week,
+        currentWeek: league.currentWeek,
+        wagerStatus: s.wager.status,
+        gameStarted: decided.isDecided(s.wager.gameId),
+      });
+  };
+  const scoreA = matchup.teamAScore ?? expectedWeeklyScore(rosterA, league.settings, decided, buildSlotHider(teamA));
+  const scoreB = matchup.teamBScore ?? expectedWeeklyScore(rosterB, league.settings, decided, buildSlotHider(teamB));
   // matchup.teamAScore now updates live all week as picks settle (settle-week writes
   // scores progressively but only sets winnerId/isTie once the whole week is actually
   // complete -- see chat), so "has a score" no longer means "is final". Same fix as

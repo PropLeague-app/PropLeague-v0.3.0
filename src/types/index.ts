@@ -576,7 +576,19 @@ export interface ActivityItem {
   type: 'announcement' | 'reminder' | 'settled' | 'moment';
   message: string;
   pinned?: boolean;
-  reactions?: Record<string, number>; // emoji -> local-only count
+  reactions?: Record<string, number>; // emoji -> total count across the league
+  /** The caller's own current reaction on this item, if any (manual v0.3.0 §6:
+   * one reaction per person, selecting a different emoji switches it) -- kept
+   * separate from the aggregate `reactions` counts above since that map has no
+   * per-person breakdown at all. Undefined means "no reaction from me", not
+   * "nobody has reacted". */
+  myReaction?: string;
+  /** Which team posted this announcement (manual v0.3.0 §6: "delete the
+   * announcements I send") -- only ever set for type === 'announcement'; null/
+   * undefined on system-generated items, and on any announcement posted before
+   * this field existed. Used client-side only to decide whether to show the
+   * delete affordance -- delete_announcement re-checks this server-side too. */
+  postedByTeamId?: string;
   /** Only set when type === 'moment' (manual v0.03 §4) — structured fields so the
    * feed's Moments tab can render a proper award card (category subtitle, team logo,
    * per-category extras) instead of just replaying `message`. */

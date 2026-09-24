@@ -1,4 +1,4 @@
-import type { LeagueSettings, WeeklyRoster } from '../types';
+import type { LeagueSettings, RosterSlotState, WeeklyRoster } from '../types';
 import { americanToImpliedProbability, profitForStake } from './oddsMath';
 import { settleWager, type GameResult } from './settlement';
 
@@ -37,9 +37,27 @@ export interface DecidedGameLookup {
  * #11) without touching the wager's real `status` — that still only changes on Advance
  * Week. Wagers on games not yet decided fall back to the odds-implied expected value.
  */
-export function expectedWeeklyScore(roster: WeeklyRoster, settings: LeagueSettings, decided?: DecidedGameLookup): number {
+export function expectedWeeklyScore(
+  roster: WeeklyRoster,
+  settings: LeagueSettings,
+  decided?: DecidedGameLookup,
+  // hide-picks (manual v0.3.0 §5): masks a still-hidden opponent pick's dollar
+  // contribution out of the shown score entirely, rather than folding its EV in
+  // unmasked -- otherwise the team-level number leaked exactly how much was
+  // staked on a pick whose own roster card correctly said 'Hidden' (see chat,
+  // Sept 2026 -- Wilhelm's \$95 total was fully attributable to its one hidden
+  // pending pick). Deliberately left OUT of computeIncompleteLineupPenalty below --
+  // that penalty reflects real unallocated-credit facts about the roster and must
+  // stay accurate regardless of what's visually hidden, or a hidden pick would
+  // wrongly read as an empty slot and get double-penalized on top of just not
+  // showing its value. Callers build this from the same isWagerVisibleToViewer
+  // predicate collectTeamBets/BetHistory already use, so a pick's score-line
+  // visibility and its roster-card visibility can never drift apart.
+  isSlotHidden?: (slot: RosterSlotState) => boolean,
+): number {
   const expected = roster.slots.reduce((sum, s) => {
     if (!s.wager) return sum;
+    if (isSlotHidden?.(s)) return sum;
     if (s.wager.status !== 'pending') return sum + (s.wager.settledProfit ?? 0);
     if (decided?.isDecided(s.wager.gameId)) {
       const result = decided.resultFor(s.wager.gameId);

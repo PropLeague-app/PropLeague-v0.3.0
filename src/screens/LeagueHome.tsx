@@ -19,8 +19,10 @@ export function LeagueHome() {
   const allLeagues = useAppStore((s) => s.leagues);
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
+  const deleteAnnouncement = useAppStore((s) => s.deleteAnnouncement);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
   const postChatMessage = useAppStore((s) => s.postChatMessage);
+  const deleteChatMessage = useAppStore((s) => s.deleteChatMessage);
   const lastSeenChatByLeague = useAppStore((s) => s.lastSeenChatByLeague);
   const markChatSeen = useAppStore((s) => s.markChatSeen);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
@@ -251,6 +253,8 @@ export function LeagueHome() {
             chatUnreadCount={chatUnreadCount}
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
             onSendChat={(message) => postChatMessage(league.id, message)}
+            onDeleteAnnouncement={(itemId) => deleteAnnouncement(league.id, itemId)}
+            onDeleteChat={(itemId) => deleteChatMessage(league.id, itemId)}
             onSeenChat={() => markChatSeen(league.id)}
           />
         </div>

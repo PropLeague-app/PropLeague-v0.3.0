@@ -23,6 +23,16 @@ interface ChatRow {
   message: string;
 }
 
+/** manual v0.3.0 §6: "a person should be able to delete their own chats too" --
+ * delete_chat_message re-validates ownership server-side (caller's own resolved
+ * team in this league must match the message's team_id), same trust model as
+ * every other write here. */
+export async function deleteChatMessageRemote(itemId: string): Promise<ServiceResult> {
+  const { error } = await supabase.rpc('delete_chat_message', { p_item_id: itemId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function fetchLeagueChat(leagueId: string): Promise<ServiceResult<{ chat: ChatMessage[] }>> {
   const { data, error } = await supabase
     .from('chat_messages')

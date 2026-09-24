@@ -23,8 +23,8 @@ import {
 } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
-import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity } from '../services/supabaseActivity';
-import { postChatMessageRemote, fetchLeagueChat } from '../services/supabaseChat';
+import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity, deleteAnnouncementRemote } from '../services/supabaseActivity';
+import { postChatMessageRemote, fetchLeagueChat, deleteChatMessageRemote } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
 import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
@@ -126,9 +126,11 @@ interface AppState {
   setGameOverride: (leagueId: string, gameId: string, status: 'live' | 'final') => void;
   simulateDay: (leagueId: string, daySlot: string) => void;
   postAnnouncement: (leagueId: string, message: string) => Promise<void>;
+  deleteAnnouncement: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markMatchupResultSeen: (matchupId: string) => void;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
   postChatMessage: (leagueId: string, message: string) => Promise<void>;
+  deleteChatMessage: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markChatSeen: (leagueId: string) => void;
 
   loadRealGamesForWeek: (week: WeekId) => Promise<void>;
@@ -599,11 +601,12 @@ export const useAppStore = create<AppState>()(
         }),
 
       loadLeagueResults: async (leagueId) => {
+        const viewerTeamId = get().leagues[leagueId]?.teams.find((t) => t.isUser)?.id;
         const [matchupsResult, standingsResult, progressResult, activityResult, chatResult, teamsResult] = await Promise.all([
           fetchLeagueMatchups(leagueId),
           fetchLeagueStandings(leagueId),
           fetchLeagueProgress(leagueId),
-          fetchLeagueActivity(leagueId),
+          fetchLeagueActivity(leagueId, viewerTeamId),
           fetchLeagueChat(leagueId),
           fetchLeagueTeams(leagueId),
         ]);
@@ -809,30 +812,59 @@ export const useAppStore = create<AppState>()(
         ),
 
       postAnnouncement: async (leagueId, message) => {
+        const userTeam = get().leagues[leagueId]?.teams.find((t) => t.isUser);
         const result = await postAnnouncementRemote(leagueId, message);
         if (!result.ok) return;
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             activity: [
-              { id: result.itemId, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: true },
+              { id: result.itemId, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: true, postedByTeamId: userTeam?.id },
               ...league.activity,
             ].slice(0, 40),
           })),
         );
       },
 
+      // manual v0.3.0 §6: one reaction per person -- tapping the emoji you already
+      // picked removes it, tapping a different one switches. Mirrors exactly what
+      // react_to_activity does server-side (see chat) so the local optimistic
+      // update never drifts from what a fresh fetch would show: decrement whatever
+      // this team's previous reaction was (if any), then either stop (same emoji =
+      // un-react) or apply the new one.
       reactToActivity: async (leagueId, itemId, emoji) => {
         const result = await reactToActivityRemote(itemId, emoji);
         if (!result.ok) return;
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
-            activity: league.activity.map((item) =>
-              item.id === itemId ? { ...item, reactions: { ...item.reactions, [emoji]: (item.reactions?.[emoji] ?? 0) + 1 } } : item,
-            ),
+            activity: league.activity.map((item) => {
+              if (item.id !== itemId) return item;
+              const prev = item.myReaction;
+              const reactions = { ...item.reactions };
+              if (prev) {
+                const next = (reactions[prev] ?? 1) - 1;
+                if (next > 0) reactions[prev] = next;
+                else delete reactions[prev];
+              }
+              if (prev === emoji) {
+                return { ...item, reactions, myReaction: undefined };
+              }
+              reactions[emoji] = (reactions[emoji] ?? 0) + 1;
+              return { ...item, reactions, myReaction: emoji };
+            }),
           })),
         );
+      },
+
+      // manual v0.3.0 §6: "delete the announcements I send" -- delete_announcement
+      // re-checks type + permission server-side (commissioner or original poster),
+      // this is not a trust-the-client removal.
+      deleteAnnouncement: async (leagueId, itemId) => {
+        const result = await deleteAnnouncementRemote(itemId);
+        if (!result.ok) return { ok: false, error: result.error };
+        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, activity: league.activity.filter((item) => item.id !== itemId) })));
+        return { ok: true };
       },
 
       postChatMessage: async (leagueId, message) => {
@@ -846,6 +878,16 @@ export const useAppStore = create<AppState>()(
             chat: [...league.chat, { id: result.itemId, ts: new Date().toISOString(), teamId: userTeam.id, message }].slice(-100),
           })),
         );
+      },
+
+      // manual v0.3.0 §6: "a person should be able to delete their own chats too" --
+      // delete_chat_message re-checks that the caller's own resolved team matches
+      // the message's team_id server-side.
+      deleteChatMessage: async (leagueId, itemId) => {
+        const result = await deleteChatMessageRemote(itemId);
+        if (!result.ok) return { ok: false, error: result.error };
+        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, chat: league.chat.filter((item) => item.id !== itemId) })));
+        return { ok: true };
       },
 
       markChatSeen: (leagueId) =>

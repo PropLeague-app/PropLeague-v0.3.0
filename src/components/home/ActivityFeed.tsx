@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown } from 'lucide-react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2 } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
@@ -18,6 +18,11 @@ const ICONS: Record<ActivityItem['type'], ReactNode> = {
 
 const QUICK_REACTIONS = ['🔥', '😂', '💀', '👏'];
 
+// manual v0.3.0 §6: one reaction per person, switchable -- item.myReaction (set
+// by fetchLeagueActivity/reactToActivity, see chat) is the caller's own current
+// pick, if any. Its aggregate pill (in the count row) and its quick-reaction
+// button both get a ring so it's clear which one is "yours" and tapping any
+// other emoji will move it rather than add a second one.
 function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: string, emoji: string) => void }) {
   if (!onReact) return null;
   return (
@@ -26,12 +31,19 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
         Object.entries(item.reactions)
           .filter(([, count]) => count > 0)
           .map(([emoji, count]) => (
-            <span key={emoji} className="text-[11px] bg-bg-raised rounded-full px-1.5 py-0.5">
+            <span
+              key={emoji}
+              className={`text-[11px] bg-bg-raised rounded-full px-1.5 py-0.5 ${emoji === item.myReaction ? 'ring-1 ring-primary' : ''}`}
+            >
               {emoji} {count}
             </span>
           ))}
       {QUICK_REACTIONS.map((emoji) => (
-        <button key={emoji} onClick={() => onReact(item.id, emoji)} className="text-xs opacity-50 hover:opacity-100">
+        <button
+          key={emoji}
+          onClick={() => onReact(item.id, emoji)}
+          className={`text-xs ${emoji === item.myReaction ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
+        >
           {emoji}
         </button>
       ))}
@@ -39,7 +51,23 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
   );
 }
 
-function NewsCard({ league, item, onReact }: { league: League; item: ActivityItem; onReact?: (itemId: string, emoji: string) => void }) {
+function NewsCard({
+  league,
+  item,
+  onReact,
+  onDelete,
+  canDelete,
+}: {
+  league: League;
+  item: ActivityItem;
+  onReact?: (itemId: string, emoji: string) => void;
+  /** manual v0.3.0 §6: "delete the announcements I send" -- only ever called for
+   * type === 'announcement'; canDelete gates whether the button even renders
+   * (the RPC re-checks permission regardless, this is just to not show a button
+   * that would fail). */
+  onDelete?: (itemId: string) => void;
+  canDelete?: boolean;
+}) {
   return (
     <Card className="flex items-start gap-2.5">
       {item.type === 'announcement' ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>}
@@ -52,7 +80,14 @@ function NewsCard({ league, item, onReact }: { league: League; item: ActivityIte
           <p className="text-[11px] text-text-muted">
             {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </p>
-          <Reactions item={item} onReact={onReact} />
+          <div className="flex items-center gap-2">
+            <Reactions item={item} onReact={onReact} />
+            {item.type === 'announcement' && canDelete && onDelete && (
+              <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </Card>
@@ -220,10 +255,14 @@ const FEED_TAB_LABELS: Record<FeedTab, string> = { all: 'All', moments: 'Moments
  * News/Moments cards above -- no Card wrapper, no reactions, just sender + text,
  * since this is meant to read like a normal group chat, not another award/news
  * card style). */
-function ChatBubble({ league, item }: { league: League; item: ChatMessage }) {
+// manual v0.3.0 §6: "a person should be able to delete their own chats too" --
+// team?.isUser is the same "is this mine" flag every other own-team check in
+// the app already uses; onDelete only ever needs to be called for the viewer's
+// own message since the button is gated on that same flag.
+function ChatBubble({ league, item, onDelete }: { league: League; item: ChatMessage; onDelete?: (itemId: string) => void }) {
   const team = league.teams.find((t) => t.id === item.teamId);
   return (
-    <div className="flex items-start gap-2">
+    <div className="flex items-start gap-2 group">
       {team ? <TeamLogo team={team} size="sm" /> : <span className="w-6 h-6 shrink-0" />}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
@@ -234,6 +273,11 @@ function ChatBubble({ league, item }: { league: League; item: ChatMessage }) {
         </div>
         <p className="text-sm break-words">{item.message}</p>
       </div>
+      {team?.isUser && onDelete && (
+        <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0 mt-0.5" aria-label="Delete message">
+          <Trash2 size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -267,6 +311,8 @@ export function ActivityFeed({
   onReact,
   onSendChat,
   onSeenChat,
+  onDeleteAnnouncement,
+  onDeleteChat,
 }: {
   league: League;
   items: ActivityItem[];
@@ -282,8 +328,21 @@ export function ActivityFeed({
       have seen -- both right when the user switches to it, and again if a new
       message arrives while they're still looking at it. */
   onSeenChat?: () => void;
+  /** manual v0.3.0 §6: commissioner (or whoever originally posted it) can
+   * delete an announcement; any member can delete their own chat message.
+   * Both omitted (Advanced dev-panel callers, say) simply hides every delete
+   * button, same pattern onReact/onSendChat already use. */
+  onDeleteAnnouncement?: (itemId: string) => void;
+  onDeleteChat?: (itemId: string) => void;
 }) {
   const [tab, setTab] = useState<FeedTab>('all');
+  // Commissioner can delete any announcement; anyone who posted one (or a
+  // pre-this-feature announcement with no recorded poster, see chat) can only
+  // delete their own -- canDeleteAnnouncement below folds both cases into one
+  // per-item check the same way the server-side RPC does.
+  const userTeam = league.teams.find((t) => t.isUser);
+  const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
+  const canDeleteAnnouncement = (item: ActivityItem) => isCommissioner || (!!userTeam && item.postedByTeamId === userTeam.id);
   const [chatText, setChatText] = useState('');
   // Which week groups are collapsed on the Moments tab (see chat, Sept 2026: "the
   // weeks should be collapsible"). Keyed by groupMomentsByWeek's own group.key, not
@@ -339,7 +398,7 @@ export function ActivityFeed({
             item.type === 'moment' ? (
               <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
             ) : (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement} canDelete={canDeleteAnnouncement(item)} />
             ),
           )}
         </div>
@@ -386,7 +445,9 @@ export function ActivityFeed({
           {news.length === 0 ? (
             <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
-            news.slice(0, 8).map((item) => <NewsCard key={item.id} league={league} item={item} onReact={onReact} />)
+            news.slice(0, 8).map((item) => (
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement} canDelete={canDeleteAnnouncement(item)} />
+            ))
           )}
         </div>
       )}
@@ -424,7 +485,7 @@ export function ActivityFeed({
           ) : (
             <div className="space-y-3">
               {[...chatItems].reverse().map((item) => (
-                <ChatBubble key={item.id} league={league} item={item} />
+                <ChatBubble key={item.id} league={league} item={item} onDelete={onDeleteChat} />
               ))}
             </div>
           )}
