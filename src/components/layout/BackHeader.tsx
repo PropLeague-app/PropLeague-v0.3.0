@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 /** Goes back through real router history when there is any (so the back stack feels
@@ -16,7 +17,18 @@ function goBack(navigate: ReturnType<typeof useNavigate>, fallback: string) {
  * padding ever changes. */
 export const BACK_HEADER_HEIGHT = 44;
 
-export function BackHeader({ title, fallback = '/home' }: { title: string; fallback?: string }) {
+export function BackHeader({
+  title,
+  fallback = '/home',
+  right,
+}: {
+  title: string;
+  fallback?: string;
+  /** Optional right-aligned slot (see chat, Sept 2026 -- the Matchup screen's
+   * Simple/Advanced toggle) -- undefined for every other screen today, so this
+   * is purely additive and changes nothing for an existing caller. */
+  right?: ReactNode;
+}) {
   const navigate = useNavigate();
   return (
     <div className="sticky top-0 z-10 bg-bg-raised/95 backdrop-blur border-b border-border px-4 py-2 flex items-center gap-2">
@@ -27,7 +39,8 @@ export function BackHeader({ title, fallback = '/home' }: { title: string; fallb
         <span className="text-xl leading-none">‹</span>
         <span className="text-sm">Back</span>
       </button>
-      <h1 className="text-base font-bold truncate">{title}</h1>
+      <h1 className="text-base font-bold truncate flex-1">{title}</h1>
+      {right}
     </div>
   );
 }

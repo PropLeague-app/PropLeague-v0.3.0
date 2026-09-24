@@ -37,5 +37,10 @@ export function WagerResultTicker({
           : status === 'voided'
             ? 'text-accent'
             : 'text-text-muted'; // pending/live -- provisional, not a verdict yet
-  return <span className={`text-[10px] font-semibold whitespace-nowrap ${colorClass}`}>{value}</span>;
+  // Deliberately lighter than the pill next to it now that the pill itself carries
+  // the headline dollar amount (see WagerProfitPill, Sept 2026 matchup-screen
+  // cleanup) -- this is back to being the secondary, "here's the box score line
+  // that produced that number" readout it was always meant to be, not competing
+  // with it for attention.
+  return <span className={`text-[9px] font-normal whitespace-nowrap ${colorClass}`}>{value}</span>;
 }

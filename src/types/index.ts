@@ -642,6 +642,15 @@ export interface League {
 
 export type OddsFormat = 'american' | 'decimal';
 export type ThemeMode = 'dark' | 'light';
+/** Matchup screen's cell density (see chat, Sept 2026 -- the pill/slot visual
+ * cleanup): 'simple' is the heavily-reduced-clutter default (name + a single
+ * abbreviated line + a one-letter result badge, sized to fit a whole roster on
+ * one screen), 'advanced' restores the full prop text, stake, and colored
+ * win/loss amount, scrolling if it needs to. Local/per-device, same tier as
+ * oddsFormat/themeMode -- Hunter's explicit call was that some people will
+ * want to keep Advanced, so unlike the Live/Final-style stuff this is a real
+ * persisted preference, not something that resets on every visit. */
+export type MatchupDetailMode = 'simple' | 'advanced';
 
 export interface UserProfile {
   username: string;
@@ -653,6 +662,9 @@ export interface UserProfile {
    * before this field existed; every read treats that as 'dark' (the app's original
    * and only look) rather than needing a migration step to backfill it. */
   themeMode?: ThemeMode;
+  /** See MatchupDetailMode above. Optional/undefined on any profile persisted
+   * before this field existed; every read treats that as 'simple'. */
+  matchupDetailMode?: MatchupDetailMode;
 }
 
 // --- Validation --------------------------------------------------------------

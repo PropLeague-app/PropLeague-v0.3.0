@@ -8,13 +8,14 @@ import { resultForGame } from '../data/seed';
 import { expectedWeeklyScore, type DecidedGameLookup } from '../engine/scoring';
 import { PositionBadge } from '../components/common/PositionBadge';
 import { StatusPill } from '../components/common/StatusPill';
-import { WagerResultTicker } from '../components/common/WagerResultTicker';
+import { WagerProfitPill } from '../components/common/WagerProfitPill';
 import { TeamLogo } from '../components/common/TeamLogo';
-import type { RealPlayerStatLine } from '../engine/realGameResult';
+import { describeWagerResult, type RealPlayerStatLine } from '../engine/realGameResult';
 import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader';
 import { formatCents } from '../engine/oddsMath';
-import { wagerLineDescription } from '../data/propsGenerator';
-import type { League, Matchup, RosterSlotState } from '../types';
+import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenerator';
+import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
+import type { League, Matchup, RosterSlotState, WagerStatus } from '../types';
 import { weekLabel } from '../types';
 
 export function MatchupDetail() {
@@ -26,6 +27,13 @@ export function MatchupDetail() {
   const loadRealPlayerStatsForWeek = useAppStore((s) => s.loadRealPlayerStatsForWeek);
   const realGamesById = useAppStore((s) => s.realGamesById);
   const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
+  // Persisted per-device, same tier as odds format/theme (see MatchupDetailMode's
+  // doc comment) -- Hunter's explicit call was that some people will want to keep
+  // Advanced, so this is remembered across visits rather than resetting to Simple
+  // every time like the Live/Final badge or anything else purely presentational.
+  const matchupDetailMode = useAppStore((s) => s.profile?.matchupDetailMode ?? 'simple');
+  const setMatchupDetailMode = useAppStore((s) => s.setMatchupDetailMode);
+  const advanced = matchupDetailMode === 'advanced';
 
   const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
 
@@ -111,22 +119,63 @@ export function MatchupDetail() {
   // MatchupCard.tsx.
   const isFinal = matchup.winnerId != null || matchup.isTie;
 
+  // Same weekly-record line Home's matchup bubble shows (see pickProgress's own doc
+  // comment) -- now doing double duty here in place of the old "Live"/"Final" text
+  // that used to sit directly under each team's name+P/L (see chat, Sept 2026: that
+  // moved up to sit with the Week pill instead, see below).
+  const totalSlots = Object.values(league.settings.lineupSlots).reduce((a, b) => a + b, 0);
+  const progressA = pickProgress(rosterA, totalSlots);
+  const progressB = pickProgress(rosterB, totalSlots);
+
+  // Center badge should read "Upcoming" until at least one pick has actually
+  // gone live -- previously this showed "Live" the instant the matchup wasn't
+  // final, even early in the week when every slot on both rosters was still
+  // Empty/pending (see chat, Sept 2026 Week 3 screenshots: a red pulsing
+  // "Live" badge over two fully-empty rosters).
+  const isSlotLive = (s: RosterSlotState) => {
+    if (!s.wager) return false;
+    if (s.wager.status !== 'pending') return true;
+    const g = realGamesById[s.wager.gameId] ?? getGame(s.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+    return !!g && g.status !== 'upcoming';
+  };
+  const anyPickLive = rosterA.slots.some(isSlotLive) || rosterB.slots.some(isSlotLive);
+
   return (
     <div className="flex flex-col">
-      <BackHeader title="Matchup" fallback="/home" />
+      <BackHeader
+        title="Matchup"
+        fallback="/home"
+        right={
+          <button
+            onClick={() => setMatchupDetailMode(advanced ? 'simple' : 'advanced')}
+            className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+              advanced ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+            }`}
+          >
+            Advanced
+          </button>
+        }
+      />
       {orderedWeekMatchups.length > 1 && (
         <MatchupTabs league={league} matchups={orderedWeekMatchups} currentMatchupId={matchup.id} onSelect={(id) => navigate(`/matchup/${id}`, { replace: true })} />
       )}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} isFinal={isFinal} />
-          <span className="inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-raised text-text-muted">
-            {weekLabel(matchup.week)}
-          </span>
-          <TeamHeader team={teamB} score={scoreB} isFinal={isFinal} reverse />
+          <TeamHeader team={teamA} score={scoreA} progress={progressA} />
+          <div className="flex flex-col items-center gap-1">
+            {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
+                reuses StatusPill's own live/final styling (red pulsing dot vs.
+                muted "Final") rather than a bespoke badge, so this stays in sync
+                with that pill's look everywhere else it's used. */}
+            <StatusPill status={isFinal ? 'final' : anyPickLive ? 'live' : 'upcoming'} />
+            <span className="inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-raised text-text-muted">
+              {weekLabel(matchup.week)}
+            </span>
+          </div>
+          <TeamHeader team={teamB} score={scoreB} progress={progressB} reverse />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {rosterA.slots.map((slotA, idx) => {
             const slotB = rosterB.slots[idx];
             return (
@@ -138,6 +187,7 @@ export function MatchupDetail() {
                   hidePicks={hidePicks}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
+                  advanced={advanced}
                 />
                 <div className="flex items-center justify-center px-1">
                   <PositionBadge position={slotA.position} />
@@ -149,6 +199,7 @@ export function MatchupDetail() {
                   hidePicks={hidePicks}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
+                  advanced={advanced}
                   reverse
                 />
               </div>
@@ -211,12 +262,12 @@ function MatchupTabs({
 function TeamHeader({
   team,
   score,
-  isFinal,
+  progress,
   reverse,
 }: {
   team: League['teams'][number];
   score: number;
-  isFinal: boolean;
+  progress: { active: number; won: number; lost: number; pushed: number; open: number };
   reverse?: boolean;
 }) {
   return (
@@ -225,7 +276,10 @@ function TeamHeader({
       <div className="min-w-0">
         <p className="text-xs font-medium truncate">{team.teamName}</p>
         <p className={`text-sm font-bold ${score >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(score)}</p>
-        <p className="text-[10px] text-text-muted">{isFinal ? 'Final' : 'Live'}</p>
+        {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
+            2026) -- now living where the old bare "Live"/"Final" text used to sit,
+            since that moved up next to the Week pill above. */}
+        <p className="text-[9px] text-text-muted truncate">{formatProgressLine(progress)}</p>
       </div>
     </div>
   );
@@ -238,6 +292,7 @@ function SlotMini({
   hidePicks,
   realGamesById,
   realPlayerStats,
+  advanced,
   reverse,
 }: {
   slot: RosterSlotState;
@@ -246,6 +301,7 @@ function SlotMini({
   hidePicks: boolean;
   realGamesById: Record<string, ReturnType<typeof getGame>>;
   realPlayerStats?: Record<string, RealPlayerStatLine>;
+  advanced: boolean;
   reverse?: boolean;
 }) {
   if (!slot.wager) {
@@ -275,43 +331,96 @@ function SlotMini({
   // attention to. The status pill itself is deliberately left at full color/opacity
   // either way (see chat: Won/Lost should stay exactly as vivid as they are now).
   const settled = wager.status !== 'pending';
-  // Settled cards also get a touch of background muting on top of the text
-  // opacity above (see chat: "maybe we want to also mute the cell color just
-  // a bit too") -- bg-bg-card/60 lets the page background show through
-  // slightly rather than a flat opacity on the whole card, which would also
-  // wash out the border. The status pill's own won/lost colors are untouched.
+  const pendingOrLiveStatus = gameStarted ? 'live' : 'pending';
+
+  // Simple mode (default -- see chat, Sept 2026 "pill/slot visual cleanup"): a
+  // heavily reduced two-line cell -- name, then an abbreviated prop line sharing
+  // its row with a one-letter result badge -- sized to fit a whole roster on one
+  // screen. No stake, no dollar amount, no raw-stat ticker; Advanced restores all
+  // three (see the branch below).
+  if (!advanced) {
+    // The status pill (and, below, its label text) stay at full opacity even
+    // once settled -- only the player name dims. Previously the whole row,
+    // pill included, sat inside the opacity-60 wrapper, which is what made a
+    // settled W/L/V pill here look "slightly see-through" next to Advanced
+    // mode's pill (that one was always a sibling of the dimmed text, never
+    // inside it) (see chat, Sept 2026).
+    return (
+      <div className={`border border-border rounded-lg px-2 py-1.5 ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
+        <p className={`text-[11px] font-semibold truncate ${settled ? 'opacity-60' : ''}`}>{wager.playerName ?? wager.side}</p>
+        <div className={`mt-0.5 flex items-center gap-1 ${reverse ? 'flex-row-reverse' : ''}`}>
+          <span className={`text-[10px] text-text-muted truncate min-w-0 flex-1 ${reverse ? 'text-right' : ''} ${settled ? 'opacity-60' : ''}`}>
+            {wagerCompactLineShort(wager)}
+          </span>
+          <StatusPill status={settled ? wager.status : pendingOrLiveStatus} compact />
+        </div>
+      </div>
+    );
+  }
+
+  // Advanced mode: player name (row 1), prop description alone on its own line
+  // (row 2 -- no more truncation fight with the stake, see chat, the Christian
+  // McCaffrey cell where neither was visible), then a bottom row (row 3) that
+  // pairs the stake with the result pill on opposite corners: stake on the
+  // OUTER corner (screen edge, away from the center position-badge column),
+  // and the pill on the INNER corner (see chat, Sept 2026: "the red/green pill
+  // needs to sit close to the inside of the cell... stake should be on the
+  // outside"). The raw box-score number that produced a settled result sits
+  // right next to that pill -- inside the same inner-corner group, but on the
+  // side facing the middle of the row -- so it reads as "here's the number
+  // behind that pill" without ever competing with the stake for the outer
+  // corner. Deliberately NOT using flex-row-reverse to mirror team B's side --
+  // row-reverse fighting justify-* is what caused an earlier bug where the
+  // right column's pill/ticker pair ended up on the wrong edge (see git
+  // history on this file) -- so the two sides below are just two explicit,
+  // separately-ordered JSX blocks instead.
+  const statText = describeWagerResult(
+    wager.marketKey,
+    wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined,
+    game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined,
+  );
+  const statColorClass =
+    wager.status === 'won'
+      ? 'text-profit'
+      : wager.status === 'lost'
+        ? 'text-loss'
+        : wager.status === 'push'
+          ? 'text-primary'
+          : wager.status === 'voided'
+            ? 'text-accent'
+            : 'text-text-muted'; // pending/live -- provisional, not a verdict yet
+  const statSpan = statText ? (
+    <span className={`text-[9px] font-normal whitespace-nowrap ${statColorClass}`}>{statText}</span>
+  ) : null;
+  const resultPill = settled ? (
+    <WagerProfitPill status={wager.status as Exclude<WagerStatus, 'pending'>} profit={wager.settledProfit ?? 0} />
+  ) : (
+    <StatusPill status={pendingOrLiveStatus} />
+  );
+  const stakeSpan = <span className="text-[10px] text-text-muted whitespace-nowrap shrink-0">${wager.stake.toFixed(2)}</span>;
+
   return (
     <div className={`border border-border rounded-lg p-2 ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
       <div className={settled ? 'opacity-60' : ''}>
         <p className="text-[11px] font-semibold truncate">{wager.playerName ?? wager.side}</p>
-        <p className="text-[10px] text-text-muted truncate">
-          {wagerLineDescription(wager)} · ${wager.stake.toFixed(2)}
-        </p>
+        <p className="text-[10px] text-text-muted truncate mt-0.5">{wagerLineDescription(wager)}</p>
       </div>
-      <div className={`mt-1 flex items-center gap-1.5 ${reverse ? 'justify-end' : 'justify-start'}`}>
-        {/* JSX order (not flex-row-reverse) decides left-vs-right reading order here --
-            flex-row-reverse + justify-end fights itself (row-reverse flips which edge
-            "end" even means), which is what pushed the right column's pill/ticker pair
-            to the left edge instead of mirroring the left column (see chat). */}
+      <div className="mt-1.5 flex items-center justify-between gap-1.5">
         {reverse ? (
           <>
-            <WagerResultTicker
-              marketKey={wager.marketKey}
-              status={wager.status}
-              stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
-              game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
-            />
-            <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
+            <div className="flex items-center gap-1.5 min-w-0">
+              {resultPill}
+              {statSpan}
+            </div>
+            {stakeSpan}
           </>
         ) : (
           <>
-            <StatusPill status={wager.status === 'pending' ? (gameStarted ? 'live' : 'pending') : wager.status} />
-            <WagerResultTicker
-              marketKey={wager.marketKey}
-              status={wager.status}
-              stat={wager.playerName ? realPlayerStats?.[wager.playerName.trim().toLowerCase()] : undefined}
-              game={game ? { homeScore: game.homeScore, awayScore: game.awayScore } : undefined}
-            />
+            {stakeSpan}
+            <div className="flex items-center gap-1.5 min-w-0">
+              {statSpan}
+              {resultPill}
+            </div>
           </>
         )}
       </div>

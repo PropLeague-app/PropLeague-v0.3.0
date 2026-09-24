@@ -110,6 +110,41 @@
   --pos-k-lit-bg: color-mix(in oklab, var(--color-pos-k) 24%, white);
   --pos-ml-subtle-bg: color-mix(in oklab, var(--color-pos-ml) 14%, white);
   --pos-ml-lit-bg: color-mix(in oklab, var(--color-pos-ml) 24%, white);
+
+  /* profit/warning/pos-rb/pos-te/pos-ml are all inherently high-luminance hues
+     (green/orange/yellow) -- fine as TEXT on dark mode's near-black background,
+     but the exact same brightness reads as low-contrast, hard-to-read text once
+     the page/card backgrounds flip to near-white (see chat, Sept 2026: "the pill
+     text colors, green in particular, are hard to see... the same thing applies
+     to the lineup screen position pill text colors, green, orange, and yellow in
+     particular"). This supersedes the "--color-profit/accent/pos-* are
+     deliberately left untouched so brand colors read the same in both modes"
+     plan noted above -- that was untested intent, this is an actual on-device
+     contrast failure once real testers looked at it, so these five specifically
+     get a darker, more saturated light-mode value instead. Every OTHER usage of
+     these same tokens (position-badge borders, the bg-pos-x/15 badge fill, and
+     the --pos-x-subtle-bg/--pos-x-lit-bg color-mix()es right above, which read
+     var(--color-pos-x) directly) rides along automatically -- borders/fills
+     read fine darker too, so there's no need for a separate "text-only" token
+     just for this. pos-qb (pink)/pos-wr (blue)/pos-k (purple)/loss (red)/
+     primary/accent are untouched -- those hues are naturally darker at the same
+     saturation and already contrast fine against white. */
+  --color-profit: #15803d;
+  --color-warning: #b45309;
+  --color-pos-rb: #b45309;
+  --color-pos-te: #15803d;
+  /* First pass (#a16207, Tailwind's yellow-700) read too close to pos-rb's
+     amber-700 once both were this dark -- any sufficiently-dark "yellow" text
+     that still hits real contrast against white inevitably drifts toward
+     brown (yellow is the highest-luminance hue there is, so darkening it far
+     enough to be readable costs it most of what made it look "yellow" in the
+     first place), but yellow-700's red:green ratio (161:98, still fairly
+     orange-leaning) wasn't pushed far enough from pos-rb's (180:83) to read as
+     a clearly different color at small badge size (see chat, Sept 2026: "too
+     mustard... too similar to the RB slot"). This one keeps red and green much
+     closer together (122:107) -- a real hue shift toward yellow-olive rather
+     than orange-brown -- while still clearing ~4.3:1 against white. */
+  --color-pos-ml: #7a6b00;
 }
 
 html,

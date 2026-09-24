@@ -16,7 +16,11 @@ import { TeamLogo } from '../common/TeamLogo';
  * zero picks placed has no weekly_rosters row at all (see settle-week's own
  * comments on this), so `roster` can be undefined -- treated as "everything
  * still open" rather than crashing. */
-function pickProgress(roster: WeeklyRoster | undefined, totalSlots: number): { active: number; won: number; lost: number; pushed: number; open: number } {
+// Exported so MatchupDetail (the Matchup screen) can show the exact same
+// weekly-record line under each team header instead of duplicating this
+// logic a second time (see chat, Sept 2026: "replaced with the same weekly
+// bet record that appears on the Home screen matchup bubbles").
+export function pickProgress(roster: WeeklyRoster | undefined, totalSlots: number): { active: number; won: number; lost: number; pushed: number; open: number } {
   if (!roster) return { active: 0, won: 0, lost: 0, pushed: 0, open: totalSlots };
   let active = 0;
   let won = 0;
@@ -36,6 +40,24 @@ function pickProgress(roster: WeeklyRoster | undefined, totalSlots: number): { a
   }
   const placed = active + won + lost + pushed;
   return { active, won, lost, pushed, open: Math.max(0, totalSlots - placed) };
+}
+
+/** Renders pickProgress's counts as "N active · W-L-P settled · N left" -- but
+ * only includes a category when it's actually populated. Before, this was a
+ * fixed three-part string always shown in full, so a fully-settled matchup
+ * read as a noisy "0 active · 7-0-1 settled · 0 left" -- and on the Matchup
+ * screen's narrower team-header column, that extra dead text is exactly what
+ * pushed the line into mid-word truncation (see chat, Sept 2026: "we just
+ * need the pure record, and how many unsettled... if any of those categories
+ * are empty... those should be removed"). The settled W-L-P record is the
+ * "pure record" and always shows; active/left are the "how many unsettled"
+ * piece and only show up when there's actually something left to report. */
+export function formatProgressLine(progress: { active: number; won: number; lost: number; pushed: number; open: number }): string {
+  const segments: string[] = [];
+  if (progress.active > 0) segments.push(`${progress.active} active`);
+  segments.push(`${progress.won}-${progress.lost}-${progress.pushed} settled`);
+  if (progress.open > 0) segments.push(`${progress.open} left`);
+  return segments.join(' · ');
 }
 
 export function MatchupCard({ league, matchup, highlightTeamId }: { league: League; matchup: Matchup; highlightTeamId?: string }) {
@@ -150,12 +172,8 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
           <span>{Math.round((1 - prob) * 100)}%</span>
         </div>
         <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
-          <span>
-            {progressA.active} active · {progressA.won}-{progressA.lost}-{progressA.pushed} settled · {progressA.open} left
-          </span>
-          <span className="text-right">
-            {progressB.active} active · {progressB.won}-{progressB.lost}-{progressB.pushed} settled · {progressB.open} left
-          </span>
+          <span>{formatProgressLine(progressA)}</span>
+          <span className="text-right">{formatProgressLine(progressB)}</span>
         </div>
       </div>
     </Card>

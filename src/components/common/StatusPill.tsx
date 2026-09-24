@@ -27,11 +27,33 @@ const LABELS: Record<Status, string> = {
   voided: 'Voided',
 };
 
-export function StatusPill({ status }: { status: Status }) {
+// Matchup screen's Simple mode (see chat, Sept 2026): one letter/symbol per
+// status instead of a full word, so a settled result can share a line with
+// the abbreviated prop text without wrapping. Pending's "..." and Live's own
+// "•" (already rendered separately below, so it's left out of this map)
+// were Hunter's explicit picks over a plain "P" -- Push already owns that
+// letter. upcoming/final aren't used by SlotMini today but are filled in for
+// completeness, matching their full-word counterparts' behavior.
+const COMPACT_LABELS: Record<Status, string> = {
+  pending: '...',
+  upcoming: '...',
+  live: '',
+  final: 'F',
+  won: 'W',
+  lost: 'L',
+  push: 'P',
+  voided: 'V',
+};
+
+export function StatusPill({ status, compact }: { status: Status; compact?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${STYLES[status]}`}>
+    <span
+      className={`inline-flex items-center gap-1 font-semibold rounded-full ${STYLES[status]} ${
+        compact ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5'
+      }`}
+    >
       {status === 'live' && <span aria-hidden="true">•</span>}
-      {LABELS[status]}
+      {compact ? COMPACT_LABELS[status] : LABELS[status]}
     </span>
   );
 }

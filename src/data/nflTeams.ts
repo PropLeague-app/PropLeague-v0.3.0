@@ -48,3 +48,18 @@ export const nflTeamById = (id: string): NFLTeam => {
   if (!team) throw new Error(`Unknown NFL team id: ${id}`);
   return team;
 };
+
+/** Looks a team up by its full "City Name" string (e.g. "Chicago Bears") --
+ * the format wagers.side/real_games.home_team/away_team actually store for
+ * h2h/spreads/totals picks (see gradeWager in settle-week, and the ML slot's
+ * MarketBrowser entry), as opposed to nflTeamById's short internal id. Used by
+ * the Matchup screen's compact/simple label (see chat, Sept 2026 -- the ML
+ * picks were the ones that couldn't visually fit) to swap a full team name
+ * for its abbreviation without needing every call site to know the team id.
+ * Returns undefined rather than throwing on no match -- unlike nflTeamById,
+ * callers here are formatting arbitrary stored text, not a trusted internal
+ * id, so a future data source that doesn't exactly match "City Name" (a typo,
+ * a relocated/renamed franchise) should fall back gracefully, not crash the
+ * whole matchup screen. */
+export const nflTeamByFullName = (fullName: string): NFLTeam | undefined =>
+  NFL_TEAMS.find((t) => `${t.city} ${t.name}` === fullName);

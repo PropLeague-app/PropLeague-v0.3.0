@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send } from 'lucide-react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
@@ -7,6 +7,7 @@ import { EmptyState } from '../common/EmptyState';
 import { TeamLogo } from '../common/TeamLogo';
 import { LeagueLogo } from '../common/LeagueLogo';
 import { PositionBadge } from '../common/PositionBadge';
+import { OddsDisplay } from '../common/OddsDisplay';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
   announcement: <Megaphone size={16} />,
@@ -79,39 +80,135 @@ function HighlightedExtra({ text }: { text: string }) {
   );
 }
 
-/** Award-style card for a single weekly moment (manual v0.03 §4.4). Hierarchy is
- * explicit top-to-bottom (manual v0.2.0 §5 #11): the display name (the award itself)
- * on its own line, then a team header row — logo + bold, larger team name,
- * structurally separated so it's never confused with the bet description that
- * follows — then the bet/$ details (semantic coloring from v0.1.1 §4 #8), then the
- * plain category label last, muted. */
+/** Small colored capsule for any already-signed dollar string ("+$27.00",
+ * "-$13.00") -- the same rounded-pill visual language as the Matchup screen's
+ * WagerProfitPill (see chat, Sept 2026 matchup-screen cleanup), reused here so a
+ * moment's win/loss number is never just plain colored text sitting inline in a
+ * sentence. Takes the already-formatted text rather than a raw number since most
+ * callers already have a formatSigned()'d string straight from momentExtra --
+ * color is inferred from its leading sign. */
+function AmountPill({ text, negative, size = 'md' }: { text: string; negative?: boolean; size?: 'sm' | 'md' }) {
+  // Defaults to sniffing a leading +/- sign, which works for every dollar-amount
+  // caller (formatSigned always produces one) -- callers with no sign of their own
+  // to sniff (the W/L streak pill) pass `negative` explicitly instead.
+  const isNegative = negative ?? text.trim().startsWith('-');
+  const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5';
+  return (
+    <span className={`inline-flex items-center font-bold rounded-full whitespace-nowrap ${isNegative ? 'bg-loss/20 text-loss' : 'bg-profit/20 text-profit'} ${sizeClass}`}>
+      {text}
+    </span>
+  );
+}
+
+/** Splits settle-week's ticket-style moment extra -- "<bet> @ <odds>, $<stake>
+ * stake, <signedProfit>[ — missed by <margin>]", exactly what ticketLabelReal
+ * produces in supabase/functions/_shared/momentsReal.ts (and its identical
+ * local-sim twin, engine/moments.ts's ticketLabel) -- into the pieces worstBeat/
+ * boldestBet/bestBet need for a proper bet-description-line + stake/profit-row
+ * layout, instead of one long wrapped sentence with the number buried mid-string
+ * (see chat, Sept 2026: Heartbreaker/Cash Cow/Against All Odds "have poor visual
+ * display as to the win/loss"). Returns null on anything that doesn't match --
+ * defensive only, since every extra reaching this parser was built by one of
+ * those two always-this-shape functions for an already-graded wager. */
+function parseTicketExtra(extra: string): { description: string; oddsText: string; stakeText: string; profitText: string; note: string | null } | null {
+  let rest = extra;
+  let note: string | null = null;
+  const missedMarker = ' — missed by ';
+  const missedIdx = rest.indexOf(missedMarker);
+  if (missedIdx !== -1) {
+    note = rest.slice(missedIdx + missedMarker.length);
+    rest = rest.slice(0, missedIdx);
+  }
+  const atIdx = rest.indexOf(' @ ');
+  if (atIdx === -1) return null;
+  const description = rest.slice(0, atIdx);
+  const [oddsText, stakePart, profitText] = rest.slice(atIdx + 3).split(', ');
+  const stakeMatch = stakePart?.match(/^\$([\d,.]+) stake$/);
+  if (!oddsText || !stakeMatch || !profitText) return null;
+  return { description, oddsText, stakeText: `$${stakeMatch[1]}`, profitText, note };
+}
+
+/** Award-style card for a single weekly moment (manual v0.03 §4.4), rebuilt compact
+ * (see chat, Sept 2026: "these cells are huge... decrease the size... while keeping
+ * visual clarity as to what the category is, the team winner, the stake, win/loss
+ * margin and the bet"). Hierarchy is still explicit top-to-bottom, just tighter and
+ * smaller throughout -- the category label now sits right under the award name
+ * (both are header context) instead of its own row at the bottom, the team row
+ * gets a smaller logo, and the result itself is always a colored AmountPill/streak
+ * pill rather than plain text. The three single-wager categories (worstBeat/
+ * boldestBet/bestBet) get their own bet-description line plus a stake/profit
+ * result row (parseTicketExtra) mirroring the Matchup screen's own settled-pick
+ * layout -- stake on the outer side, odds folded in with it, profit pill (plus
+ * worstBeat's "missed by" note) grouped on the inner side -- instead of the one
+ * run-on sentence that made those three specifically hard to read at a glance.
+ * Falls back to the old highlighted-prose rendering for anything that doesn't
+ * match one of the known shapes, so no moment ever renders as literally nothing. */
 function MomentCard({ league, item, onReact }: { league: League; item: ActivityItem; onReact?: (itemId: string, emoji: string) => void }) {
   const team = item.momentTeamId ? league.teams.find((t) => t.id === item.momentTeamId) : undefined;
-  return (
-    <Card className="space-y-1.5">
-      <p className="text-sm font-bold truncate">{item.momentDisplayName ?? item.message}</p>
+  const category = item.momentCategory;
+  const extra = item.momentExtra;
+  const ticket = extra && (category === 'worstBeat' || category === 'boldestBet' || category === 'bestBet') ? parseTicketExtra(extra) : null;
+  const isStreak = !!extra && (category === 'hottestBettor' || category === 'coldestBettor') && /^[WL]\d+$/.test(extra);
+  const swingParts = category === 'biggestSwing' && extra?.includes(' → ') ? extra.split(' → ') : null;
+  const isPlainAmount = !!extra && /^[+-]\$[\d,]+\.\d{2}$/.test(extra);
 
-      <div className="flex items-center gap-2">
-        {team ? <TeamLogo team={team} size="md" /> : <Sparkles size={20} />}
-        {team && <p className="text-base font-bold truncate">{team.teamName}</p>}
+  return (
+    <div className="bg-bg-card border border-border rounded-xl p-2 space-y-1">
+      <div>
+        <p className="text-xs font-bold truncate">{item.momentDisplayName ?? item.message}</p>
+        {category && <p className="text-[9px] text-text-muted truncate">{MOMENT_CATEGORY_LABELS[category]}</p>}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        {team ? <TeamLogo team={team} size="sm" /> : <Sparkles size={16} />}
+        {team && <p className="text-xs font-semibold truncate flex-1 min-w-0">{team.teamName}</p>}
         {item.momentPosition && <PositionBadge position={item.momentPosition} />}
       </div>
 
-      {item.momentExtra && (
-        <p className="text-sm font-medium">
-          <HighlightedExtra text={item.momentExtra} />
-        </p>
+      {ticket ? (
+        <div>
+          <p className="text-[10px] truncate">
+            <span className="text-text font-medium">{ticket.description}</span>
+            <span className="text-text-muted">
+              : {ticket.stakeText} @ <OddsDisplay odds={Number(ticket.oddsText)} />
+            </span>
+          </p>
+          {/* Always flush right, note included -- previously this used justify-between
+              whenever a note existed, which threw the note all the way to the row's far
+              left edge, away from the pill it was actually describing, and (per Hunter,
+              Sept 2026) made the two categories with no note at all look like they were
+              reserving dead space for one that would never show up. Clustering note+pill
+              together removes that reserved-looking gap entirely, in both cases. */}
+          <div className="flex items-center justify-end gap-1.5 mt-0.5">
+            {ticket.note && <span className="text-[10px] text-text-muted font-medium whitespace-nowrap">missed by {ticket.note}</span>}
+            <AmountPill text={ticket.profitText} size="sm" />
+          </div>
+        </div>
+      ) : isStreak ? (
+        <AmountPill text={extra!} negative={extra!.startsWith('L')} size="sm" />
+      ) : swingParts ? (
+        <div className="flex items-center gap-1.5">
+          <AmountPill text={swingParts[0]} size="sm" />
+          <span className="text-[10px] text-text-muted">→</span>
+          <AmountPill text={swingParts[1]} size="sm" />
+        </div>
+      ) : isPlainAmount ? (
+        <AmountPill text={extra!} />
+      ) : (
+        extra && (
+          <p className="text-xs font-medium">
+            <HighlightedExtra text={extra} />
+          </p>
+        )
       )}
 
-      {item.momentCategory && <p className="text-[10px] text-text-muted">{MOMENT_CATEGORY_LABELS[item.momentCategory]}</p>}
-
       <div className="flex items-center justify-between pt-0.5">
-        <p className="text-[11px] text-text-muted">
+        <p className="text-[9px] text-text-muted">
           {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
         </p>
         <Reactions item={item} onReact={onReact} />
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -188,6 +285,13 @@ export function ActivityFeed({
 }) {
   const [tab, setTab] = useState<FeedTab>('all');
   const [chatText, setChatText] = useState('');
+  // Which week groups are collapsed on the Moments tab (see chat, Sept 2026: "the
+  // weeks should be collapsible"). Keyed by groupMomentsByWeek's own group.key, not
+  // week number, so the synthetic "earlier" bucket collapses independently too.
+  // Nothing starts collapsed -- this only ever hides a week once the person actually
+  // taps it shut, so a league with just one or two weeks of history looks exactly
+  // like it did before this existed.
+  const [collapsedMomentWeeks, setCollapsedMomentWeeks] = useState<Set<string>>(new Set());
   const chatItems = chat ?? [];
 
   useEffect(() => {
@@ -245,17 +349,35 @@ export function ActivityFeed({
         (moments.length === 0 ? (
           <EmptyState icon={<Sparkles size={36} strokeWidth={1.5} />} title="No moments yet" subtitle="Weekly awards show up here once a week fully settles." />
         ) : (
-          <div className="space-y-4">
-            {groupMomentsByWeek(moments).map((group) => (
-              <div key={group.key}>
-                <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">{group.label}</p>
-                <div className="space-y-2">
-                  {group.items.map((item) => (
-                    <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
-                  ))}
+          <div className="space-y-3">
+            {groupMomentsByWeek(moments).map((group) => {
+              const collapsed = collapsedMomentWeeks.has(group.key);
+              return (
+                <div key={group.key}>
+                  <button
+                    onClick={() =>
+                      setCollapsedMomentWeeks((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(group.key)) next.delete(group.key);
+                        else next.add(group.key);
+                        return next;
+                      })
+                    }
+                    className="flex items-center gap-1 w-full text-left mb-1.5"
+                  >
+                    <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">{group.label}</p>
+                    <ChevronDown size={14} className={`text-text-muted transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+                  </button>
+                  {!collapsed && (
+                    <div className="space-y-1.5">
+                      {group.items.map((item) => (
+                        <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))}
 

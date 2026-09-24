@@ -1,7 +1,7 @@
 import type { AltLine, MarketKey, NFLGame, OddsBookmaker, OddsMarket, Player, Position } from '../types';
 import type { ScheduledGame } from './schedule';
 import { playersByTeam } from './players';
-import { nflTeamById } from './nflTeams';
+import { nflTeamById, nflTeamByFullName } from './nflTeams';
 import { createRng, rngFloat, rngInt, type Rng } from '../engine/random';
 import { normalizeAmericanOdds } from '../engine/oddsMath';
 
@@ -65,8 +65,14 @@ export function wagerCompactLabel(wager: { marketKey: MarketKey; side: string; p
   const shortLabel = MARKET_SHORT_LABELS[wager.marketKey];
   const pointText = wager.point != null ? ` ${wager.point}` : '';
   if (!shortLabel) {
-    // h2h / spreads / totals: side + point is already a complete, self-explanatory phrase.
-    return subject ? `${subject} ${wager.side}${pointText}` : `${wager.side}${pointText}`;
+    // h2h / spreads / totals: side + point is already a complete, self-explanatory phrase --
+    // except h2h has no point at all, so without an explicit tag it was just a bare team
+    // name with nothing marking it as a moneyline pick (see chat, Sept 2026: "the spread
+    // pick states the spread, we should do the same for the ML pick" -- originally fixed
+    // only in Simple mode's wagerCompactLineShort, now applied here too so Advanced mode's
+    // full description gets the same "GB -3.5"-style completeness).
+    const mlSuffix = wager.marketKey === 'h2h' ? ' ML' : '';
+    return subject ? `${subject} ${wager.side}${pointText}${mlSuffix}` : `${wager.side}${pointText}${mlSuffix}`;
   }
   const sideText = wager.side.toLowerCase();
   return `${subject ? `${subject} ` : ''}${sideText}${pointText} ${shortLabel}`;
@@ -77,6 +83,52 @@ export function wagerCompactLabel(wager: { marketKey: MarketKey; side: string; p
  * without repeating the name. */
 export function wagerLineDescription(wager: { marketKey: MarketKey; side: string; point?: number }): string {
   return wagerCompactLabel({ ...wager, playerName: undefined });
+}
+
+/** Aggressive abbreviations of MARKET_SHORT_LABELS, used only by the Matchup
+ * screen's Simple mode (see chat, Sept 2026) where a whole prop line has to
+ * share a row with a one-letter result badge. Anything not listed here either
+ * has no natural shorter form (h2h/spreads/totals -- handled separately below
+ * via the team's own abbreviation) or is already short enough as-is, so it
+ * falls back to MARKET_SHORT_LABELS unchanged. */
+const MARKET_SHORT_LABELS_COMPACT: Partial<Record<MarketKey, string>> = {
+  player_receptions: 'rec',
+  player_pass_completions: 'comp',
+  player_rush_longest: 'lng rush',
+  player_reception_longest: 'lng rec',
+};
+
+/** Same idea as wagerLineDescription, but squeezed as far as it'll go for
+ * Simple mode: "over"/"under" collapse to "o"/"u", Anytime TD becomes "ATTD",
+ * and an h2h/spread side (a full "City Name" team string) becomes its
+ * abbreviation -- this last one is specifically what lets an ML pick's row
+ * fit without scrolling, which the full team name never could (see chat, Sept
+ * 2026: "I want the ML pick to fit with no scroll on simple mode").
+ * Always omits the player name, same as wagerLineDescription -- Simple mode's
+ * cell already shows it as its own line above this one. */
+export function wagerCompactLineShort(wager: { marketKey: MarketKey; side: string; point?: number }): string {
+  if (wager.marketKey === 'player_anytime_td') return 'ATTD';
+  const shortLabel = MARKET_SHORT_LABELS_COMPACT[wager.marketKey] ?? MARKET_SHORT_LABELS[wager.marketKey];
+  const pointText = wager.point != null ? ` ${wager.point}` : '';
+  if (!shortLabel) {
+    // h2h/spreads/totals: side is either a full "City Name" team string (h2h/spreads)
+    // or "Over"/"Under" (totals) -- try the team abbreviation first, and fall back to
+    // the raw side text unchanged (totals, or a name nflTeamByFullName doesn't
+    // recognize) rather than showing nothing. A spread pick already states the line
+    // itself (pointText, e.g. "GB -3.5"), which reads as self-explanatory -- a
+    // moneyline pick has no point to show, so without an explicit "ML" tag it was
+    // just a bare team abbreviation with nothing marking what kind of pick it even
+    // was (see chat, Sept 2026: "the spread pick states the spread, we should do
+    // the same for the ML pick").
+    const team = nflTeamByFullName(wager.side);
+    if (team) return wager.marketKey === 'h2h' ? `${team.abbrev} ML` : `${team.abbrev}${pointText}`;
+    const lowerSide = wager.side.toLowerCase();
+    const compactSide = lowerSide === 'over' ? 'o' : lowerSide === 'under' ? 'u' : wager.side;
+    return `${compactSide}${pointText}`;
+  }
+  const lowerSide = wager.side.toLowerCase();
+  const compactSide = lowerSide === 'over' ? 'o' : lowerSide === 'under' ? 'u' : lowerSide;
+  return `${compactSide}${pointText} ${shortLabel}`;
 }
 
 /** Markets that are valid for a given roster slot position, keyed for the Market Browser. */
