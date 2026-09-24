@@ -196,7 +196,17 @@ export const useAppStore = create<AppState>()(
       lastSeenChatByLeague: {},
       seenMatchupResultIds: {},
 
-      setProfile: (profile) => set({ profile }),
+      // Merges onto the existing profile rather than replacing it outright --
+      // this is called from useAuthStore's syncAppStoreProfile on every auth
+      // init/session restore with only the Supabase-backed subset of fields
+      // (username/avatarEmoji/oddsFormat). A full replace here wiped the
+      // local-only themeMode/matchupDetailMode back to undefined on every cold
+      // launch, which is why dark mode and Simple view kept resetting on force
+      // quit (see chat, Sept 2026). factoryReset/signOut still null the whole
+      // profile out first, so a real account switch on the same device still
+      // starts fresh.
+      setProfile: (profile) =>
+        set((state) => ({ profile: state.profile ? { ...state.profile, ...profile } : profile })),
       updateProfile: (partial) =>
         set((state) => ({ profile: state.profile ? { ...state.profile, ...partial } : state.profile })),
       setOddsFormat: (format) =>
