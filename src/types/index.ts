@@ -636,6 +636,18 @@ export interface League {
   teams: LeagueTeam[];
   currentWeek: WeekId;
   seasonPhase: SeasonPhase;
+  /** Null until the commissioner presses "Start Season" (see chat: a league created
+   * after the real NFL season is already underway was auto-settling every already-
+   * final past week as "complete with zero rosters", eating a full incomplete-lineup
+   * penalty for weeks the league didn't exist for yet). Null means the regular-season
+   * scoring gate below is off entirely -- no incomplete-lineup penalty, no matchup
+   * score written -- for EVERY week, regardless of currentWeek/season_phase. Once set
+   * (to whatever real week the commissioner pressed the button on), any week number
+   * at or after this one scores normally; anything before it never does, permanently.
+   * Plain string to match `leagues.current_week`'s own on-the-wire shape (never a
+   * playoff round label -- the season obviously must already be underway for one of
+   * those to exist). */
+  seasonStartWeek: string | null;
   matchupsByWeek: Record<string, Matchup[]>;
   rostersByTeamWeek: Record<string, WeeklyRoster>;
   standings: TeamStanding[];

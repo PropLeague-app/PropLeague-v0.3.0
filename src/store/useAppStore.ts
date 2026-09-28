@@ -20,6 +20,9 @@ import {
   updateTeamIdentityRemote,
   updateLeagueIdentityRemote,
   updateTeamConferenceRemote,
+  leaveRealLeague,
+  updateLeagueCommissionerRemote,
+  markSeasonStartedRemote,
 } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
@@ -30,7 +33,6 @@ import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
 import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { gamesForWeek } from '../data/seed';
-import { FUNNY_OWNER_NAMES } from '../data/simulatedTeamNames';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
 
 interface PlaceWagerParams {
@@ -107,8 +109,8 @@ interface AppState {
   updateTargetTeamCount: (leagueId: string, count: number) => void;
   setCurrentLeague: (leagueId: string) => void;
   updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => void;
-  transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => void;
-  leaveLeague: (leagueId: string) => { ok: boolean; reason?: string };
+  transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => Promise<{ ok: boolean; reason?: string }>;
+  leaveLeague: (leagueId: string) => Promise<{ ok: boolean; reason?: string }>;
 
   placeWager: (params: PlaceWagerParams) => Promise<{ ok: boolean; claimedByTeamId?: string; error?: string }>;
   updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<void>;
@@ -170,8 +172,21 @@ async function syncNewActivity(leagueId: string, prev: ActivityItem[], next: Act
  * fillWithSimulatedTeams nor the old dev-panel-only advanceWeek ever did this for
  * the *initial* schedule, only for week-by-week results afterward). Shared by
  * fillWithSimulatedTeams and startSeason, since both end by calling
- * leagueService.startSeason. */
-async function pushSeasonStart(leagueId: string, league: League) {
+ * leagueService.startSeason.
+ *
+ * Also stamps season_start_week/current_week to the real live NFL week right
+ * now (see chat, 0013_season_start_week.sql) -- not week 1, which is all
+ * `league.currentWeek` can ever say here, since this is the very first
+ * schedule this league has ever had. Fixes a real bug: a league started after
+ * the real season was already underway used to get auto-settled by
+ * settle-week for every already-final past week as "complete with zero
+ * rosters", eating a full incomplete-lineup penalty for weeks it never
+ * actually played. No new button/user-facing step -- this rides along on the
+ * same existing "Start Season" action. Best-effort: if the RPC call fails
+ * (network, etc.), the season still starts, just without the new gate --
+ * exactly the old (bug-prone, but not newly broken) behavior, rather than
+ * blocking league creation over this. */
+async function pushSeasonStart(leagueId: string, league: League): Promise<{ seasonStartWeek: string | null; currentWeek: WeekId }> {
   for (const matchups of Object.values(league.matchupsByWeek)) {
     for (const m of matchups) {
       await upsertMatchupRemote(leagueId, String(m.week), m.teamAId, m.teamBId, m.teamAScore, m.teamBScore, m.winnerId, m.isTie);
@@ -183,6 +198,11 @@ async function pushSeasonStart(leagueId: string, league: League) {
   for (const team of league.teams) {
     if (team.conferenceId) await updateTeamConferenceRemote(team.id, team.conferenceId);
   }
+
+  const started = await markSeasonStartedRemote(leagueId);
+  if (!started.ok) return { seasonStartWeek: null, currentWeek: league.currentWeek };
+  const weekNum = Number(started.seasonStartWeek);
+  return { seasonStartWeek: started.seasonStartWeek, currentWeek: Number.isFinite(weekNum) ? weekNum : league.currentWeek };
 }
 
 export const useAppStore = create<AppState>()(
@@ -261,8 +281,8 @@ export const useAppStore = create<AppState>()(
           // fully-joined league with no schedule and the invite screen's button
           // about to disappear behind "Continue to League" anyway).
           const updatedLeague = leagueService.startSeason(league);
-          await pushSeasonStart(leagueId, updatedLeague);
-          set((state) => updateLeague(state, leagueId, () => updatedLeague));
+          const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+          set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
           await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
           return { ok: true };
         }
@@ -276,8 +296,8 @@ export const useAppStore = create<AppState>()(
         }
 
         const updatedLeague = leagueService.fillWithSimulatedTeams(league, withIds);
-        await pushSeasonStart(leagueId, updatedLeague);
-        set((state) => updateLeague(state, leagueId, () => updatedLeague));
+        const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+        set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
         await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
       },
@@ -294,8 +314,8 @@ export const useAppStore = create<AppState>()(
         if (Object.keys(league.matchupsByWeek).length > 0) return { ok: false, error: 'This season has already started.' };
 
         const updatedLeague = leagueService.startSeason(league);
-        await pushSeasonStart(leagueId, updatedLeague);
-        set((state) => updateLeague(state, leagueId, () => updatedLeague));
+        const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+        set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
         await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
       },
@@ -352,8 +372,21 @@ export const useAppStore = create<AppState>()(
       // manual v0.2.0 §6 #12: the commissioner role must move to another team before
       // the current holder can leave — enforced by leaveLeague below refusing to
       // proceed while `commissionerTeamId` still points at the departing user's team.
-      transferCommissioner: (leagueId, newCommissionerTeamId) =>
-        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, commissionerTeamId: newCommissionerTeamId }))),
+      //
+      // Was local-only until now (see chat) -- same bug as leaveLeague below, and a
+      // load-bearing one: leaveLeague's server-side check now trusts the REAL
+      // commissioner_team_id, so a transfer that never reached Supabase would leave
+      // the departing commissioner unable to actually leave right after the UI told
+      // them they'd handed the role off. Awaited and checked before touching local
+      // state, rather than fire-and-forget, so a rejected write (RLS, network) surfaces
+      // here instead of silently diverging from the server the way the settings write
+      // used to.
+      transferCommissioner: async (leagueId, newCommissionerTeamId) => {
+        const result = await updateLeagueCommissionerRemote(leagueId, newCommissionerTeamId);
+        if (!result.ok) return { ok: false, reason: result.error };
+        set((state) => updateLeague(state, leagueId, (league) => ({ ...league, commissionerTeamId: newCommissionerTeamId })));
+        return { ok: true };
+      },
 
       // manual v0.2.0 §6 #12: "Leave This League" — the departing member's team
       // converts to a simulated one (schedule/standings/history untouched, so future
@@ -362,7 +395,15 @@ export const useAppStore = create<AppState>()(
       // Blocked while the user is still commissioner; transferCommissioner must run
       // first. Returns ok:false with a reason instead of throwing, since this is
       // reachable from a confirm dialog that needs to explain why it's disabled.
-      leaveLeague: (leagueId) => {
+      //
+      // Was 100% local-only until now (see chat) -- flipped isUser/isSimulated only
+      // in this device's state, so the departing profile stayed a real, active member
+      // server-side forever: still got lineup reminders, still showed up as a real
+      // team on any other device/build. Now calls the leave_league RPC (see
+      // 0012_leave_league.sql) first and only touches local state on success -- and
+      // on success it drops the league from local state entirely (rather than just
+      // flipping fields), since it's no longer "mine" at all, not just simulated.
+      leaveLeague: async (leagueId) => {
         const state = get();
         const league = state.leagues[leagueId];
         if (!league) return { ok: false, reason: 'League not found.' };
@@ -371,14 +412,12 @@ export const useAppStore = create<AppState>()(
         if (league.commissionerTeamId === userTeam.id) {
           return { ok: false, reason: 'Transfer the commissioner role to another team first.' };
         }
-        const ownerName = FUNNY_OWNER_NAMES[Math.floor(Math.random() * FUNNY_OWNER_NAMES.length)];
-        set((s) =>
-          updateLeague(s, leagueId, (lg) => ({
-            ...lg,
-            teams: lg.teams.map((t) => (t.id === userTeam.id ? { ...t, isUser: false, isSimulated: true, ownerName } : t)),
-          })),
-        );
-        set((s) => (s.currentLeagueId === leagueId ? { currentLeagueId: null } : {}));
+        const result = await leaveRealLeague(leagueId);
+        if (!result.ok) return { ok: false, reason: result.error };
+        set((s) => {
+          const { [leagueId]: _removed, ...rest } = s.leagues;
+          return { leagues: rest, currentLeagueId: s.currentLeagueId === leagueId ? null : s.currentLeagueId };
+        });
         return { ok: true };
       },
 
@@ -943,6 +982,7 @@ export const useAppStore = create<AppState>()(
             isPublic: metaResult.isPublic,
             teams: teamsResult.teams,
             settingsOverrides: metaResult.settings,
+            seasonStartWeek: metaResult.seasonStartWeek,
           });
           builtLeagues[league.id] = {
             ...league,
@@ -950,11 +990,64 @@ export const useAppStore = create<AppState>()(
           };
         }
 
-        // builtLeagues spread first, then existing state.leagues spread over
-        // it: if hydration ever runs again with richer local state already
-        // present (rosters/standings from loadLeagueResults), that state
-        // wins rather than being clobbered by this leaner reconstruction.
-        set((state) => ({ leagues: { ...builtLeagues, ...state.leagues }, leaguesHydrated: true }));
+        // Field-level merge, NOT a whole-object spread (see chat: a whole-object
+        // spread of `state.leagues` over `builtLeagues` -- or vice versa -- gets
+        // this wrong one way or the other). Server-authoritative fields (identity,
+        // settings, teams) must come from this fresh fetch every single time --
+        // `buildLeagueFromRealTeams` is the only path a non-commissioner device has
+        // for ever seeing a commissioner's Settings change (hidePicks, etc.), since
+        // that device never writes those fields locally itself. Spreading the old
+        // persisted league over the fresh one (the previous approach) meant a
+        // device that had ever loaded a league before would keep that first-load
+        // settings snapshot forever -- surviving relaunches and even app updates,
+        // since neither clears persisted storage -- because it always won over
+        // whatever Supabase actually had. But `buildLeagueFromRealTeams` also
+        // always rebuilds a handful of fields as empty/defaulted (currentWeek: 1,
+        // seasonPhase: 'regular', matchupsByWeek/rostersByTeamWeek/chat: {}/[],
+        // etc. -- it has no way to know the season has actually progressed), so
+        // for THOSE fields the existing richer local state (from loadLeagueResults
+        // and friends) should win when it's present. Split explicitly rather than
+        // guessing via a blanket spread in either direction.
+        // Real memberships this fetch actually confirmed still exist -- used below
+        // to DROP any locally-cached league that's no longer one of them (see chat:
+        // leaveLeague used to be local-only, so a departed league stuck around in
+        // persisted storage forever, on every device, including ones that never ran
+        // the leave action themselves -- e.g. a second install/build still showing a
+        // league that was left from the phone). Built from `membershipsResult`, not
+        // from `builtLeagues`: a league that's still a real membership but merely
+        // failed to load THIS pass (the `continue` above) must not be pruned just
+        // because it's temporarily missing from builtLeagues.
+        const validLeagueIds = new Set(membershipsResult.memberships.map((m) => m.leagueId));
+
+        set((state) => {
+          const merged: Record<string, League> = {};
+          for (const [id, existing] of Object.entries(state.leagues)) {
+            if (validLeagueIds.has(id)) merged[id] = existing;
+          }
+          for (const [id, fresh] of Object.entries(builtLeagues)) {
+            const existing = state.leagues[id];
+            merged[id] = existing
+              ? {
+                  ...fresh, // server-authoritative: id/name/inviteCode/commissionerTeamId/settings/targetTeamCount/logo*/teams
+                  currentWeek: existing.currentWeek,
+                  seasonPhase: existing.seasonPhase,
+                  matchupsByWeek: existing.matchupsByWeek,
+                  rostersByTeamWeek: existing.rostersByTeamWeek,
+                  standings: existing.standings,
+                  bracket: existing.bracket,
+                  activity: existing.activity,
+                  chat: existing.chat,
+                  prizePool: existing.prizePool,
+                  manualGameOverrides: existing.manualGameOverrides,
+                }
+              : fresh;
+          }
+          return {
+            leagues: merged,
+            leaguesHydrated: true,
+            currentLeagueId: state.currentLeagueId && !validLeagueIds.has(state.currentLeagueId) ? null : state.currentLeagueId,
+          };
+        });
       },
     }),
     {

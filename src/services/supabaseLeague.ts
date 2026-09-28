@@ -14,6 +14,9 @@ export interface RealLeagueMeta {
    * league whose settings haven't been saved to Supabase yet -- callers fall
    * back to DEFAULT_LEAGUE_SETTINGS the same way the edge functions do. */
   settings: Partial<LeagueSettings> | null;
+  /** Null until the commissioner presses "Start Season" (see chat,
+   * 0013_season_start_week.sql / start_season RPC). */
+  seasonStartWeek: string | null;
 }
 
 export interface RealLeagueTeam {
@@ -131,7 +134,7 @@ export async function joinRealLeague(params: {
 export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<RealLeagueMeta>> {
   const { data, error } = await supabase
     .from('leagues')
-    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings')
+    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings, season_start_week')
     .eq('id', leagueId)
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? 'League not found.' };
@@ -143,6 +146,7 @@ export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<R
     commissionerTeamId: data.commissioner_team_id,
     targetTeamCount: data.target_team_count,
     isPublic: data.is_public,
+    seasonStartWeek: data.season_start_week,
     settings: data.settings ?? null,
   };
 }
@@ -156,6 +160,48 @@ export async function updateLeagueSettingsRemote(leagueId: string, settings: Lea
   const { error } = await supabase.from('leagues').update({ settings }).eq('id', leagueId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+/** Was missing entirely (see chat): useAppStore's leaveLeague only ever flipped
+ * local state, so a departed member stayed a real, active member server-side --
+ * still got lineup reminders, still showed up as a real team on any other
+ * device/build. This calls the leave_league RPC (0012_leave_league.sql), which
+ * does the actual work: refuses if the caller is still commissioner, converts
+ * their team to simulated (schedule/history untouched), and deletes their
+ * league_memberships row so is_league_member() -- and everything gated on it --
+ * correctly stops treating them as a member. */
+export async function leaveRealLeague(leagueId: string): Promise<ServiceResult<object>> {
+  const { error } = await supabase.rpc('leave_league', { p_league_id: leagueId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Was also missing (see chat): transferCommissioner in useAppStore was 100%
+ * local-only, same bug as leaveLeague above -- commissioner_team_id never
+ * reached Supabase, so a transfer would silently revert on the next device's
+ * hydration (now that hydrateMyLeagues correctly treats it as server-
+ * authoritative) and could leave leave_league's server-side commissioner check
+ * refusing an exit the UI already showed as handed off. No new RPC needed:
+ * `leagues` already has an UPDATE policy gated on is_league_commissioner(id)
+ * for both USING and WITH CHECK, so a plain update from the current
+ * commissioner's own session is already correctly authorized. */
+export async function updateLeagueCommissionerRemote(leagueId: string, newCommissionerTeamId: string): Promise<ServiceResult<object>> {
+  const { error } = await supabase.from('leagues').update({ commissioner_team_id: newCommissionerTeamId }).eq('id', leagueId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Called alongside the existing schedule-generation flow (fillWithSimulatedTeams /
+ * startSeason in useAppStore.ts -- no new button, no user-facing change; see chat,
+ * 0013_season_start_week.sql). Stamps leagues.season_start_week AND current_week
+ * with the real live NFL week right now, not week 1, so a league started after the
+ * real season is already underway doesn't get auto-settled for weeks it never
+ * played. Idempotent server-side -- a second call just returns the already-
+ * stamped value. Commissioner-only, enforced server-side. */
+export async function markSeasonStartedRemote(leagueId: string): Promise<ServiceResult<{ seasonStartWeek: string }>> {
+  const { data, error } = await supabase.rpc('mark_season_started', { p_league_id: leagueId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, seasonStartWeek: data as string };
 }
 
 export async function fetchLeagueTeams(leagueId: string): Promise<ServiceResult<{ teams: RealLeagueTeam[] }>> {

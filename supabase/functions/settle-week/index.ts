@@ -479,7 +479,7 @@ Deno.serve(async (req) => {
     // fire from an explicit manual call.
     let leaguesQuery = supabase
       .from('leagues')
-      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count');
+      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count, season_start_week');
     // strayIds: leagues one week ahead of weekStr, included here so a wager left
     // pending on weekStr after its league already advanced still gets a grading
     // pass (see strayWeekLeagueIds above). The season-advancement write near the
@@ -503,6 +503,26 @@ Deno.serve(async (req) => {
       const leagueId = league.id as string;
       const settings = settingsFrom(league.settings);
       const fieldSize = fieldSizeFor(settings);
+
+      // Season Start gate (see chat, 0013_season_start_week.sql): null
+      // season_start_week means the commissioner hasn't pressed "Start Season"
+      // yet, so this week -- and every week -- is off limits for scoring/
+      // penalties for this league, full stop. Once it's set, only weeks at or
+      // after it are eligible; anything earlier (real weeks that happened
+      // before the league existed, or before the commissioner started it)
+      // never gets scored, no matter how many times this function reruns.
+      // Deliberately does NOT touch wager grading or week/season advancement
+      // below -- those aren't what caused the bug, and gating them too would
+      // need this function to independently work out "what real NFL week is
+      // it right now" for a league that's never been allowed to advance,
+      // which isn't information available here. This gate only ever
+      // suppresses the two things that actually produced the phantom result:
+      // the zero-roster penalty just below, and the matchup score/winner
+      // write further down.
+      const seasonStartWeekNum = league.season_start_week != null ? Number(league.season_start_week) : null;
+      const thisWeekNum = Number(weekStr);
+      const seasonStarted =
+        seasonStartWeekNum != null && (!Number.isFinite(thisWeekNum) || !Number.isFinite(seasonStartWeekNum) || thisWeekNum >= seasonStartWeekNum);
 
       // Fetched up-front (not just later for standings) so a team that placed
       // zero picks all week -- and thus has no weekly_rosters row at all -- can
@@ -635,8 +655,11 @@ Deno.serve(async (req) => {
         // final, any weekly credits a team never allocated -- because it left
         // a slot empty or never hit submit -- count as a straight loss,
         // matching the original product spec. Gated on weekComplete so a
-        // team still filling in a later slot isn't penalized mid-week.
-        if (weekComplete) {
+        // team still filling in a later slot isn't penalized mid-week --
+        // and now also on seasonStarted, so a week that happened before the
+        // league existed/started never eats this at all (see chat: this is
+        // the actual fix for the Week 1 phantom -$100 bug).
+        if (weekComplete && seasonStarted) {
           const allocated = wagers.reduce((sum: number, w: any) => sum + (w.stake ?? 0), 0);
           const unallocated = Math.max(0, settings.weeklyCredits - allocated);
           const hasEmptySlot = wagers.length < totalSlots;
@@ -663,7 +686,7 @@ Deno.serve(async (req) => {
       for (const t of teams ?? []) {
         const teamId = (t as any).id as string;
         if (!weeklyScoreByTeam.has(teamId)) {
-          weeklyScoreByTeam.set(teamId, weekComplete ? -settings.weeklyCredits : 0);
+          weeklyScoreByTeam.set(teamId, weekComplete && seasonStarted ? -settings.weeklyCredits : 0);
         }
       }
 
@@ -674,6 +697,14 @@ Deno.serve(async (req) => {
         .eq('week', weekStr);
 
       for (const m of weekMatchups ?? []) {
+        // Season Start gate (see chat, 0013_season_start_week.sql): a not-started
+        // week gives every team a neutral 0 in weeklyScoreByTeam above (not null),
+        // so the null-score check just below wouldn't catch it on its own -- this
+        // is what actually keeps this function from ever writing a 0-0 "tie" (or
+        // worse, a real penalty) into `matchups` for a week the league hadn't
+        // started yet. Leaves the row at its natural unscored state, same as any
+        // genuinely future week.
+        if (!seasonStarted) continue;
         const aScore = weeklyScoreByTeam.get(m.team_a_id);
         const bScore = weeklyScoreByTeam.get(m.team_b_id);
         if (aScore == null || bScore == null) continue;

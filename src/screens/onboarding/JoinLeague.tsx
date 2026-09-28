@@ -61,6 +61,7 @@ export function JoinLeague() {
       targetTeamCount: metaResult.targetTeamCount,
       isPublic: metaResult.isPublic,
       teams: teamsResult.teams,
+      seasonStartWeek: metaResult.seasonStartWeek,
     });
     // Mark which of the real teams is actually this user's.
     const league = {

@@ -19,19 +19,46 @@ export function LeaveLeagueSheet({
 }: {
   league: League;
   userTeamId: string;
-  onTransferCommissioner: (newCommissionerTeamId: string) => void;
-  onLeave: () => void;
+  // Both now hit Supabase (see chat: transferCommissioner/leaveLeague were
+  // 100% local-only before) and can genuinely fail -- a declined RLS write, a
+  // dropped connection, or the server-side leave_league RPC refusing because
+  // the transfer above didn't actually land. Returning the result lets this
+  // sheet show why instead of silently doing nothing, and -- critically --
+  // lets confirmTransferAndLeave wait for the transfer to really succeed
+  // before ever attempting the leave.
+  onTransferCommissioner: (newCommissionerTeamId: string) => Promise<{ ok: boolean; reason?: string }>;
+  onLeave: () => Promise<{ ok: boolean; reason?: string }>;
   onClose: () => void;
 }) {
   const isCommissioner = league.commissionerTeamId === userTeamId;
   const otherTeams = league.teams.filter((t) => t.id !== userTeamId);
   const [pendingSuccessorId, setPendingSuccessorId] = useState<string | null>(null);
   const pendingSuccessor = otherTeams.find((t) => t.id === pendingSuccessorId) ?? null;
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function confirmTransferAndLeave() {
-    if (!pendingSuccessorId) return;
-    onTransferCommissioner(pendingSuccessorId);
-    onLeave();
+  async function confirmTransferAndLeave() {
+    if (!pendingSuccessorId || busy) return;
+    setBusy(true);
+    setError(null);
+    const transferResult = await onTransferCommissioner(pendingSuccessorId);
+    if (!transferResult.ok) {
+      setBusy(false);
+      setError(transferResult.reason ?? 'Could not transfer the commissioner role. Try again.');
+      return;
+    }
+    const leaveResult = await onLeave();
+    setBusy(false);
+    if (!leaveResult.ok) setError(leaveResult.reason ?? 'Could not leave the league. Try again.');
+  }
+
+  async function handleLeave() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await onLeave();
+    setBusy(false);
+    if (!result.ok) setError(result.reason ?? 'Could not leave the league. Try again.');
   }
 
   // Non-commissioners skip the picker/confirm step entirely — there's no role to hand off.
@@ -54,18 +81,24 @@ export function LeaveLeagueSheet({
           <p className="text-sm">
             Transfer commissioner role to <strong>{pendingSuccessor.teamName}</strong> and leave {league.name}? This happens in one step — you can't reconsider once confirmed.
           </p>
+          {error && <p className="text-xs text-loss">{error}</p>}
           <div className="flex gap-2">
             <button
-              onClick={() => setPendingSuccessorId(null)}
-              className="flex-1 bg-bg-card border border-border font-semibold py-3 rounded-xl text-sm"
+              onClick={() => {
+                setError(null);
+                setPendingSuccessorId(null);
+              }}
+              disabled={busy}
+              className="flex-1 bg-bg-card border border-border font-semibold py-3 rounded-xl text-sm disabled:opacity-50"
             >
               Choose someone else
             </button>
             <button
               onClick={confirmTransferAndLeave}
-              className="flex-1 bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl text-sm"
+              disabled={busy}
+              className="flex-1 bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl text-sm disabled:opacity-50"
             >
-              Confirm
+              {busy ? 'Confirming…' : 'Confirm'}
             </button>
           </div>
         </div>
@@ -113,12 +146,16 @@ export function LeaveLeagueSheet({
             )}
           </div>
         ) : (
-          <button
-            onClick={onLeave}
-            className="w-full bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl"
-          >
-            Leave This League
-          </button>
+          <>
+            {error && <p className="text-xs text-loss">{error}</p>}
+            <button
+              onClick={handleLeave}
+              disabled={busy}
+              className="w-full bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl disabled:opacity-50"
+            >
+              {busy ? 'Leaving…' : 'Leave This League'}
+            </button>
+          </>
         )}
       </div>
     </div>

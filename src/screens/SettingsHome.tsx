@@ -1113,12 +1113,13 @@ export function SettingsHome() {
           league={league}
           userTeamId={userTeam.id}
           onTransferCommissioner={(newCommissionerTeamId) => transferCommissioner(league.id, newCommissionerTeamId)}
-          onLeave={() => {
-            const result = leaveLeague(league.id);
+          onLeave={async () => {
+            const result = await leaveLeague(league.id);
             if (result.ok) {
               setLeaveSheetOpen(false);
               navigate('/');
             }
+            return result;
           }}
           onClose={() => setLeaveSheetOpen(false)}
         />

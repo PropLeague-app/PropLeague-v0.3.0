@@ -12,6 +12,21 @@ function toWeekId(week: string): WeekId {
   return Number.isNaN(Number(week)) ? (week as WeekId) : Number(week);
 }
 
+/** Mirrors the gate in supabase/functions/settle-week/index.ts (see chat,
+ * 0013_season_start_week.sql): null seasonStartWeek, or a week number before
+ * it, means this week was never actually played by this league -- settle-week
+ * never scores or penalizes it, so the UI shouldn't claim it was a result
+ * either, even if an older/unrepaired matchup row still has a phantom
+ * winner/score sitting in it. A non-numeric week (playoff round labels) is
+ * never gated -- the season obviously already started by then. */
+function isBeforeSeasonStart(week: string, seasonStartWeek: string | null): boolean {
+  const weekNum = Number(week);
+  if (!Number.isFinite(weekNum)) return false;
+  if (seasonStartWeek == null) return true;
+  const startNum = Number(seasonStartWeek);
+  return Number.isFinite(startNum) && weekNum < startNum;
+}
+
 export function ScheduleView() {
   const navigate = useNavigate();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
@@ -49,7 +64,8 @@ export function ScheduleView() {
           // matchup.teamAScore/teamBScore update live all week as picks settle (see
           // chat), so "has a score" doesn't mean "is final" -- winnerId/isTie only get
           // set once the whole week is actually complete. Same fix as MatchupCard.tsx.
-          const isFinal = matchup.winnerId != null || matchup.isTie;
+          const notStarted = isBeforeSeasonStart(week, league.seasonStartWeek);
+          const isFinal = !notStarted && (matchup.winnerId != null || matchup.isTie);
           const won = isFinal && myScore != null && oppScore != null && myScore > oppScore;
           const tied = isFinal && myScore === oppScore;
 
@@ -63,7 +79,9 @@ export function ScheduleView() {
                 </div>
               </div>
               <div className="text-right">
-                {isFinal ? (
+                {notStarted ? (
+                  <p className="text-xs text-text-muted">Season not started</p>
+                ) : isFinal ? (
                   <>
                     <p className={`text-sm font-bold ${won ? 'text-profit' : tied ? 'text-text-muted' : 'text-loss'}`}>
                       {won ? 'W' : tied ? 'T' : 'L'}

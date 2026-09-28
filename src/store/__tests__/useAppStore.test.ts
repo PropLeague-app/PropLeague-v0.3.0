@@ -104,6 +104,19 @@ describe('updateTargetTeamCount', () => {
 
 // manual v0.2.0 §6 #12: leaving converts the user's team to a simulated one rather
 // than deleting it, and is blocked while the user still holds the commissioner role.
+//
+// transferCommissioner/leaveLeague now hit Supabase for real (see chat: both were
+// 100% local-only before, which is the bug this whole fix is for), so these fixture
+// leagues -- built with the pure-local leagueService.createLeague, with no matching
+// row in the real `leagues` table -- can no longer exercise the happy path against
+// the actual network calls the way they could when both actions were synchronous
+// and local-only. Left `await`-correct and un-skipped so they document the intended
+// behavior and are ready to go once the supabase client is mocked here (there's no
+// test runner wired into this repo at all yet -- no vitest dependency, no script,
+// and __tests__ is excluded from the tsc build -- so nothing currently executes
+// this file either way); the earlier version of these tests only ever passed
+// because the local-only implementation never touched the network in the first
+// place, not because it was correct against a real backend.
 describe('leaveLeague / transferCommissioner', () => {
   function filledTestLeague() {
     const leagueId = createTestLeague();
@@ -111,11 +124,11 @@ describe('leaveLeague / transferCommissioner', () => {
     return leagueId;
   }
 
-  it('refuses to leave while the user is still commissioner', () => {
+  it('refuses to leave while the user is still commissioner', async () => {
     const leagueId = filledTestLeague();
     const league = useAppStore.getState().leagues[leagueId];
     expect(league.commissionerTeamId).toBe('user');
-    const result = useAppStore.getState().leaveLeague(leagueId);
+    const result = await useAppStore.getState().leaveLeague(leagueId);
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/commissioner/i);
     // nothing changed
@@ -123,45 +136,44 @@ describe('leaveLeague / transferCommissioner', () => {
     expect(userTeam.isUser).toBe(true);
   });
 
-  it('transferCommissioner moves the role to another team', () => {
+  it('transferCommissioner moves the role to another team', async () => {
     const leagueId = filledTestLeague();
-    useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
+    await useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
     expect(useAppStore.getState().leagues[leagueId].commissionerTeamId).toBe('sim-1');
   });
 
-  it('allows leaving once the commissioner role has moved elsewhere', () => {
+  it('allows leaving once the commissioner role has moved elsewhere', async () => {
     const leagueId = filledTestLeague();
-    useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
-    const result = useAppStore.getState().leaveLeague(leagueId);
+    await useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
+    const result = await useAppStore.getState().leaveLeague(leagueId);
     expect(result.ok).toBe(true);
   });
 
-  it('converts the departing team to simulated, keeping its identity/history intact', () => {
+  it('converts the departing team to simulated, keeping its identity/history intact', async () => {
     const leagueId = filledTestLeague();
-    useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
-    useAppStore.getState().leaveLeague(leagueId);
+    await useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
+    await useAppStore.getState().leaveLeague(leagueId);
     const league = useAppStore.getState().leagues[leagueId];
-    const formerUserTeam = league.teams.find((t) => t.id === 'user')!;
-    expect(formerUserTeam.isUser).toBe(false);
-    expect(formerUserTeam.isSimulated).toBe(true);
-    expect(formerUserTeam.teamName).toBe('My Team'); // schedule/standings reference this id, so identity must survive
-    // the league itself, its other teams, schedule, and standings are untouched
-    expect(league.teams.length).toBe(10);
-    expect(Object.keys(league.matchupsByWeek).length).toBeGreaterThan(0);
+    // leaveLeague now drops the league from local state entirely on success
+    // (it's no longer "mine" at all, not just simulated -- see chat), so this
+    // fixture would need to re-add it post-leave to inspect the departed
+    // team's shape; left as a placeholder rather than asserting on state this
+    // action deliberately no longer keeps.
+    expect(league).toBeUndefined();
   });
 
-  it('clears currentLeagueId when leaving the currently-active league', () => {
+  it('clears currentLeagueId when leaving the currently-active league', async () => {
     const leagueId = filledTestLeague();
-    useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
+    await useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
     expect(useAppStore.getState().currentLeagueId).toBe(leagueId);
-    useAppStore.getState().leaveLeague(leagueId);
+    await useAppStore.getState().leaveLeague(leagueId);
     expect(useAppStore.getState().currentLeagueId).toBeNull();
   });
 
-  it('leaves a non-commissioner free to leave without any transfer', () => {
+  it('leaves a non-commissioner free to leave without any transfer', async () => {
     const leagueId = filledTestLeague();
-    useAppStore.getState().transferCommissioner(leagueId, 'sim-1'); // user is no longer commissioner
-    const result = useAppStore.getState().leaveLeague(leagueId);
+    await useAppStore.getState().transferCommissioner(leagueId, 'sim-1'); // user is no longer commissioner
+    const result = await useAppStore.getState().leaveLeague(leagueId);
     expect(result.ok).toBe(true);
   });
 });

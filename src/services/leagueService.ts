@@ -105,6 +105,7 @@ export function createLeague(params: CreateLeagueParams): League {
     teams: [userTeam],
     currentWeek: 1,
     seasonPhase: 'regular',
+    seasonStartWeek: null, // brand new -- matches the real leagues.season_start_week default
     matchupsByWeek: {},
     rostersByTeamWeek: {},
     standings: [emptyStanding(userTeam.id)],
@@ -155,6 +156,14 @@ export function buildLeagueFromRealTeams(params: {
    * so a returning/new-device user sees the league's real configuration instead of
    * always-default values. */
   settingsOverrides?: Partial<LeagueSettings> | null;
+  /** Real `leagues.season_start_week` value (see chat, 0013_season_start_week.sql) --
+   * unlike currentWeek/seasonPhase just below (placeholder 1/'regular' here, real
+   * progress tracked separately via fetchLeagueProgress), this one IS the real,
+   * authoritative value straight from fetchLeagueMeta, so every hydration must pass
+   * it through rather than guessing. Null means the commissioner hasn't pressed
+   * "Start Season" yet -- settle-week won't score or penalize ANY week for this
+   * league until they do. */
+  seasonStartWeek: string | null;
 }): League {
   const teams: LeagueTeam[] = params.teams.map((t) => ({
     id: t.id,
@@ -194,6 +203,7 @@ export function buildLeagueFromRealTeams(params: {
     teams,
     currentWeek: 1,
     seasonPhase: 'regular',
+    seasonStartWeek: params.seasonStartWeek,
     matchupsByWeek: {},
     rostersByTeamWeek: {},
     standings: teams.map((t) => emptyStanding(t.id)),
@@ -348,6 +358,7 @@ export function resetLeagueSeason(league: League): League {
     ...league,
     currentWeek: 1,
     seasonPhase: 'regular',
+    seasonStartWeek: null, // dev-panel "Reset Season" -- start the gate over too
     matchupsByWeek,
     rostersByTeamWeek,
     standings: league.teams.map((t) => emptyStanding(t.id)),
