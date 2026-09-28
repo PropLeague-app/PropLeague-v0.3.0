@@ -8,6 +8,7 @@ import { TeamLogo } from '../common/TeamLogo';
 import { LeagueLogo } from '../common/LeagueLogo';
 import { PositionBadge } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
+import { ConfirmSheet } from '../common/ConfirmSheet';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
   announcement: <Megaphone size={16} />,
@@ -332,10 +333,15 @@ export function ActivityFeed({
    * delete an announcement; any member can delete their own chat message.
    * Both omitted (Advanced dev-panel callers, say) simply hides every delete
    * button, same pattern onReact/onSendChat already use. */
-  onDeleteAnnouncement?: (itemId: string) => void;
-  onDeleteChat?: (itemId: string) => void;
+  onDeleteAnnouncement?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
+  onDeleteChat?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [tab, setTab] = useState<FeedTab>('all');
+  // Confirm-before-delete (see chat, Sept 2026: accidental taps on the trash
+  // icon shouldn't silently delete someone's announcement or message) -- one
+  // shared sheet for both kinds rather than per-row state, since only one can
+  // ever be open at a time.
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'announcement' | 'chat'; id: string } | null>(null);
   // Commissioner can delete any announcement; anyone who posted one (or a
   // pre-this-feature announcement with no recorded poster, see chat) can only
   // delete their own -- canDeleteAnnouncement below folds both cases into one
@@ -398,7 +404,7 @@ export function ActivityFeed({
             item.type === 'moment' ? (
               <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
             ) : (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement} canDelete={canDeleteAnnouncement(item)} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} />
             ),
           )}
         </div>
@@ -446,7 +452,7 @@ export function ActivityFeed({
             <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
             news.slice(0, 8).map((item) => (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement} canDelete={canDeleteAnnouncement(item)} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} />
             ))
           )}
         </div>
@@ -485,11 +491,31 @@ export function ActivityFeed({
           ) : (
             <div className="space-y-3">
               {[...chatItems].reverse().map((item) => (
-                <ChatBubble key={item.id} league={league} item={item} onDelete={onDeleteChat} />
+                <ChatBubble
+                  key={item.id}
+                  league={league}
+                  item={item}
+                  onDelete={onDeleteChat ? () => setPendingDelete({ kind: 'chat', id: item.id }) : undefined}
+                />
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmSheet
+          title={pendingDelete.kind === 'announcement' ? 'Delete this announcement?' : 'Delete this message?'}
+          description="This can't be undone."
+          confirmLabel="Delete"
+          confirmingLabel="Deleting…"
+          onConfirm={async () => {
+            const fn = pendingDelete.kind === 'announcement' ? onDeleteAnnouncement : onDeleteChat;
+            if (!fn) return { ok: true };
+            return fn(pendingDelete.id);
+          }}
+          onClose={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

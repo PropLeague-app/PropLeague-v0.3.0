@@ -114,7 +114,7 @@ interface AppState {
 
   placeWager: (params: PlaceWagerParams) => Promise<{ ok: boolean; claimedByTeamId?: string; error?: string }>;
   updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<void>;
-  clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<void>;
+  clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<{ ok: boolean; error?: string }>;
   submitLineup: (leagueId: string, teamId: string, week: WeekId) => Promise<boolean>;
   loadWeekRosters: (leagueId: string, week: WeekId) => Promise<void>;
   loadLeagueResults: (leagueId: string) => Promise<void>;
@@ -516,7 +516,10 @@ export const useAppStore = create<AppState>()(
 
       clearSlot: async (leagueId, teamId, week, slotId) => {
         const result = await clearWagerRemote(teamId, week, slotId);
-        if (!result.ok) return;
+        // Propagated (was swallowed before -- see chat, Sept 2026) so the
+        // confirm-before-remove sheet in Lineup.tsx can show a real error
+        // instead of silently closing as if the pick were actually removed.
+        if (!result.ok) return { ok: false, error: result.error };
         set((state) => {
           const league = state.leagues[leagueId];
           if (!league) return {};
@@ -532,6 +535,7 @@ export const useAppStore = create<AppState>()(
             },
           };
         });
+        return { ok: true };
       },
 
       submitLineup: async (leagueId, teamId, week) => {

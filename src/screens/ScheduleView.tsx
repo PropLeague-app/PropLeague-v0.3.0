@@ -49,13 +49,34 @@ export function ScheduleView() {
     .filter((w) => w.matchup)
     .sort((a, b) => weekOrder(toWeekId(a.week)) - weekOrder(toWeekId(b.week)));
 
+  // A league that started mid-season has real matchup rows sitting in
+  // matchupsByWeek for the weeks before it existed (the schedule is generated
+  // for the whole season up front -- see leagueService.buildSeasonSchedule).
+  // Per-week "Season not started" cards for each of those (the previous
+  // version of this screen) just repeats the same fact N times before the
+  // list gets to anything real -- collapsed into one line instead (see chat,
+  // Sept 2026: "entirely remove the W1 matchup... to say Season Not Started
+  // until W_"). isBeforeSeasonStart itself is unchanged and still the single
+  // source of truth for the cutoff, shared with settle-week's gate.
+  const notStartedWeeks = weeks.filter(({ week }) => isBeforeSeasonStart(week, league.seasonStartWeek));
+  const playedWeeks = weeks.filter(({ week }) => !isBeforeSeasonStart(week, league.seasonStartWeek));
+
   return (
     <div className="flex flex-col">
       <BackHeader title="Season Schedule" fallback="/home" />
       <div className="p-4 space-y-3">
       <MemberSelector teams={league.teams} selectedTeamId={viewedTeam.id} onSelect={setSelectedTeamId} />
       <div className="space-y-2">
-        {weeks.map(({ week, matchup }) => {
+        {notStartedWeeks.length > 0 && (
+          <Card className="flex items-center justify-center py-4">
+            <p className="text-sm text-text-muted">
+              {league.seasonStartWeek != null
+                ? `Season not started until ${weekLabel(toWeekId(league.seasonStartWeek))}`
+                : 'Season not started'}
+            </p>
+          </Card>
+        )}
+        {playedWeeks.map(({ week, matchup }) => {
           if (!matchup) return null;
           const oppId = matchup.teamAId === viewedTeam.id ? matchup.teamBId : matchup.teamAId;
           const opponent = league.teams.find((t) => t.id === oppId);
@@ -64,8 +85,9 @@ export function ScheduleView() {
           // matchup.teamAScore/teamBScore update live all week as picks settle (see
           // chat), so "has a score" doesn't mean "is final" -- winnerId/isTie only get
           // set once the whole week is actually complete. Same fix as MatchupCard.tsx.
-          const notStarted = isBeforeSeasonStart(week, league.seasonStartWeek);
-          const isFinal = !notStarted && (matchup.winnerId != null || matchup.isTie);
+          // notStarted is never true here -- these are exactly the weeks filtered out
+          // of notStartedWeeks above -- so isFinal only depends on the actual result.
+          const isFinal = matchup.winnerId != null || matchup.isTie;
           const won = isFinal && myScore != null && oppScore != null && myScore > oppScore;
           const tied = isFinal && myScore === oppScore;
 
@@ -79,9 +101,7 @@ export function ScheduleView() {
                 </div>
               </div>
               <div className="text-right">
-                {notStarted ? (
-                  <p className="text-xs text-text-muted">Season not started</p>
-                ) : isFinal ? (
+                {isFinal ? (
                   <>
                     <p className={`text-sm font-bold ${won ? 'text-profit' : tied ? 'text-text-muted' : 'text-loss'}`}>
                       {won ? 'W' : tied ? 'T' : 'L'}

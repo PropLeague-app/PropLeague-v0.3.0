@@ -6,12 +6,14 @@ import { validateLineup } from '../engine/validation';
 import { activeMultipliers } from '../engine/prizePool';
 import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
+import { ConfirmSheet } from '../components/common/ConfirmSheet';
 import { BudgetBar } from '../components/common/BudgetBar';
 import { BOTTOM_TAB_BAR_HEIGHT } from '../components/layout/BottomTabBar';
 import { weekLabel } from '../types';
 
 export function Lineup() {
   const [infoOpen, setInfoOpen] = useState(false);
+  const [pendingClearSlotId, setPendingClearSlotId] = useState<string | null>(null);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateWagerStake = useAppStore((s) => s.updateWagerStake);
@@ -159,7 +161,7 @@ export function Lineup() {
               multiplier={multiplier}
               currentWeek={league.currentWeek}
               onStakeChange={(stake) => updateWagerStake(league.id, userTeam.id, league.currentWeek, slot.slotId, stake)}
-              onRemove={() => clearSlot(league.id, userTeam.id, league.currentWeek, slot.slotId)}
+              onRemove={() => setPendingClearSlotId(slot.slotId)}
             />
           );
         })}
@@ -182,6 +184,17 @@ export function Lineup() {
           {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>
       </div>
+
+      {pendingClearSlotId && (
+        <ConfirmSheet
+          title="Remove this pick?"
+          description="This removes your pick and its locked-in odds from this slot -- you'll need to pick it again at whatever line is live then."
+          confirmLabel="Remove Pick"
+          confirmingLabel="Removing…"
+          onConfirm={() => clearSlot(league.id, userTeam.id, league.currentWeek, pendingClearSlotId)}
+          onClose={() => setPendingClearSlotId(null)}
+        />
+      )}
     </div>
   );
 }
