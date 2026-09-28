@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import * as leagueService from '../../services/leagueService';
-import { joinRealLeague, fetchLeagueMeta, fetchLeagueTeams } from '../../services/supabaseLeague';
+import { joinRealLeague, rejoinRealLeague, fetchLeagueMeta, fetchLeagueTeams } from '../../services/supabaseLeague';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { goBack } from '../../components/layout/BackHeader';
 
@@ -19,20 +19,36 @@ export function JoinLeague() {
     setError(null);
     setSubmitting(true);
 
-    const teamName = `${profile?.username ?? 'My'}'s Team`;
-    const teamAbbrev = abbrevFromName(teamName);
-    const userLogoColor = TEAM_LOGO_COLORS[0];
-
-    const joinResult = await joinRealLeague({
-      inviteCode: code.trim(),
-      teamName,
-      teamAbbrev,
-      logoColor: userLogoColor,
-    });
-    if (!joinResult.ok) {
+    // Try reclaiming a team this profile previously left in this league first (see
+    // chat, Sept 28 2026, and 0018_rejoin_league_by_code.sql) -- a departed member's
+    // team is converted to a bot, not deleted, so coming back with the same invite
+    // code should restore that exact team/history rather than creating a new one.
+    // noRejoinableTeam (not a generic error) means this profile has no vacated team
+    // here, so it's a genuinely new join and falls through to the normal flow below.
+    const rejoinResult = await rejoinRealLeague({ inviteCode: code.trim() });
+    let joinResult: { ok: true; leagueId: string; teamId: string } | { ok: false; error: string };
+    if (rejoinResult.ok) {
+      joinResult = rejoinResult;
+    } else if (!rejoinResult.noRejoinableTeam) {
       setSubmitting(false);
-      setError(joinResult.error);
+      setError(rejoinResult.error);
       return;
+    } else {
+      const teamName = `${profile?.username ?? 'My'}'s Team`;
+      const teamAbbrev = abbrevFromName(teamName);
+      const userLogoColor = TEAM_LOGO_COLORS[0];
+
+      joinResult = await joinRealLeague({
+        inviteCode: code.trim(),
+        teamName,
+        teamAbbrev,
+        logoColor: userLogoColor,
+      });
+      if (!joinResult.ok) {
+        setSubmitting(false);
+        setError(joinResult.error);
+        return;
+      }
     }
 
     const [metaResult, teamsResult] = await Promise.all([

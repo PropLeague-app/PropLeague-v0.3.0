@@ -131,6 +131,34 @@ export async function joinRealLeague(params: {
   return { ok: true, leagueId: data.league_id as string, teamId };
 }
 
+/** Reclaims the caller's own previously-vacated team in a league (see chat, Sept 28
+ * 2026, and 0018_rejoin_league_by_code.sql): leave_league converts a departing
+ * member's team to a bot rather than deleting it, so the same person coming back
+ * with the same invite code should get that exact team -- same id, name, abbrev,
+ * logo, and full pick/matchup/standings history -- back, not a brand new one. Returns
+ * noRejoinableTeam: true (not a generic error) when this profile has no vacated team
+ * waiting in that league, so the caller knows to fall back to joinRealLeague's normal
+ * create-a-new-team flow instead of surfacing this as a failure. */
+export async function rejoinRealLeague(params: {
+  inviteCode: string;
+}): Promise<
+  | { ok: true; leagueId: string; teamId: string }
+  | { ok: false; error: string; noRejoinableTeam?: boolean }
+> {
+  const { data: teamId, error } = await supabase.rpc('rejoin_league_by_code', {
+    p_invite_code: params.inviteCode.trim().toUpperCase(),
+  });
+  if (error || !teamId) {
+    const noRejoinableTeam = error?.message?.includes('NO_REJOINABLE_TEAM') ?? false;
+    return { ok: false, error: error?.message ?? 'Could not rejoin that league.', noRejoinableTeam };
+  }
+
+  const { data, error: fetchError } = await supabase.from('teams').select('league_id').eq('id', teamId).single();
+  if (fetchError || !data) return { ok: false, error: fetchError?.message ?? 'Rejoined, but could not load the league.' };
+
+  return { ok: true, leagueId: data.league_id as string, teamId };
+}
+
 export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<RealLeagueMeta>> {
   const { data, error } = await supabase
     .from('leagues')
