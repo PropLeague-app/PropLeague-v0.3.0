@@ -235,12 +235,13 @@ export function LeagueHome() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="font-semibold text-sm">Activity</p>
-            {/* League News is commissioner-only/auto (see chat) -- any member could
-               post an announcement before this gate; postAnnouncement itself is a
-               client action, so this is a client-side gate only until the
-               post_announcement RPC (hand-created in the SQL editor, not
-               migration-tracked -- see chat's established pattern) gets a matching
-               server-side check. */}
+            {/* League News is commissioner-only/auto (see chat). Used to be a
+               client-side gate only -- post_announcement itself (hand-created in
+               the SQL editor, not migration-tracked) only ever checked league
+               membership, so anyone could call it directly regardless of this
+               button. 0024_post_announcement_commissioner_lock.sql closed that;
+               this button-level check just keeps a non-commissioner from seeing
+               the composer at all. */}
             {isCommissioner && (
               <button onClick={() => setAnnounceOpen((v) => !v)} className="text-xs text-primary font-medium">
                 {announceOpen ? 'Cancel' : '+ Announcement'}
