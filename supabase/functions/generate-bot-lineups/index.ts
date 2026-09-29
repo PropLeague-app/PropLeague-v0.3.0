@@ -144,9 +144,20 @@ Deno.serve(async (_req) => {
       continue;
     }
 
-    const games = await fetchRealGamesForWeek(supabase, weekStr);
+    // Fairness fix (see chat, Sept 29 2026, the RPC-lockdown follow-up): this used to
+    // hand generateAutoLineup every game in the week, unfiltered by status. That's
+    // fine early in the week, but once a later day-slot's generation window opens
+    // (e.g. the MNF window, ~60min before kickoff), the pool still includes every
+    // Thursday/Sunday game from earlier that week -- most of them already final. A
+    // bot could "pick" a game whose real outcome is already known, at the expense of
+    // whichever real team it's matched against. Filtering to status === 'upcoming'
+    // here closes it at the source, rather than relying on place_wager's kickoff-lock
+    // (added in the same pass) to reject it slot-by-slot and just leave that slot
+    // empty instead of picking a fair one.
+    const allGames = await fetchRealGamesForWeek(supabase, weekStr);
+    const games = allGames.filter((g) => g.status === 'upcoming');
     if (games.length === 0) {
-      summary.push({ leagueId, week: weekStr, note: 'no real_games rows for this week yet -- nothing to pick from' });
+      summary.push({ leagueId, week: weekStr, note: 'no upcoming real_games rows for this week yet -- nothing to pick from' });
       continue;
     }
 
