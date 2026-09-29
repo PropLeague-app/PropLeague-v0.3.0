@@ -260,6 +260,8 @@ export async function addSimulatedTeamRemote(
   teamName: string,
   teamAbbrev: string,
   logoColor: string,
+  logoMode?: string,
+  logoEmoji?: string,
 ): Promise<ServiceResult<{ teamId: string }>> {
   const { data: teamId, error } = await supabase.rpc('add_simulated_team', {
     p_league_id: leagueId,
@@ -268,6 +270,20 @@ export async function addSimulatedTeamRemote(
     p_logo_color: logoColor,
   });
   if (error || !teamId) return { ok: false, error: error?.message ?? 'Could not add a simulated team.' };
+  // add_simulated_team (pre-dates migrations/, never captured as a migration file --
+  // see 0020) has no logo_mode/logo_emoji params, so a separate narrow RPC applies
+  // the rest of generateSimulatedTeamIdentities' randomized identity (emoji vs.
+  // initials, which emoji) right after creation. Best-effort: a real, varied name/
+  // abbrev/color already landed above, so a failure here just leaves this one team
+  // on the 'initials' default rather than blocking league creation entirely.
+  if (logoMode && logoMode !== 'initials') {
+    const { error: logoError } = await supabase.rpc('set_simulated_team_logo', {
+      p_team_id: teamId,
+      p_logo_mode: logoMode,
+      p_logo_emoji: logoEmoji ?? '',
+    });
+    if (logoError) console.error('set_simulated_team_logo failed', logoError);
+  }
   return { ok: true, teamId };
 }
 /** Direct table update rather than a new RPC -- consistent with the existing

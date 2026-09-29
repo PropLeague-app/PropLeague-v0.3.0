@@ -290,7 +290,14 @@ export const useAppStore = create<AppState>()(
         const identities = leagueService.generateSimulatedTeamIdentities(`${leagueId}-simteams`, slotsToFill);
         const withIds: (leagueService.SimulatedTeamIdentity & { id: string })[] = [];
         for (const identity of identities) {
-          const result = await addSimulatedTeamRemote(leagueId, identity.teamName, identity.abbrev, identity.logoColor);
+          const result = await addSimulatedTeamRemote(
+            leagueId,
+            identity.teamName,
+            identity.abbrev,
+            identity.logoColor,
+            identity.logoMode,
+            identity.logoEmoji,
+          );
           if (!result.ok) return { ok: false, error: result.error };
           withIds.push({ ...identity, id: result.teamId });
         }

@@ -53,8 +53,39 @@ export function IdentityBadge({ identity, initials, size = 'md' }: { identity: L
   );
 }
 
-type TeamLogoTeam = LogoIdentity & { abbrev: string };
+type TeamLogoTeam = LogoIdentity & { abbrev: string; isSimulated?: boolean };
+
+// "AI"-controlled team indicator (see chat, Sept 2026) -- same top-right-corner-of-
+// the-thing-it's-attached-to placement as the lineup-needed "!" on the bottom tab
+// bar and the unread-chat count on the Chat feed pill (see BottomTabBar.tsx /
+// ActivityFeed.tsx), but deliberately NOT that same bg-loss red: red on this app is
+// reserved for "something needs your attention" (an unread message, an incomplete
+// lineup), and a bot-run team isn't an alert -- it's just a fact about the team, so
+// it gets its own color. Reuses --color-accent (the purple already used for the
+// Voided pill/badge elsewhere) rather than introducing a fourth semantic color into
+// the palette for a single indicator. Sized per logo size so it stays legible at the
+// small sizes the app actually uses (xs is only ~16px across) without dwarfing the
+// circle it sits on at the larger ones.
+const AI_BADGE_CLASSES = {
+  xs: '-top-0.5 -right-0.5 w-3 h-3 text-[5px]',
+  sm: '-top-1 -right-1 w-3.5 h-3.5 text-[6px]',
+  md: '-top-1 -right-1 w-4 h-4 text-[7px]',
+  lg: '-top-1.5 -right-1.5 w-5 h-5 text-[8px]',
+} as const;
 
 export function TeamLogo({ team, size = 'md' }: { team: TeamLogoTeam; size?: LogoSize }) {
-  return <IdentityBadge identity={team} initials={team.abbrev.slice(0, 2)} size={size} />;
+  const badge = <IdentityBadge identity={team} initials={team.abbrev.slice(0, 2)} size={size} />;
+  if (!team.isSimulated) return badge;
+  return (
+    <span className="relative inline-block shrink-0 leading-none">
+      {badge}
+      <span
+        className={`absolute ${AI_BADGE_CLASSES[size]} rounded-full bg-accent text-white font-bold leading-none flex items-center justify-center`}
+        aria-label="AI-controlled team"
+        title="AI-controlled team"
+      >
+        AI
+      </span>
+    </span>
+  );
 }
