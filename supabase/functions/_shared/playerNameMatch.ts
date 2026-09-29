@@ -38,3 +38,51 @@ export function normalizePlayerName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+// Added for generate-bot-lineups (see chat, Sept 2026): resolving a raw odds-feed
+// player-prop description (e.g. "A. Iosivas") to a real player is the ORIGINAL use
+// this function's fallback tier was built and verified for (see src/engine/
+// playerNameMatch.ts's header -- 248 real depth-chart names tested against real
+// nflverse data), unlike settle-week's narrower stat-row-grading use above, which
+// deliberately skipped this tier for lack of team context. Bot-lineup generation
+// DOES have team context (the game's own home/away abbrevs), the same way
+// src/services/supabaseOdds.ts's resolvePlayer already uses it client-side -- so
+// this ports the full function, not just normalizePlayerName.
+export interface RealStatCandidate {
+  playerName: string;
+  team: string | null;
+}
+
+export interface PlayerMatchResult {
+  status: 'exact' | 'fallback' | 'ambiguous' | 'not_found';
+  matchedName: string | null;
+  candidates?: string[];
+}
+
+function lastNameOf(normalized: string): string {
+  const parts = normalized.split(' ');
+  return parts[parts.length - 1];
+}
+
+/** `wagerTeam` is optional -- without it, the fallback step is skipped entirely
+ * (an unambiguous exact match still works fine; only the safety-net step needs
+ * team context to avoid the collision risk described in the original file --
+ * e.g. two same-last-name players on one roster). */
+export function matchPlayerName(wagerPlayerName: string, wagerTeam: string | null, candidates: RealStatCandidate[]): PlayerMatchResult {
+  const targetNorm = normalizePlayerName(wagerPlayerName);
+
+  const exact = candidates.find((c) => normalizePlayerName(c.playerName) === targetNorm);
+  if (exact) return { status: 'exact', matchedName: exact.playerName };
+
+  if (!wagerTeam) return { status: 'not_found', matchedName: null };
+
+  const targetLast = lastNameOf(targetNorm);
+  const sameLastNameTeam = candidates.filter(
+    (c) => lastNameOf(normalizePlayerName(c.playerName)) === targetLast && c.team === wagerTeam,
+  );
+  const distinctNames = [...new Set(sameLastNameTeam.map((c) => c.playerName))];
+
+  if (distinctNames.length === 1) return { status: 'fallback', matchedName: distinctNames[0] };
+  if (distinctNames.length > 1) return { status: 'ambiguous', matchedName: null, candidates: distinctNames };
+  return { status: 'not_found', matchedName: null };
+}
