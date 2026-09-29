@@ -116,6 +116,19 @@ const FINAL_GRACE_MS = 15 * 60 * 1000; // 15 min -- adjust freely, see chat
 // un-void as cleanly, so this errs slow.
 const VOID_GRACE_MS = 3 * 60 * 60 * 1000; // 3 hours -- adjust freely, see chat
 
+// Absolute ceiling on how long a no-stat-row wager waits before voiding,
+// independent of the Tuesday reveal gate below (see chat, Sept 2026: Hunter's
+// call after the Iosivas/Tucker Week 3 case -- a Sunday-early-game scratch
+// was already well past VOID_GRACE_MS by Sunday evening but still sat
+// pending all the way to Tuesday 10am, purely because that's when the
+// WEEK's reveal gate opens, not because ingestion was still catching up).
+// A wager now voids at whichever comes first: this 24h ceiling off its own
+// game's final_since, or the Tuesday reveal gate -- so an early-week scratch
+// clears well before Tuesday, while a Monday-night scratch (whose 24h mark
+// can land AFTER Tuesday 10am) is still capped at the same reveal gate as
+// before, unchanged for that case.
+const VOID_HARD_CEILING_MS = 24 * 60 * 60 * 1000; // 24 hours -- adjust freely, see chat
+
 // Delays the WEEK-level reveal -- matchup winner/tie, standings W-L, Weekly
 // Moments, incomplete-lineup penalty, prize pool advancement, and moving
 // current_week forward -- until Tuesday morning ET, mirroring ESPN Fantasy's
@@ -595,27 +608,37 @@ Deno.serve(async (req) => {
           if (isPlayerMarket && !stat) {
             const finalSinceMs = game.final_since ? new Date(game.final_since).getTime() : null;
             const gracePassed = finalSinceMs != null && now - finalSinceMs >= VOID_GRACE_MS;
-            // Voiding now ALSO waits for the same Tuesday-morning reveal gate as
-            // weekComplete (see RESULTS_REVEAL_CUTOFF_HOUR_ET/pastResultsRevealCutoff
-            // above), not just the raw VOID_GRACE_MS clock off this one game's own
-            // final_since. VOID_GRACE_MS alone wrongly voided the Isaiah Likely/Cam
-            // Skattebo/Dominic Zvada props (Sept 2026, see chat): the stray-week
-            // reprocessing fix reran against weeks whose games had already been final
-            // for a day+, so VOID_GRACE_MS was already blown on its very first pass --
-            // before fetch-balldontlie-player-stats had caught up on backfilling those
-            // older games. Their stat rows landed shortly after, but a settled wager
-            // never re-grades (see FINAL_GRACE_MS's comment above), so the void stuck
-            // even once the real value was available. Gating on the same Tuesday floor
-            // as weekComplete gives ingestion the whole weekend+Monday to catch up
-            // before ANY void is final, matching the existing "err slow" philosophy for
-            // voiding. VOID_GRACE_MS is kept as a floor alongside it, not replaced --
-            // effectively a no-op for a normal week's own games (already final for well
-            // over 3 hours by Tuesday) but still a meaningful guard against voiding
-            // mid-week if this ever runs somewhere that isn't wall-clock-normal (a
-            // manual forceLeagueId backfill, say).
-            const longEnoughToVoid = gracePassed && pastResultsRevealCutoff(new Date(now));
+            // Voiding requires EITHER the 24h hard ceiling off this game's own
+            // final_since, OR the same Tuesday-morning reveal gate as weekComplete (see
+            // RESULTS_REVEAL_CUTOFF_HOUR_ET/pastResultsRevealCutoff above) -- whichever
+            // comes first (see chat, Sept 2026). This used to be Tuesday-gate-only,
+            // added after VOID_GRACE_MS alone wrongly voided the Isaiah Likely/Cam
+            // Skattebo/Dominic Zvada props: the stray-week reprocessing fix reran
+            // against weeks whose games had already been final for a day+, so
+            // VOID_GRACE_MS was already blown on its very first pass -- before
+            // fetch-balldontlie-player-stats had caught up on backfilling those older
+            // games. Their stat rows landed shortly after, but a settled wager never
+            // re-grades (see FINAL_GRACE_MS's comment above), so the void stuck even
+            // once the real value was available. Tuesday-gate-only overcorrected,
+            // though (Iosivas/Tucker, Week 3): an early Sunday scratch sat pending all
+            // the way to Tuesday even though nothing was still catching up by Sunday
+            // night -- it was just waiting on the WEEK's reveal, not its own data. The
+            // 24h ceiling gives ingestion a full day per game regardless of which day it
+            // was played, and the Tuesday gate stays the effective cap for a
+            // Monday-night scratch (whose 24h mark can land after Tuesday 10am anyway),
+            // so that case is unchanged. VOID_GRACE_MS is kept as a floor underneath
+            // both -- effectively a no-op in real wall-clock operation (3h is shorter
+            // than both the 24h ceiling and the time-to-Tuesday for any game in the
+            // week) but still a meaningful guard against voiding too fast if this ever
+            // runs somewhere that isn't wall-clock-normal (a manual forceLeagueId
+            // backfill, say).
+            const hardCeilingPassed = finalSinceMs != null && now - finalSinceMs >= VOID_HARD_CEILING_MS;
+            const longEnoughToVoid = gracePassed && (hardCeilingPassed || pastResultsRevealCutoff(new Date(now)));
             if (!longEnoughToVoid) {
-              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'no-stat-row (within void grace)' });
+              const reason = !gracePassed
+                ? 'no-stat-row (within 3h grace)'
+                : 'no-stat-row (within 24h ceiling, waiting for Tuesday reveal)';
+              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason });
               continue; // stat not ingested yet -- could still be a transient gap, leave pending a while longer
             }
             // Game's been final for VOID_GRACE_MS with still no stat row for this
