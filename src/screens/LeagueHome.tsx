@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronDown, Hourglass, Rocket, RefreshCw } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronUp, Hourglass, Rocket, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
@@ -158,7 +158,7 @@ export function LeagueHome() {
         />
       )}
 
-      <div className="px-4 pb-4 space-y-4">
+      <div className="px-4 pt-3 pb-4 space-y-4">
         {league.seasonPhase === 'complete' ? (
           <EmptyState
             icon={<Trophy size={36} strokeWidth={1.5} />}
@@ -190,17 +190,39 @@ export function LeagueHome() {
 
         {otherMatchups.length > 0 && (
           <div>
+            {/* Round 2 (see chat, Sept 2026): the toggle itself is now deliberately
+                SMALLER and visually distinct from the matchup bubbles below it --
+                bg-bg-raised instead of the bubbles' bg-bg-card, tighter padding, no
+                full Card treatment -- so it reads as a section control, not "one more
+                bubble." The chevron-flip still mirrors SettingsHome's "Advanced"
+                disclosure. Expanded rows are MatchupCard in `compact` mode -- the exact
+                same real win-probability/score computation as the featured card above,
+                just smaller, rather than a separately hand-rolled (and, last round,
+                subtly wrong) simplified version. */}
             <button
               onClick={() => setShowAll((v) => !v)}
-              className="text-xs text-primary font-medium mb-2"
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-bg-raised border border-border/60 mb-2"
             >
-              {showAll ? 'Hide' : 'View'} other matchups ({otherMatchups.length})
+              <span className="text-xs font-medium text-text-muted">
+                Other Matchups <span className="font-normal">({otherMatchups.length})</span>
+              </span>
+              {showAll ? <ChevronUp size={14} className="text-text-muted" /> : <ChevronDown size={14} className="text-text-muted" />}
             </button>
             {showAll && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {otherMatchups.map((m) => (
-                  <MatchupCard key={m.id} league={league} matchup={m} />
+                  <MatchupCard key={m.id} league={league} matchup={m} compact />
                 ))}
+                {/* Escape hatch to the full, non-compact view of every matchup this
+                    week (see chat) -- "in the original format" means the same
+                    full-size MatchupCard the featured card above uses, not this
+                    compact one. */}
+                <button
+                  onClick={() => navigate('/matchups')}
+                  className="w-full text-center text-xs text-primary font-medium py-1.5"
+                >
+                  See all matchups →
+                </button>
               </div>
             )}
           </div>

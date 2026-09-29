@@ -102,7 +102,7 @@ export function NFLSlate() {
         <WeekSelector value={activeWeek} onChange={setWeek} />
       </div>
 
-      <div className="px-4 pb-4">
+      <div className="px-4 pt-3 pb-4">
         {gamesLoading ? (
           <div className="space-y-2">
             <SkeletonCard />

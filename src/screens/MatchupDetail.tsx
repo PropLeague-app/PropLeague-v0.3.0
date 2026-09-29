@@ -288,16 +288,27 @@ function TeamHeader({
   progress: { active: number; won: number; lost: number; pushed: number; open: number };
   reverse?: boolean;
 }) {
+  // Name used to share its row with the logo, truncating hard into the leftover
+  // space next to it ("Wilhelm's Wild Wagers" -> "Wilhelm's Wild ...") even though
+  // the $ line right below -- which doesn't compete with the logo for width --
+  // had plenty of room (see chat, Sept 2026). The name now gets the column's full
+  // width on its own line instead of only what's left beside the logo, so most
+  // names fit without truncating at all -- but it stays single-line (plain
+  // truncate, not line-clamp-2): Hunter's explicit call was that a name should
+  // never wrap to a second line, truncating with an ellipsis if it still doesn't
+  // fit. mt-1 below just keeps a beat of space between the name and the logo row.
   return (
-    <div className={`flex items-center gap-2 min-w-0 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
-      <TeamLogo team={team} size="sm" />
-      <div className="min-w-0">
-        <p className="text-xs font-medium truncate">{team.teamName}</p>
-        <p className={`text-sm font-bold ${score >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(score)}</p>
-        {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
-            2026) -- now living where the old bare "Live"/"Final" text used to sit,
-            since that moved up next to the Week pill above. */}
-        <p className="text-[9px] text-text-muted truncate">{formatProgressLine(progress)}</p>
+    <div className={`min-w-0 ${reverse ? 'text-right' : ''}`}>
+      <p className="text-xs font-medium truncate">{team.teamName}</p>
+      <div className={`flex items-center gap-1.5 mt-1 ${reverse ? 'flex-row-reverse' : ''}`}>
+        <TeamLogo team={team} size="sm" />
+        <div className="min-w-0">
+          <p className={`text-sm font-bold ${score >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(score)}</p>
+          {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
+              2026) -- now living where the old bare "Live"/"Final" text used to sit,
+              since that moved up next to the Week pill above. */}
+          <p className="text-[9px] text-text-muted truncate">{formatProgressLine(progress)}</p>
+        </div>
       </div>
     </div>
   );

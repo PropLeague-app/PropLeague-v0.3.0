@@ -25,6 +25,7 @@ import { GameDetail } from './screens/GameDetail';
 import { SettingsHome } from './screens/SettingsHome';
 import { FullStandings } from './screens/FullStandings';
 import { ScheduleView } from './screens/ScheduleView';
+import { WeekMatchups } from './screens/WeekMatchups';
 import { LeagueMembers } from './screens/LeagueMembers';
 import { PlayoffBracket } from './screens/PlayoffBracket';
 import { BetHistory } from './screens/BetHistory';
@@ -159,6 +160,7 @@ function App() {
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/standings" element={<FullStandings />} />
         <Route path="/schedule" element={<ScheduleView />} />
+        <Route path="/matchups" element={<WeekMatchups />} />
         <Route path="/members" element={<LeagueMembers />} />
         <Route path="/bracket" element={<PlayoffBracket />} />
         <Route path="/bet-history" element={<BetHistory />} />

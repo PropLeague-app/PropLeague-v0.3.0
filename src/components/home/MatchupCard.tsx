@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { Triangle } from 'lucide-react';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from '../../types';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
@@ -61,7 +62,24 @@ export function formatProgressLine(progress: { active: number; won: number; lost
   return segments.join(' · ');
 }
 
-export function MatchupCard({ league, matchup, highlightTeamId }: { league: League; matchup: Matchup; highlightTeamId?: string }) {
+/** `compact` (see chat, Sept 2026) renders the exact same real computation --
+ * win probability, give, per-team scores, hidePicks-aware "decided" lookup --
+ * just visually smaller and without the settled-pick-count line, for the Home
+ * screen's "Other Matchups" disclosure. Deliberately NOT a separate hand-rolled
+ * component: an earlier attempt at that duplicated (and got wrong) logic this
+ * component already has right, including status text ('Final'/'Even'/'X leads'
+ * -- there's no separate "Upcoming" state to get out of sync with reality). */
+export function MatchupCard({
+  league,
+  matchup,
+  highlightTeamId,
+  compact,
+}: {
+  league: League;
+  matchup: Matchup;
+  highlightTeamId?: string;
+  compact?: boolean;
+}) {
   const navigate = useNavigate();
   // Real games for this matchup's week -- LeagueHome (the only place this card
   // is rendered) already loads them, this just reads what's there (see chat:
@@ -123,15 +141,77 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
   const progressA = pickProgress(rosterA, totalSlots);
   const progressB = pickProgress(rosterB, totalSlots);
 
+  // Who's ahead, for the small leader triangle on the team name (see chat,
+  // Sept 2026: "particularly for matchups where both teams are negative $,
+  // it can be a bit tough to tell who is winning at a glance"). Deliberately
+  // reuses the exact same source the "X leads"/"Final" text below already
+  // uses -- matchup.winnerId once final, otherwise the win-probability model
+  // -- rather than comparing scoreA/scoreB directly, so the new triangle can
+  // never contradict the text sitting right next to it. null/undefined (tie,
+  // or prob exactly 0.5) means no one gets the triangle.
+  const leaderId = isFinal ? matchup.winnerId : prob === 0.5 ? null : prob > 0.5 ? teamA.id : teamB.id;
+
   return (
-    <Card onClick={() => navigate(`/matchup/${matchup.id}`)} className="space-y-3">
-      <div className="flex items-center justify-between">
-        <TeamBlock team={teamA} highlighted={teamA.id === highlightTeamId} />
-        <span className="text-text-muted text-xs font-bold">VS</span>
-        <TeamBlock team={teamB} highlighted={teamB.id === highlightTeamId} reverse />
+    <Card
+      onClick={() => navigate(`/matchup/${matchup.id}`)}
+      dense={compact}
+      className={compact ? 'space-y-1.5' : 'space-y-3'}
+    >
+      <div className="flex items-center gap-1.5">
+        <TeamBlock
+          team={teamA}
+          highlighted={teamA.id === highlightTeamId}
+          trailing={leaderId != null && leaderId !== teamA.id}
+          compact={compact}
+        />
+        {/* Single shared indicator on the VS itself, not per-team (see chat, Sept
+            2026 -- v2): points toward whichever side is actually ahead rather than
+            marking the winner's own name, and both sides always render a triangle
+            now -- white for whoever's ahead, dark gray (text-muted, same as VS
+            itself) for the other side -- rather than the losing one just vanishing
+            at opacity-0 (see chat: a single lone white triangle read as
+            "off-centered," not "this side is winning," without a second triangle
+            to balance it visually). A tie/50-50 leaves both gray. White (not gold)
+            per Hunter's ask -- gold was reading as too close to "you won the week"
+            (WeeklyResultPopup's color), and this is a much lower-stakes,
+            live-updating signal.
+            h-9/h-4 (matching TeamLogo's own w-9/w-4 circle at each size, see
+            TeamLogo.tsx's SIZE_CLASSES) pins this span to the exact same explicit
+            height the logo sits in, rather than an implicit auto height computed
+            from its own (much shorter) text+icon content -- see chat, Sept 2026:
+            "VS...should always be in the same spot vertically, from one matchup
+            bubble to the next." Without it, this span's height was whatever the
+            browser happened to compute for a ~16px text+icon row, centered inside
+            the taller logo row by `items-center` -- correct in theory, but left the
+            exact pixel up to browser rounding instead of pinning it to the same
+            fixed number every TeamBlock's logo already uses.
+            opacity-40 on the trailing triangle (on top of text-muted's own dimmer
+            gray) per Hunter's follow-up -- "gray out more, dark-gray" -- so it reads
+            clearly as the secondary/losing side rather than competing with the
+            white leading triangle. */}
+        <span
+          className={`flex items-center justify-center gap-1 text-text-muted text-xs font-bold shrink-0 ${compact ? 'h-4' : 'h-9'}`}
+        >
+          <Triangle
+            size={7}
+            className={`-rotate-90 shrink-0 ${leaderId === teamA.id ? 'fill-white text-white' : 'fill-text-muted text-text-muted opacity-40'}`}
+          />
+          <span className="leading-none">VS</span>
+          <Triangle
+            size={7}
+            className={`rotate-90 shrink-0 ${leaderId === teamB.id ? 'fill-white text-white' : 'fill-text-muted text-text-muted opacity-40'}`}
+          />
+        </span>
+        <TeamBlock
+          team={teamB}
+          highlighted={teamB.id === highlightTeamId}
+          trailing={leaderId != null && leaderId !== teamB.id}
+          reverse
+          compact={compact}
+        />
       </div>
 
-      <div className="flex items-center justify-between text-xl font-bold">
+      <div className={`flex items-center justify-between font-bold ${compact ? 'text-sm' : 'text-xl'}`}>
         <AnimatedNumber value={scoreA} />
         <AnimatedNumber value={scoreB} />
       </div>
@@ -148,7 +228,7 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
             border so they stay visible even against a background close to a team's
             own color. Requires every team to have a real logoColor even in Image
             mode, which IdentityPicker now always collects. */}
-        <div className="relative h-1.5 rounded-full overflow-hidden bg-bg-card border border-border">
+        <div className={`relative ${compact ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden bg-bg-card border border-border`}>
           <div
             className="absolute inset-y-0 left-0 h-full transition-all duration-500"
             style={{ width: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: teamA.logoColor, opacity: prob < 0.5 ? 0.4 : 1 }}
@@ -188,20 +268,49 @@ export function MatchupCard({ league, matchup, highlightTeamId }: { league: Leag
           <span>{isFinal ? 'Final' : prob === 0.5 ? 'Even' : `${prob > 0.5 ? teamA.abbrev : teamB.abbrev} leads`}</span>
           <span>{Math.round((1 - prob) * 100)}%</span>
         </div>
-        <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
-          <span>{formatProgressLine(progressA)}</span>
-          <span className="text-right">{formatProgressLine(progressB)}</span>
-        </div>
+        {!compact && (
+          <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
+            <span>{formatProgressLine(progressA)}</span>
+            <span className="text-right">{formatProgressLine(progressB)}</span>
+          </div>
+        )}
       </div>
     </Card>
   );
 }
 
-function TeamBlock({ team, highlighted, reverse }: { team: LeagueTeam; highlighted?: boolean; reverse?: boolean }) {
+function TeamBlock({
+  team,
+  highlighted,
+  trailing,
+  reverse,
+  compact,
+}: {
+  team: LeagueTeam;
+  highlighted?: boolean;
+  trailing?: boolean;
+  reverse?: boolean;
+  compact?: boolean;
+}) {
+  // flex-1 + min-w-0 (see chat, Sept 2026 -- truncation fix): each side now claims an
+  // equal share of whatever width is actually left after the logo and "VS" text,
+  // rather than truncating at a fixed 68/80px cap regardless of how much room the
+  // card actually has. Still truncates (never wraps/overflows) for a genuinely long
+  // name, but most real team names now show in full.
+  //
+  // `trailing` (see chat, Sept 2026 -- v2 of the leader indicator) dims the losing
+  // side's name instead of highlighting the winning one -- the arrow next to VS
+  // already marks who's ahead, so this just needs to read as "not that one" at a
+  // glance. `highlighted` (own team, primary blue) wins out over the dimming when
+  // both apply, since "this is you" is the stronger signal to preserve.
   return (
-    <div className={`flex items-center gap-2 min-w-0 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
-      <TeamLogo team={team} />
-      <p className={`text-xs font-medium truncate max-w-[80px] ${highlighted ? 'text-primary' : ''}`}>{team.teamName}</p>
+    <div className={`flex items-center gap-1.5 min-w-0 flex-1 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
+      <TeamLogo team={team} size={compact ? 'xs' : 'md'} />
+      <p
+        className={`text-xs font-medium truncate min-w-0 ${highlighted ? 'text-primary' : trailing ? 'text-text-muted' : ''}`}
+      >
+        {team.teamName}
+      </p>
     </div>
   );
 }

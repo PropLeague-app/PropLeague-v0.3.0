@@ -220,7 +220,7 @@ export function MarketBrowser() {
         </div>
       </div>
 
-      <div className="px-4 py-2 space-y-3">
+      <div className="px-4 pt-3 pb-2 space-y-3">
         {filteredGames.length === 0 && (
           <EmptyState
             icon={<Search size={36} strokeWidth={1.5} />}
