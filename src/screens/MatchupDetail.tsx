@@ -17,7 +17,8 @@ import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenera
 import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
 import { isWagerVisibleToViewer } from '../engine/stats';
 import { isPerfectWeek } from '../engine/perfectWeek';
-import { weeklyAtRisk } from '../engine/plColor';
+import { FireAura } from '../components/common/FireAura';
+import { weekScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WagerStatus } from '../types';
 import { weekLabel } from '../types';
@@ -139,6 +140,9 @@ export function MatchupDetail() {
   // complete -- see chat), so "has a score" no longer means "is final". Same fix as
   // MatchupCard.tsx.
   const isFinal = matchup.winnerId != null || matchup.isTie;
+  const scaleRef = weekScaleRef(league, matchup.week, [scoreA, scoreB]);
+  const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
+  const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
 
   // Same weekly-record line Home's matchup bubble shows (see pickProgress's own doc
   // comment) -- now doing double duty here in place of the old "Live"/"Final" text
@@ -180,9 +184,9 @@ export function MatchupDetail() {
       {orderedWeekMatchups.length > 1 && (
         <MatchupTabs league={league} matchups={orderedWeekMatchups} currentMatchupId={matchup.id} onSelect={(id) => navigate(`/matchup/${id}`, { replace: true })} />
       )}
-      <div className="p-4 space-y-4">
+      <div className={`p-4 space-y-4 ${perfectA || perfectB ? 'pl-slip pl-slip-fade' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''}`}>
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} progress={progressA} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterA, league.settings, isFinal)} />
+          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} />
           <div className="flex flex-col items-center gap-1">
             {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
@@ -193,7 +197,7 @@ export function MatchupDetail() {
               {weekLabel(matchup.week)}
             </span>
           </div>
-          <TeamHeader team={teamB} score={scoreB} progress={progressB} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterB, league.settings, isFinal)} reverse />
+          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} reverse />
         </div>
 
         <div className="space-y-1.5">
@@ -285,14 +289,14 @@ function TeamHeader({
   score,
   progress,
   reverse,
-  atRisk,
+  scaleRef,
   perfect = false,
 }: {
   team: League['teams'][number];
   score: number;
   progress: { active: number; won: number; lost: number; pushed: number; open: number };
   reverse?: boolean;
-  atRisk: number;
+  scaleRef: number;
   /** A perfect week: the headline number is drawn as fire. */
   perfect?: boolean;
 }) {
@@ -308,20 +312,23 @@ function TeamHeader({
   // fit. mt-1 below just keeps a beat of space between the name and the logo row.
   return (
     <div className={`min-w-0 ${reverse ? 'text-right' : ''}`}>
-      <p className="text-xs font-medium truncate">{team.teamName}</p>
+      <p className={`text-xs font-medium truncate ${perfect ? 'pl-fire-name' : ''}`}>{team.teamName}</p>
       <div className={`flex items-center gap-1.5 mt-1 ${reverse ? 'flex-row-reverse' : ''}`}>
-        <TeamLogo team={team} size="sm" />
+        <FireAura active={perfect}>
+          <TeamLogo team={team} size="sm" />
+        </FireAura>
         <div className="min-w-0">
           <p
             className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : score >= 0 ? 'text-profit' : 'text-loss'}`}
-            style={perfect ? undefined : plStyle(score, atRisk)}
+            style={perfect ? undefined : plStyle(score, scaleRef)}
           >
             {formatCents(score)}
           </p>
           {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
               2026) -- now living where the old bare "Live"/"Final" text used to sit,
               since that moved up next to the Week pill above. */}
-          <p className="text-[9px] text-text-muted truncate">{formatProgressLine(progress)}</p>
+          <p className={`text-[9px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>{formatProgressLine(progress)}</p>
+          {perfect && <p className="text-[8px] font-bold uppercase tracking-wider pl-gold-text mt-0.5">Perfect week</p>}
         </div>
       </div>
     </div>

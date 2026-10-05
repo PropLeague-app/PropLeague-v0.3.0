@@ -517,7 +517,7 @@ export function SettingsHome() {
                 </div>
                 <p className="text-[11px] text-text-muted">
                   {(profile?.plColorScale ?? 'classic') === 'scaled'
-                    ? 'Small losses look softer, big ones look red. Gains stay green.'
+                    ? 'The worst loss in the comparison is the reddest. Smaller ones fade toward yellow. Gains stay green.'
                     : 'Every loss is red.'}
                 </p>
                 <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-2 text-xs font-semibold tabular-nums">
@@ -526,7 +526,7 @@ export function SettingsHome() {
                     <span
                       key={amount}
                       className="text-loss"
-                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 100)) } : undefined}
+                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
                     >
                       {formatCents(amount)}
                     </span>

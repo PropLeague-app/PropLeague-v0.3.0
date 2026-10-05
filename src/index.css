@@ -19,6 +19,19 @@
   --color-gold-soft: #7a6423;
   --color-text: #e8ecf5;
   --color-text-muted: #8a94a8;
+  /* Scaled loss colors (engine/plColor.ts): small loss yellow, bigger orange, wipeout red.
+     Each stop is picked for contrast on this theme's card color. */
+  --pl-loss-lo: #f2c94c;
+  --pl-loss-mid: #f5944a;
+  --pl-loss-hi: #f55c5c;
+  /* Perfect-week flame layers (components/common/FireAura.tsx). */
+  --pl-flame-top: #ff4a1a;
+  --pl-flame-mid: #ff9a24;
+  --pl-flame-base: #ffd45a;
+  --pl-ember: 255, 120, 30;
+  --pl-gold: 244, 190, 70;
+  --pl-wash-a: 0.2;
+  --pl-gold-text: #f4c542;
 
   /* Used to be identical to --color-loss above on purpose, back when QB was
      just "the red position" -- but that's exactly the problem: an invalid
@@ -93,6 +106,16 @@
   --color-border: #ccd5e2;
   --color-text: #202838;
   --color-text-muted: #5a6472;
+  --pl-loss-lo: #946400;
+  --pl-loss-mid: #c2570c;
+  --pl-loss-hi: #d42a2a;
+  --pl-flame-top: #e63e0f;
+  --pl-flame-mid: #f27a12;
+  --pl-flame-base: #f7b32b;
+  --pl-ember: 238, 90, 20;
+  --pl-gold: 245, 172, 12;
+  --pl-wash-a: 0.36;
+  --pl-gold-text: #946400;
 
   /* Mixed toward white instead of transparent, and at a higher percentage than
      the dark-mode defaults above, so empty lineup slots (Lineup screen) get an
@@ -296,10 +319,10 @@ body {
 @keyframes pl-flicker {
   0%,
   100% {
-    filter: drop-shadow(0 0 4px rgba(255, 120, 30, 0.5)) brightness(1);
+    filter: drop-shadow(0 0 3px rgba(255, 120, 30, 0.38)) brightness(1);
   }
   50% {
-    filter: drop-shadow(0 0 9px rgba(255, 150, 40, 0.8)) brightness(1.1);
+    filter: drop-shadow(0 0 6px rgba(255, 150, 40, 0.55)) brightness(1.05);
   }
 }
 @keyframes pl-shimmer {
@@ -313,6 +336,135 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pl-fire,
   .pl-fire-hero {
+    animation: none;
+  }
+}
+
+
+/* Perfect week, beyond the number (see pl-fire above). Three pieces, all pure CSS:
+   FireAura: flame tongues and a glow ring behind a team logo.
+   pl-fire-name: the team name drawn in the same fire gradient.
+   pl-slip: an ember wash over the perfect team's half of a matchup card or slip, with a
+   bright edge on the outer side. Colors come from the --pl-flame-* and --pl-ember tokens, which
+   are tuned separately for dark and light mode. Everything holds still under reduced motion. */
+.pl-fire-name {
+  display: block;
+  background-image: linear-gradient(180deg, #ffe58a 0%, #ffb52e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+}
+:root[data-theme='light'] .pl-fire-name {
+  background-image: linear-gradient(180deg, #d98a0b 0%, #b8590f 100%);
+}
+.pl-gold-text {
+  color: var(--pl-gold-text);
+}
+
+.pl-aura {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  isolation: isolate;
+}
+.pl-aura-glow {
+  position: absolute;
+  inset: -28%;
+  z-index: -2;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(var(--pl-ember), 0.42) 0%, rgba(var(--pl-ember), 0.16) 50%, transparent 72%);
+  animation: pl-glow 2.2s ease-in-out infinite;
+}
+.pl-flame {
+  position: absolute;
+  z-index: -1;
+  left: 22%;
+  width: 56%;
+  top: -34%;
+  height: 84%;
+  pointer-events: none;
+  overflow: visible;
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pl-a)) scaleY(var(--pl-s));
+  animation: pl-lick 1.3s ease-in-out infinite;
+  animation-delay: var(--pl-d);
+  filter: drop-shadow(0 0 3px rgba(var(--pl-ember), 0.6));
+}
+@keyframes pl-lick {
+  0%,
+  100% {
+    transform: rotate(var(--pl-a)) scaleY(var(--pl-s)) scaleX(1);
+    opacity: 0.92;
+  }
+  35% {
+    transform: rotate(calc(var(--pl-a) + 4deg)) scaleY(calc(var(--pl-s) * 1.14)) scaleX(0.9);
+    opacity: 1;
+  }
+  70% {
+    transform: rotate(calc(var(--pl-a) - 3deg)) scaleY(calc(var(--pl-s) * 0.9)) scaleX(1.05);
+    opacity: 0.85;
+  }
+}
+@keyframes pl-glow {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+/* Gold wash behind the perfect team's half. It lives on a ::before layer so it can fade out
+   (pl-slip-fade, used on the tall matchup slip so it never ends in a hard edge) and so a card's own
+   background and content are untouched. */
+.pl-slip {
+  position: relative;
+  isolation: isolate;
+  --pl-wash-l: linear-gradient(90deg, rgba(var(--pl-gold), 0), rgba(var(--pl-gold), 0));
+  --pl-wash-r: linear-gradient(270deg, rgba(var(--pl-gold), 0), rgba(var(--pl-gold), 0));
+}
+.pl-slip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--pl-wash-l), var(--pl-wash-r);
+  background-repeat: no-repeat;
+  background-position: left center, right center;
+  background-size: 62% 100%, 62% 100%;
+  animation: pl-wash 4.2s ease-in-out infinite;
+}
+.pl-slip-l {
+  --pl-wash-l: linear-gradient(90deg, rgba(var(--pl-gold), var(--pl-wash-a)) 0%, rgba(var(--pl-gold), calc(var(--pl-wash-a) * 0.4)) 60%, rgba(var(--pl-gold), 0) 100%);
+}
+.pl-slip-r {
+  --pl-wash-r: linear-gradient(270deg, rgba(var(--pl-gold), var(--pl-wash-a)) 0%, rgba(var(--pl-gold), calc(var(--pl-wash-a) * 0.4)) 60%, rgba(var(--pl-gold), 0) 100%);
+}
+.pl-slip-fade::before {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+}
+@keyframes pl-wash {
+  0%,
+  100% {
+    background-size: 58% 100%, 58% 100%;
+  }
+  50% {
+    background-size: 68% 100%, 68% 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-aura-glow,
+  .pl-flame,
+  .pl-slip::before {
     animation: none;
   }
 }

@@ -69,7 +69,8 @@ function outcomeTone(status: string): OutcomeTone {
 
 const TONE_CLASS: Record<OutcomeTone, string> = {
   keep: 'bg-profit/15 text-profit',
-  void: 'bg-loss/15 text-loss',
+  // Same purple as the Voided pill everywhere else in the app.
+  void: 'bg-accent/20 text-accent',
   maybe: 'bg-warning/15 text-warning',
   neutral: 'bg-bg-card text-text-muted',
 };

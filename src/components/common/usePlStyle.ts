@@ -13,12 +13,12 @@ export function usePlColorScale(): PlColorScale {
  * `text-loss` class for a P/L amount, or undefined when the classic look applies.
  *
  *   const plStyle = usePlStyle();
- *   <span className={pl >= 0 ? 'text-profit' : 'text-loss'} style={plStyle(pl, atRisk)}>...
+ *   <span className={pl >= 0 ? 'text-profit' : 'text-loss'} style={plStyle(pl, reference)}>...
  *
- * `atRisk` is what the amount is measured against (the week's credits for a weekly total,
- * credits times weeks played for a season total). Without it nothing is scaled.
+ * `reference` is the loss that counts as full red (see engine/plColor weekScaleRef and
+ * seasonScaleRef). Without it nothing is scaled.
  */
-export function usePlStyle(): (amount: number, atRisk?: number) => CSSProperties | undefined {
+export function usePlStyle(): (amount: number, reference?: number) => CSSProperties | undefined {
   const scale = usePlColorScale();
-  return useCallback((amount: number, atRisk?: number) => plStyleFor(amount, scale, atRisk ?? 0), [scale]);
+  return useCallback((amount: number, reference?: number) => plStyleFor(amount, scale, reference ?? 0), [scale]);
 }

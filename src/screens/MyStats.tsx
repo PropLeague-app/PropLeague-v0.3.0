@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { TrendingUp } from 'lucide-react';
+import { Flame, TrendingUp } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { computeIndividualStats, collectTeamBets, collectLeagueBets, computeTeamStreak, LEAGUE_VIEW_ID, type RecordPL } from '../engine/stats';
 import { resolveGame, gameHasStarted } from '../services/oddsService';
@@ -11,7 +11,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { MemberSelector } from '../components/common/MemberSelector';
 import { usePlStyle } from '../components/common/usePlStyle';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
-import { leagueSeasonAtRisk, seasonAtRisk, teamWeeksPlayed } from '../engine/plColor';
+import { leagueSeasonAtRisk, REFERENCE_FLOOR_SHARE, seasonScaleRef } from '../engine/plColor';
 import { perfectWeeksForTeam } from '../engine/perfectWeek';
 import { weekLabel } from '../types';
 
@@ -124,7 +124,7 @@ export function MyStats() {
           <Card className="py-3 px-1.5">
             <p
               className={`text-sm font-bold whitespace-nowrap ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}
-              style={plStyle(stats.totalPL, isLeagueView ? leagueSeasonAtRisk(league) : seasonAtRisk(teamWeeksPlayed(league, viewedTeam!.id), league.settings))}
+              style={plStyle(stats.totalPL, isLeagueView ? REFERENCE_FLOOR_SHARE * leagueSeasonAtRisk(league) : seasonScaleRef(league))}
             >
               {formatCents(stats.totalPL)}
             </p>
@@ -178,14 +178,17 @@ export function MyStats() {
         {!isLeagueView && viewedTeam && (() => {
           const perfect = perfectWeeksForTeam(league, viewedTeam.id);
           return (
-            <Card className="flex items-center justify-between gap-3">
+            <Card className={`flex items-center justify-between gap-3 ${perfect.length > 0 ? 'pl-slip pl-slip-r' : ''}`}>
               <div className="min-w-0">
                 <p className="text-xs text-text-muted">Perfect weeks</p>
                 <p className="text-[10px] text-text-muted">
                   {perfect.length > 0 ? perfect.map((w) => weekLabel(w)).join(', ') : 'A full roster with no lost bets'}
                 </p>
               </div>
-              <p className={`text-lg font-bold shrink-0 ${perfect.length > 0 ? 'pl-fire-hero' : 'text-text-muted'}`}>{perfect.length}</p>
+              <p className={`text-lg font-bold shrink-0 flex items-center gap-1.5 ${perfect.length > 0 ? '' : 'text-text-muted'}`}>
+                {perfect.length > 0 && <Flame size={18} fill="currentColor" style={{ color: 'var(--pl-flame-mid)', filter: 'drop-shadow(0 0 4px rgba(var(--pl-ember), 0.7))' }} />}
+                <span className={perfect.length > 0 ? 'pl-fire-hero' : ''}>{perfect.length}</span>
+              </p>
             </Card>
           );
         })()}

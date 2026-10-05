@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 export function Card({
   children,
   className = '',
   onClick,
   dense,
+  style,
 }: {
   children: ReactNode;
   className?: string;
@@ -15,10 +16,12 @@ export function Card({
    * card, not a separately hand-rolled one). Every existing call site omits this
    * and keeps the original p-3. */
   dense?: boolean;
+  style?: CSSProperties;
 }) {
   return (
     <div
       onClick={onClick}
+      style={style}
       className={`bg-bg-card border border-border rounded-xl ${dense ? 'p-2' : 'p-3'} ${onClick ? 'cursor-pointer active:opacity-80' : ''} ${className}`}
     >
       {children}

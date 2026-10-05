@@ -5,14 +5,14 @@ import { usePlStyle } from './usePlStyle';
 export function AnimatedNumber({
   value,
   className = '',
-  atRisk,
+  scaleRef,
   perfect = false,
 }: {
   value: number;
   className?: string;
-  /** What this amount is measured against for the optional P/L color scale (weekly credits for a
-   * week's score). Omit and a loss keeps the classic red. */
-  atRisk?: number;
+  /** The loss that counts as full red for the optional P/L color scale (see engine/plColor
+   * weekScaleRef). Omit and a loss keeps the classic red. */
+  scaleRef?: number;
   /** A perfect week: the number is drawn as fire instead of plain green. */
   perfect?: boolean;
 }) {
@@ -54,7 +54,7 @@ export function AnimatedNumber({
   const flashClass = flash === 'profit' ? 'flash-profit' : flash === 'loss' ? 'flash-loss' : '';
 
   return (
-    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect ? undefined : plStyle(displayed, atRisk)}>
+    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect ? undefined : plStyle(displayed, scaleRef)}>
       {formatCents(displayed)}
     </span>
   );

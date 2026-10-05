@@ -4,7 +4,7 @@ import { formatCents } from '../engine/oddsMath';
 import { computeTeamStreak } from '../engine/stats';
 import { sortStandings } from '../engine/standings';
 import { activeMultipliers } from '../engine/prizePool';
-import { seasonAtRisk } from '../engine/plColor';
+import { seasonScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
 import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader';
 import { TeamLogo } from '../components/common/TeamLogo';
@@ -79,6 +79,7 @@ function StandingsRows({
 }) {
   const multipliers = showMultiplier ? activeMultipliers(league) : null;
   const plStyle = usePlStyle();
+  const plRef = seasonScaleRef(league);
   return (
     <div className="space-y-1.5">
       {rows.map((s, i) => {
@@ -107,7 +108,7 @@ function StandingsRows({
                 </span>
                 <span
                   className={`text-right font-semibold tabular-nums ${s.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}
-                  style={plStyle(s.totalPL, seasonAtRisk(s.wins + s.losses + s.ties, league.settings))}
+                  style={plStyle(s.totalPL, plRef)}
                 >
                   {formatCents(s.totalPL)}
                 </span>

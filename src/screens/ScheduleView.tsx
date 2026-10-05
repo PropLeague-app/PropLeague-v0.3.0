@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Flame } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel, weekOrder, type WeekId } from '../types';
 import { formatCents } from '../engine/oddsMath';
 import { Card } from '../components/common/Card';
 import { BackHeader } from '../components/layout/BackHeader';
 import { TeamLogo } from '../components/common/TeamLogo';
+import { FireAura } from '../components/common/FireAura';
 import { MemberSelector } from '../components/common/MemberSelector';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { isTeamWeekPerfect } from '../engine/perfectWeek';
@@ -94,26 +96,37 @@ export function ScheduleView() {
           const isFinal = matchup.winnerId != null || matchup.isTie;
           const won = isFinal && myScore != null && oppScore != null && myScore > oppScore;
           const tied = isFinal && myScore === oppScore;
+          const myPerfect = isFinal && isTeamWeekPerfect(league, viewedTeam.id, toWeekId(week));
+          const oppPerfect = isFinal && !!opponent && isTeamWeekPerfect(league, opponent.id, toWeekId(week));
 
           return (
-            <Card key={matchup.id} onClick={() => navigate(`/matchup/${matchup.id}`)} className="flex items-center justify-between">
+            <Card
+              key={matchup.id}
+              onClick={() => navigate(`/matchup/${matchup.id}`)}
+              className={`flex items-center justify-between gap-3 ${myPerfect || oppPerfect ? 'pl-slip' : ''} ${oppPerfect ? 'pl-slip-l' : ''} ${myPerfect ? 'pl-slip-r' : ''}`}
+            >
               <div className="flex items-center gap-2 min-w-0">
-                {opponent && <TeamLogo team={opponent} size="sm" />}
+                {opponent && (
+                  <FireAura active={oppPerfect}>
+                    <TeamLogo team={opponent} size="sm" />
+                  </FireAura>
+                )}
                 <div className="min-w-0">
                   <p className="text-xs text-text-muted">{weekLabel(toWeekId(week))}</p>
-                  <p className="text-sm font-medium truncate">vs {opponent?.teamName ?? 'TBD'}</p>
+                  <p className={`relative text-sm font-medium truncate ${oppPerfect ? 'pl-fire-name' : ''}`}>vs {opponent?.teamName ?? 'TBD'}</p>
                 </div>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 {isFinal ? (
                   <>
-                    <p className={`text-sm font-bold ${won ? 'text-profit' : tied ? 'text-text-muted' : 'text-loss'}`}>
+                    <p className={`text-sm font-bold flex items-center justify-end gap-1 ${won ? 'text-profit' : tied ? 'text-text-muted' : 'text-loss'}`}>
+                      {myPerfect && <Flame size={11} fill="currentColor" style={{ color: 'var(--pl-flame-mid)' }} aria-label="Perfect week" />}
                       {won ? 'W' : tied ? 'T' : 'L'}
                     </p>
                     <p className="text-[11px] text-text-muted">
-                      <span className={isTeamWeekPerfect(league, viewedTeam.id, toWeekId(week)) ? 'pl-fire font-semibold' : ''}>{formatCents(myScore!)}</span>
+                      <span className={myPerfect ? 'pl-gold-text font-semibold' : ''}>{formatCents(myScore!)}</span>
                       {' - '}
-                      <span className={opponent && isTeamWeekPerfect(league, opponent.id, toWeekId(week)) ? 'pl-fire font-semibold' : ''}>{formatCents(oppScore!)}</span>
+                      <span className={oppPerfect ? 'pl-gold-text font-semibold' : ''}>{formatCents(oppScore!)}</span>
                     </p>
                   </>
                 ) : (

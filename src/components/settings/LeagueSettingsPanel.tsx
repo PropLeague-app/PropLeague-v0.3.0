@@ -138,18 +138,21 @@ export function LeagueSettingsPanel({
   return (
     <section className="space-y-2">
       <SectionHeader>League Settings</SectionHeader>
-      <div className="flex items-start gap-2 bg-bg-card border border-border rounded-xl px-3 py-2.5">
-        <Lock size={14} className={`shrink-0 mt-0.5 ${readOnly ? 'text-accent' : 'text-text-muted'}`} />
-        <p className="text-xs text-text-muted">
+      {/* One line, always. Orange for the commissioner, gray for everyone else. */}
+      <div
+        className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 ${
+          readOnly ? 'bg-bg-card border-border' : 'bg-warning/10 border-warning/40'
+        }`}
+      >
+        <Lock size={14} className={`shrink-0 ${readOnly ? 'text-text-muted' : 'text-warning'}`} />
+        <p className="text-xs text-text-muted truncate min-w-0">
           {readOnly ? (
             <>
-              <span className="font-semibold text-text">Commissioner only.</span> Only{' '}
-              {commissionerTeam ? commissionerTeam.teamName : 'the commissioner'} can change these.
+              <span className="font-semibold text-text">Commissioner only.</span>{' '}
+              {commissionerTeam ? `${commissionerTeam.teamName} edits these.` : 'View only.'}
             </>
           ) : (
-            <>
-              <span className="font-semibold text-text">You are the commissioner.</span> Only you can edit these.
-            </>
+            <span className="font-semibold text-text">You are the commissioner.</span>
           )}
         </p>
       </div>

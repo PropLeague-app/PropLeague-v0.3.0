@@ -5,13 +5,14 @@ import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { isWagerVisibleToViewer } from '../../engine/stats';
 import { isPerfectWeek } from '../../engine/perfectWeek';
-import { weeklyAtRisk } from '../../engine/plColor';
+import { weekScaleRef } from '../../engine/plColor';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
 import { resultForGame } from '../../data/seed';
 import { useAppStore } from '../../store/useAppStore';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
+import { FireAura } from '../common/FireAura';
 
 /** Per-team pick progress for the small line under the win-probability bar (see
  * chat): how many of this week's picks are still awaiting a result ("active"),
@@ -151,19 +152,23 @@ export function MatchupCard({
   // -- rather than comparing scoreA/scoreB directly, so the new triangle can
   // never contradict the text sitting right next to it. null/undefined (tie,
   // or prob exactly 0.5) means no one gets the triangle.
+  const scaleRef = weekScaleRef(league, matchup.week, [scoreA, scoreB]);
+  const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
+  const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
   const leaderId = isFinal ? matchup.winnerId : prob === 0.5 ? null : prob > 0.5 ? teamA.id : teamB.id;
 
   return (
     <Card
       onClick={() => navigate(`/matchup/${matchup.id}`)}
       dense={compact}
-      className={compact ? 'space-y-1.5' : 'space-y-3'}
+      className={`${compact ? 'space-y-1.5' : 'space-y-3'} ${perfectA || perfectB ? 'pl-slip' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''}`}
     >
       <div className="flex items-center gap-1.5">
         <TeamBlock
           team={teamA}
           highlighted={teamA.id === highlightTeamId}
           trailing={leaderId != null && leaderId !== teamA.id}
+          perfect={perfectA}
           compact={compact}
         />
         {/* Single shared indicator on the VS itself, not per-team (see chat, Sept
@@ -209,13 +214,14 @@ export function MatchupCard({
           highlighted={teamB.id === highlightTeamId}
           trailing={leaderId != null && leaderId !== teamB.id}
           reverse
+          perfect={perfectB}
           compact={compact}
         />
       </div>
 
       <div className={`flex items-center justify-between font-bold ${compact ? 'text-sm' : 'text-xl'}`}>
-        <AnimatedNumber value={scoreA} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterA, league.settings, isFinal)} />
-        <AnimatedNumber value={scoreB} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterB, league.settings, isFinal)} />
+        <AnimatedNumber value={scoreA} scaleRef={scaleRef} perfect={perfectA} />
+        <AnimatedNumber value={scoreB} scaleRef={scaleRef} perfect={perfectB} />
       </div>
 
       <div>
@@ -286,12 +292,15 @@ function TeamBlock({
   highlighted,
   trailing,
   reverse,
+  perfect = false,
   compact,
 }: {
   team: LeagueTeam;
   highlighted?: boolean;
   trailing?: boolean;
   reverse?: boolean;
+  /** A perfect week: flames behind the logo and the name drawn as fire. */
+  perfect?: boolean;
   compact?: boolean;
 }) {
   // flex-1 + min-w-0 (see chat, Sept 2026 -- truncation fix): each side now claims an
@@ -307,9 +316,11 @@ function TeamBlock({
   // both apply, since "this is you" is the stronger signal to preserve.
   return (
     <div className={`flex items-center gap-1.5 min-w-0 flex-1 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
-      <TeamLogo team={team} size={compact ? 'xs' : 'md'} />
+      <FireAura active={perfect}>
+        <TeamLogo team={team} size={compact ? 'xs' : 'md'} />
+      </FireAura>
       <p
-        className={`text-xs font-medium truncate min-w-0 ${highlighted ? 'text-primary' : trailing ? 'text-text-muted' : ''}`}
+        className={`relative text-xs font-medium truncate min-w-0 ${perfect ? 'pl-fire-name' : highlighted ? 'text-primary' : trailing ? 'text-text-muted' : ''}`}
       >
         {team.teamName}
       </p>

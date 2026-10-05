@@ -9,7 +9,7 @@ import { TeamLogo } from '../components/common/TeamLogo';
 import { PositionBadge } from '../components/common/PositionBadge';
 import { MARKET_LABELS, MARKET_SHORT_LABELS } from '../data/propsGenerator';
 import type { LeagueTeam } from '../types';
-import { seasonAtRisk, teamWeeksPlayed } from '../engine/plColor';
+import { seasonScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
 
 function TeamName({ team }: { team: LeagueTeam | undefined }) {
@@ -27,6 +27,7 @@ export function Leaderboards() {
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
   const plStyle = usePlStyle();
+  const plRef = league ? seasonScaleRef(league) : 0;
 
   const userTeam = league?.teams.find((t) => t.isUser);
 
@@ -77,7 +78,7 @@ export function Leaderboards() {
               </span>
               <span
                 className={`ml-auto shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}
-                style={plStyle(e.value, seasonAtRisk(teamWeeksPlayed(league, e.teamId), league.settings))}
+                style={plStyle(e.value, plRef)}
               >
                 {formatCents(e.value)}
               </span>
