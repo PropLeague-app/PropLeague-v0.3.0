@@ -3,6 +3,7 @@ import { UserX, ExternalLink, Search, Check } from 'lucide-react';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { CollapsibleSection } from './SettingsPrimitives';
 import { MARKET_SHORT_LABELS } from '../../data/propsGenerator';
+import { CompactInput } from '../common/CompactInput';
 import { useAppStore } from '../../store/useAppStore';
 import { nflTeamFromPlayerId, teamAccent } from '../../engine/teamColors';
 import type { MarketKey, WeekId } from '../../types';
@@ -77,7 +78,7 @@ const TONE_CLASS: Record<OutcomeTone, string> = {
 
 function OutcomePill({ status, flagged = false }: { status: string; flagged?: boolean }) {
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${TONE_CLASS[outcomeTone(status)]}`}>
+    <span className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-semibold whitespace-nowrap ${TONE_CLASS[outcomeTone(status)]}`}>
       {outcomeText(status, flagged)}
     </span>
   );
@@ -93,7 +94,7 @@ function Avatar({ name, playerId }: { name: string; playerId?: string | null }) 
   const color = teamAccent(nflTeamFromPlayerId(playerId), mode);
   return (
     <span
-      className={`w-9 h-9 shrink-0 rounded-full text-xs font-bold flex items-center justify-center ${color ? '' : 'bg-primary/15 text-primary'}`}
+      className={`w-7 h-7 shrink-0 rounded-full text-[10px] font-bold flex items-center justify-center ${color ? '' : 'bg-primary/15 text-primary'}`}
       style={color ? { color, backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`, boxShadow: `inset 0 0 0 1.5px ${color}` } : undefined}
     >
       {initialsOf(name)}
@@ -105,10 +106,10 @@ function Avatar({ name, playerId }: { name: string; playerId?: string | null }) 
  * it on the right. */
 function PickRow({ row, flagged = false }: { row: VoidCandidateRow; flagged?: boolean }) {
   return (
-    <li className="flex items-center justify-between gap-2 py-1.5">
+    <li className="flex items-center justify-between gap-2 py-1">
       <div className="min-w-0">
-        <p className="text-xs font-medium truncate">{row.team_name ?? 'Team'}</p>
-        <p className="text-[11px] text-text-muted truncate">
+        <p className="text-[11px] font-medium truncate">{row.team_name ?? 'Team'}</p>
+        <p className="text-[10px] text-text-muted truncate">
           {pickText(row)} · ${row.stake}
         </p>
       </div>
@@ -119,8 +120,8 @@ function PickRow({ row, flagged = false }: { row: VoidCandidateRow; flagged?: bo
 
 function StepLabel({ n, children }: { n: number; children: string }) {
   return (
-    <p className="flex items-center gap-2 text-xs font-semibold text-text">
-      <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[11px] flex items-center justify-center">{n}</span>
+    <p className="flex items-center gap-2 text-[11px] font-semibold text-text">
+      <span className="w-4 h-4 rounded-full bg-primary/15 text-primary text-[10px] flex items-center justify-center">{n}</span>
       {children}
     </p>
   );
@@ -193,38 +194,33 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
         icon={<UserX size={16} />}
         summary={flagged.length > 0 ? `${flagged.length} player${flagged.length > 1 ? 's' : ''} flagged this week` : 'Void picks when a player leaves a game early'}
       >
-        <div className="rounded-lg bg-bg-raised p-3 space-y-2">
-          <p className="text-xs text-text">
-            When a player leaves a game early, sportsbooks void his Over and Anytime TD picks that had not already hit. Flag him here and your
-            league follows the same rule.
+        <div className="rounded-lg bg-bg-raised px-3 py-2.5 space-y-1.5">
+          <p className="text-[11px] text-text">
+            Flag a player who left a game early and his Over and Anytime TD picks that had not hit are voided, like a sportsbook.
           </p>
-          <ul className="space-y-1">
-            {[
-              'Only Overs and Anytime TD picks are voided',
-              'Unders and picks that already hit are never touched',
-              'Any snap in the 2nd half means do not flag',
-            ].map((rule) => (
-              <li key={rule} className="flex items-start gap-1.5 text-[11px] text-text-muted">
-                <Check size={12} className="shrink-0 mt-0.5 text-primary" />
+          <ul className="space-y-0.5">
+            {['Unders and picks that already hit are never touched', 'Played a snap in the 2nd half? Do not flag'].map((rule) => (
+              <li key={rule} className="flex items-start gap-1.5 text-[10px] text-text-muted">
+                <Check size={11} className="shrink-0 mt-px text-primary" />
                 {rule}
               </li>
             ))}
           </ul>
-          <p className="text-[11px] text-text-muted">Changes apply within about 15 minutes and are announced in the league feed.</p>
+          <p className="text-[10px] text-text-muted">Applies within about 15 minutes and is posted to the feed.</p>
         </div>
-        {error && <p className="text-xs text-loss">{error}</p>}
+        {error && <p className="text-[11px] text-loss">{error}</p>}
 
         {flagged.length > 0 && (
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Flagged this week</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Flagged this week</p>
             {flagged.map((g) => (
-              <div key={g.playerName} className="rounded-xl bg-bg-raised border-l-4 border-loss p-3 space-y-1.5">
+              <div key={g.playerName} className="rounded-xl bg-bg-raised border-l-4 border-loss p-2.5 space-y-1">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Avatar name={g.playerName} playerId={g.picks[0]?.player_id} />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{g.playerName}</p>
-                      <p className="text-[11px] text-text-muted truncate">
+                      <p className="text-[13px] font-semibold truncate">{g.playerName}</p>
+                      <p className="text-[10px] text-text-muted truncate">
                         <span className="text-loss font-semibold">{voidReasonLabel(g.flagReason)}</span>
                         {g.flagNote ? ` · ${g.flagNote}` : ''}
                       </p>
@@ -234,7 +230,7 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
                     type="button"
                     onClick={() => void removeFlag(g)}
                     disabled={busyFlag === g.flagId}
-                    className="text-xs px-2.5 py-1 rounded-lg border border-border text-text-muted shrink-0 disabled:opacity-50"
+                    className="text-[11px] px-2 py-0.5 rounded-lg border border-border text-text-muted shrink-0 disabled:opacity-50"
                   >
                     {busyFlag === g.flagId ? 'Removing…' : 'Remove flag'}
                   </button>
@@ -250,27 +246,15 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
         )}
 
         <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Flag a player</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Flag a player</p>
           {!selectedGroup && (
             <>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search a player in your league"
-                  className="w-full bg-bg-raised border border-border rounded-lg pl-9 pr-3 py-2.5 text-sm"
-                />
-              </div>
+              <CompactInput tone="raised" value={query} onChange={setQuery} placeholder="Search a player in your league" icon={<Search size={16} />} />
               {query.trim() === '' && (
-                <p className="text-[11px] text-text-muted">
-                  Players with an Over or Anytime TD pick in your league, in a game that has started, will show up here.
-                </p>
+                <p className="text-[10px] text-text-muted">Players with an Over or Anytime TD pick in a started game show up here.</p>
               )}
               {query.trim() !== '' && matches.length === 0 && (
-                <p className="text-xs text-text-muted">
-                  No match. Only players with an Over or Anytime TD pick in your league, in a game that has started, show up here.
-                </p>
+                <p className="text-[11px] text-text-muted">No match. Only started games with an Over or Anytime TD pick count.</p>
               )}
               {matches.length > 0 && (
                 <div className="rounded-xl bg-bg-raised divide-y divide-border overflow-hidden">
@@ -281,12 +265,12 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
                         key={g.playerName}
                         type="button"
                         onClick={() => setSelected(g.playerName)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-bg-card"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left active:bg-bg-card"
                       >
                         <Avatar name={g.playerName} playerId={g.picks[0]?.player_id} />
                         <span className="flex-1 min-w-0">
-                          <span className="block text-sm font-medium truncate">{g.playerName}</span>
-                          <span className="block text-[11px] text-text-muted">
+                          <span className="block text-[13px] font-medium truncate">{g.playerName}</span>
+                          <span className="block text-[10px] text-text-muted">
                             {g.picks.length} pick{g.picks.length > 1 ? 's' : ''} · {teams} team{teams > 1 ? 's' : ''}
                           </span>
                         </span>
@@ -299,28 +283,28 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
           )}
 
           {selectedGroup && (
-            <div className="rounded-xl bg-bg-raised border border-border p-3 space-y-4">
+            <div className="rounded-xl bg-bg-raised border border-border p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Avatar name={selectedGroup.playerName} playerId={selectedGroup.picks[0]?.player_id} />
-                  <p className="text-base font-bold truncate">{selectedGroup.playerName}</p>
+                  <p className="text-sm font-bold truncate">{selectedGroup.playerName}</p>
                 </div>
-                <button type="button" onClick={resetSelection} className="text-xs text-primary shrink-0">
+                <button type="button" onClick={resetSelection} className="text-[11px] text-primary shrink-0">
                   Change
                 </button>
               </div>
 
               <div className="space-y-2">
                 <StepLabel n={1}>Check the facts</StepLabel>
-                <div className="rounded-lg bg-bg-card px-3 py-2 space-y-1.5">
-                  <p className="text-xs text-text-muted">
-                    {statSummary(selectedStat) ?? 'No stat line yet. If he never played, the app voids those picks automatically.'}
+                <div className="rounded-lg bg-bg-card px-3 py-2 space-y-1">
+                  <p className="text-[11px] text-text-muted">
+                    {statSummary(selectedStat) ?? 'No stat line yet. If he never played, those picks void automatically.'}
                   </p>
                   <a
                     href={`https://www.google.com/search?q=${encodeURIComponent(`${selectedGroup.playerName} injury left game`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary"
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-primary"
                   >
                     Search news <ExternalLink size={11} />
                   </a>
@@ -344,18 +328,18 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
                       key={r}
                       type="button"
                       onClick={() => setReason(r)}
-                      className={`py-2 rounded-lg text-xs border ${chipClass(reason === r)}`}
+                      className={`py-1.5 rounded-lg text-[11px] border ${chipClass(reason === r)}`}
                     >
                       {VOID_REASON_LABELS[r]}
                     </button>
                   ))}
                 </div>
                 {reason && (
-                  <input
+                  <CompactInput
+                    tone="card"
                     value={note}
-                    onChange={(e) => setNote(e.target.value.slice(0, 200))}
-                    placeholder={reason === 'other' ? 'Required: what happened?' : 'Optional note (shown in the league feed)'}
-                    className="w-full bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                    onChange={(v) => setNote(v.slice(0, 200))}
+                    placeholder={reason === 'other' ? 'Required: what happened?' : 'Optional note for the feed'}
                   />
                 )}
               </div>
@@ -364,7 +348,7 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
                 type="button"
                 disabled={!canSubmit}
                 onClick={() => setConfirmOpen(true)}
-                className="w-full py-2.5 rounded-lg bg-loss text-white text-sm font-semibold disabled:opacity-40"
+                className="w-full py-2 rounded-lg bg-loss text-white text-[13px] font-semibold disabled:opacity-40"
               >
                 Void his picks
               </button>
@@ -376,7 +360,7 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
       {confirmOpen && selectedGroup && reason && (
         <ConfirmSheet
           title={`Void ${selectedGroup.playerName}'s picks?`}
-          description={`${VOID_REASON_LABELS[reason]}. His Over and Anytime TD picks that had not hit will be voided at $0 for everyone in your league, and this is announced in the feed. Unders and picks that already hit stay as they are. You can undo it with Remove flag.`}
+          description={`${VOID_REASON_LABELS[reason]}. His Over and Anytime TD picks that had not hit are voided at $0 for everyone and posted to the feed. Remove flag undoes it.`}
           confirmLabel="Void picks"
           confirmingLabel="Flagging…"
           onConfirm={async () => {

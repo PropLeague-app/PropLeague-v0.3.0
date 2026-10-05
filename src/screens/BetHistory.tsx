@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Ticket } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Search, Ticket, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { isWagerVisibleToViewer, LEAGUE_VIEW_ID } from '../engine/stats';
@@ -13,8 +13,22 @@ import { TeamLogo } from '../components/common/TeamLogo';
 import { EmptyState } from '../components/common/EmptyState';
 import { BackHeader } from '../components/layout/BackHeader';
 import { MemberSelector } from '../components/common/MemberSelector';
+import { PillSelect } from '../components/common/PillSelect';
+import { CompactInput } from '../components/common/CompactInput';
 import { MARKET_LABELS, wagerLineDescription } from '../data/propsGenerator';
-import { weekLabel, weekOrder, type SlotPosition, type WagerStatus, type WeekId } from '../types';
+import { weekLabel, weekOrder, type MarketKey, type SlotPosition, type WagerStatus, type WeekId } from '../types';
+import {
+  BET_SORT_OPTIONS,
+  ODDS_BUCKET_LABELS,
+  oddsBucket,
+  sortBets,
+  stakeSizeLabel,
+  type BetPreset,
+  type BetSort,
+  type OddsBucket,
+  type StakeSize,
+} from '../engine/betFilters';
+import { stakeBucket } from '../engine/stats';
 
 type StatusFilter = 'all' | 'open' | 'settled';
 type ResultFilter = 'all' | WagerStatus;
@@ -40,6 +54,9 @@ const POSITION_OPTIONS: { value: PositionFilter; label: string }[] = [
 
 export function BetHistory() {
   const navigate = useNavigate();
+  // A tapped stat row on My Stats lands here with a preset (see engine/betFilters BetPreset): the
+  // bets behind that number, already filtered, with the filters showing so they can be changed.
+  const preset = (useLocation().state as { preset?: BetPreset } | null)?.preset;
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
@@ -52,7 +69,7 @@ export function BetHistory() {
   // signed-in user's own team. LEAGUE_VIEW_ID (Sept 2026 chat: "league aggregate
   // stats") is a third option alongside "my own team" and "another single team" --
   // it folds every team's bets into one list instead of picking a viewedTeam at all.
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(preset?.team ?? null);
   const isLeagueView = selectedTeamId === LEAGUE_VIEW_ID;
   const viewedTeam = isLeagueView ? undefined : (league?.teams.find((t) => t.id === selectedTeamId) ?? userTeam);
   const isOwnTeam = !!viewedTeam && !!userTeam && viewedTeam.id === userTeam.id;
@@ -74,11 +91,16 @@ export function BetHistory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [league, userTeam, viewedTeam?.id, isLeagueView]);
 
-  const [weekFilter, setWeekFilter] = useState<'all' | string>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [resultFilter, setResultFilter] = useState<ResultFilter>('all');
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>('all');
-  const [search, setSearch] = useState('');
+  const [weekFilter, setWeekFilter] = useState<'all' | string>(preset?.week ?? 'all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(preset?.settledOnly ? 'settled' : 'all');
+  const [resultFilter, setResultFilter] = useState<ResultFilter>(preset?.result ?? 'all');
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>(preset?.position ?? 'all');
+  const [marketFilter, setMarketFilter] = useState<'all' | MarketKey>(preset?.market ?? 'all');
+  const [oddsFilter, setOddsFilter] = useState<OddsBucket | null>(preset?.oddsBucket ?? null);
+  const [sideFilter, setSideFilter] = useState<'over' | 'under' | null>(preset?.side ?? null);
+  const [stakeFilter, setStakeFilter] = useState<StakeSize | null>(preset?.stake ?? null);
+  const [sort, setSort] = useState<BetSort>('newest');
+  const [search, setSearch] = useState(preset?.player ?? '');
 
   const allBets = useMemo(() => {
     if (!league || !userTeam) return [];
@@ -97,9 +119,15 @@ export function BetHistory() {
           wagerStatus: slot.wager!.status,
           gameStarted: gameHasStarted(resolveGame(slot.wager!.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
         }),
-      )
-      .sort((a, b) => (b.slot.wager!.placedAt > a.slot.wager!.placedAt ? 1 : -1));
+      );
   }, [league, userTeam, viewedTeam?.id, isLeagueView, realGamesById]);
+
+  // Markets this person has actually bet on, for the market filter.
+  const marketOptions = useMemo(() => {
+    const keys = new Set<MarketKey>();
+    for (const b of allBets) keys.add(b.slot.wager!.marketKey);
+    return [...keys].sort((a, b) => MARKET_LABELS[a].localeCompare(MARKET_LABELS[b]));
+  }, [allBets]);
 
   const weekOptions = useMemo(() => {
     const weeks = new Map<string, WeekId>();
@@ -119,21 +147,40 @@ export function BetHistory() {
   }, [weekOptions]);
 
   const anyFilterActive =
-    weekFilter !== 'all' || statusFilter !== 'all' || resultFilter !== 'all' || positionFilter !== 'all' || search !== '';
+    weekFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    resultFilter !== 'all' ||
+    positionFilter !== 'all' ||
+    marketFilter !== 'all' ||
+    oddsFilter != null ||
+    sideFilter != null ||
+    stakeFilter != null ||
+    search !== '';
 
   const bets = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return allBets.filter(({ week, slot }) => {
+    const filtered = allBets.filter(({ week, slot }) => {
       const wager = slot.wager!;
       if (weekFilter !== 'all' && String(week) !== weekFilter) return false;
       if (statusFilter === 'open' && wager.status !== 'pending') return false;
       if (statusFilter === 'settled' && wager.status === 'pending') return false;
       if (resultFilter !== 'all' && wager.status !== resultFilter) return false;
       if (positionFilter !== 'all' && slot.position !== positionFilter) return false;
+      if (marketFilter !== 'all' && wager.marketKey !== marketFilter) return false;
+      if (oddsFilter && oddsBucket(wager.oddsAtPlacement) !== oddsFilter) return false;
+      if (sideFilter && wager.side.toLowerCase() !== sideFilter) return false;
+      if (stakeFilter && stakeBucket(wager.stake) !== stakeFilter) return false;
       if (q && !(wager.playerName ?? wager.side).toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [allBets, weekFilter, statusFilter, resultFilter, positionFilter, search]);
+    return sortBets(filtered, sort, ({ week, slot }) => ({
+      placedAt: slot.wager!.placedAt,
+      stake: slot.wager!.stake,
+      odds: slot.wager!.oddsAtPlacement,
+      profit: slot.wager!.settledProfit,
+      week,
+    }));
+  }, [allBets, weekFilter, statusFilter, resultFilter, positionFilter, marketFilter, oddsFilter, sideFilter, stakeFilter, search, sort]);
 
   if (!league || !userTeam || (!isLeagueView && !viewedTeam)) return null;
 
@@ -150,6 +197,10 @@ export function BetHistory() {
     setStatusFilter('all');
     setResultFilter('all');
     setPositionFilter('all');
+    setMarketFilter('all');
+    setOddsFilter(null);
+    setSideFilter(null);
+    setStakeFilter(null);
     setSearch('');
   }
 
@@ -173,62 +224,56 @@ export function BetHistory() {
         </button>
 
         <div className="space-y-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search player or team"
-            className="w-full bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
-          />
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            <select
+          <CompactInput value={search} onChange={setSearch} placeholder="Search player or team" icon={<Search size={16} />} />
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <PillSelect
+              ariaLabel="Sort bets"
+              value={sort}
+              onChange={setSort}
+              options={BET_SORT_OPTIONS}
+              label={`Sort: ${BET_SORT_OPTIONS.find((o) => o.value === sort)?.label}`}
+              active
+            />
+            <PillSelect
+              ariaLabel="Filter by market"
+              value={marketFilter}
+              onChange={setMarketFilter}
+              active={marketFilter !== 'all'}
+              options={[{ value: 'all', label: 'All markets' }, ...marketOptions.map((m) => ({ value: m, label: MARKET_LABELS[m] }))]}
+            />
+            <PillSelect
+              ariaLabel="Filter by week"
               value={weekFilter}
-              onChange={(e) => setWeekFilter(e.target.value)}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
-            >
-              <option value="all">All weeks</option>
-              {weekOptions.map((w) => (
-                <option key={String(w)} value={String(w)}>
-                  {weekLabel(w)}
-                </option>
-              ))}
-            </select>
-            <select
+              onChange={setWeekFilter}
+              active={weekFilter !== 'all'}
+              options={[{ value: 'all', label: 'All weeks' }, ...weekOptions.map((w) => ({ value: String(w), label: weekLabel(w) }))]}
+            />
+            <PillSelect
+              ariaLabel="Filter by status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
-            >
-              <option value="all">Open & settled</option>
-              <option value="open">Open only</option>
-              <option value="settled">Settled only</option>
-            </select>
-            <select
-              value={resultFilter}
-              onChange={(e) => setResultFilter(e.target.value as ResultFilter)}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
-            >
-              {RESULT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={positionFilter}
-              onChange={(e) => setPositionFilter(e.target.value as PositionFilter)}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs shrink-0"
-            >
-              {POSITION_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setStatusFilter}
+              active={statusFilter !== 'all'}
+              options={[
+                { value: 'all', label: 'Open & settled' },
+                { value: 'open', label: 'Open only' },
+                { value: 'settled', label: 'Settled only' },
+              ]}
+            />
+            <PillSelect ariaLabel="Filter by result" value={resultFilter} onChange={setResultFilter} active={resultFilter !== 'all'} options={RESULT_OPTIONS} />
+            <PillSelect ariaLabel="Filter by slot" value={positionFilter} onChange={setPositionFilter} active={positionFilter !== 'all'} options={POSITION_OPTIONS} />
             {anyFilterActive && (
-              <button onClick={clearAll} className="text-xs text-primary font-semibold shrink-0 px-1">
+              <button onClick={clearAll} className="text-[11px] text-primary font-semibold shrink-0 px-1">
                 Clear all
               </button>
             )}
           </div>
+          {(oddsFilter || sideFilter || stakeFilter) && (
+            <div className="flex flex-wrap gap-1.5">
+              {oddsFilter && <FilterChip label={ODDS_BUCKET_LABELS[oddsFilter]} onClear={() => setOddsFilter(null)} />}
+              {sideFilter && <FilterChip label={sideFilter === 'over' ? 'Overs only' : 'Unders only'} onClear={() => setSideFilter(null)} />}
+              {stakeFilter && <FilterChip label={stakeSizeLabel(stakeFilter)} onClear={() => setStakeFilter(null)} />}
+            </div>
+          )}
         </div>
 
         {bets.length === 0 ? (
@@ -246,7 +291,7 @@ export function BetHistory() {
               // otherwise (see chat: "league aggregate stats").
               const betTeam = isLeagueView ? league.teams.find((t) => t.id === teamId) : undefined;
               return (
-                <div key={wager.id} className="bg-bg-card border border-border rounded-xl p-3 space-y-1.5">
+                <div key={wager.id} className="bg-bg-card border border-border rounded-xl p-2.5 space-y-1">
                   {betTeam && (
                     <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
                       <TeamLogo team={betTeam} size="xs" />
@@ -257,8 +302,8 @@ export function BetHistory() {
                     <div className="flex items-center gap-2 min-w-0">
                       <PositionBadge position={slot.position} />
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{wager.playerName ?? MARKET_LABELS[wager.marketKey]}</p>
-                        <p className="text-xs text-text-muted truncate">{wagerLineDescription(wager)}</p>
+                        <p className="text-[13px] font-semibold truncate">{wager.playerName ?? MARKET_LABELS[wager.marketKey]}</p>
+                        <p className="text-[11px] text-text-muted truncate">{wagerLineDescription(wager)}</p>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
@@ -278,11 +323,11 @@ export function BetHistory() {
                       />
                     </div>
                   </div>
-                  <div className="flex justify-between text-xs text-text-muted pt-1.5 border-t border-border">
+                  <div className="flex justify-between text-[11px] text-text-muted pt-1 border-t border-border">
                     <span>{weekLabel(week)}</span>
                     <span>{new Date(wager.placedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                   </div>
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between text-[11px]">
                     <span>
                       Stake ${wager.stake.toFixed(2)} @ <OddsDisplay odds={wager.oddsAtPlacement} />
                     </span>
@@ -306,5 +351,14 @@ function Stat({ label, value, valueClass = '' }: { label: string; value: string;
       <p className={`text-sm font-bold whitespace-nowrap ${valueClass}`}>{value}</p>
       <p className="text-[10px] text-text-muted">{label}</p>
     </div>
+  );
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button onClick={onClear} className="flex items-center gap-1 bg-primary/10 text-primary text-[11px] font-semibold rounded-full pl-2.5 pr-1.5 py-1">
+      {label}
+      <X size={12} />
+    </button>
   );
 }

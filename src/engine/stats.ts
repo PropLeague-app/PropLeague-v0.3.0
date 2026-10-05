@@ -1,5 +1,7 @@
 import type { DaySlot, League, MarketKey, NFLGame, SlotPosition, WagerStatus, WeekId, WeeklyRoster } from '../types';
 import { weekOrder } from '../types';
+import { americanToImpliedProbability } from './oddsMath';
+import { oddsBucket, type OddsBucket } from './betFilters';
 
 /** manual v0.3.0 §5: the same "hidden until kickoff" rule the matchup screen already
  * enforces for an opponent's current-week picks, generalized so it applies whenever
@@ -144,13 +146,23 @@ export interface IndividualStats {
   byStakeSize: { small: RecordPL; medium: RecordPL; large: RecordPL };
   byOverUnder: { over: RecordPL; under: RecordPL };
   byDaySlot: Partial<Record<DaySlot, RecordPL>>;
+  /** Per market (rushing yards, anytime TD, moneyline...). Settled won/lost/push only, like every breakdown here. */
+  byMarket: Partial<Record<MarketKey, RecordPL>>;
+  /** Per odds range, from heavy favorite to longshot. */
+  byOddsBucket: Record<OddsBucket, RecordPL>;
+  /** Average profit of a win and average loss of a loss (a positive number each). */
+  avgWin: number;
+  avgLoss: number;
+  /** How often the bets actually hit vs how often the odds said they would (wins and losses only). */
+  winRate: number;
+  impliedWinRate: number;
   longestWinStreak: number;
   longestLossStreak: number;
   biggestWin: number;
   biggestLoss: number;
 }
 
-function stakeBucket(stake: number): 'small' | 'medium' | 'large' {
+export function stakeBucket(stake: number): 'small' | 'medium' | 'large' {
   if (stake < 10) return 'small';
   if (stake <= 25) return 'medium';
   return 'large';
@@ -177,6 +189,12 @@ export function computeIndividualStats(bets: TeamBet[], gameLookup: (gameId: str
     byStakeSize: { small: emptyRecord(), medium: emptyRecord(), large: emptyRecord() },
     byOverUnder: { over: emptyRecord(), under: emptyRecord() },
     byDaySlot: {},
+    byMarket: {},
+    byOddsBucket: { heavyFav: emptyRecord(), favorite: emptyRecord(), pickem: emptyRecord(), underdog: emptyRecord(), longshot: emptyRecord() },
+    avgWin: 0,
+    avgLoss: 0,
+    winRate: 0,
+    impliedWinRate: 0,
     longestWinStreak: 0,
     longestLossStreak: 0,
     biggestWin: 0,
@@ -187,6 +205,9 @@ export function computeIndividualStats(bets: TeamBet[], gameLookup: (gameId: str
 
   let curWinStreak = 0;
   let curLossStreak = 0;
+  let winProfitSum = 0;
+  let lossSum = 0;
+  let impliedSum = 0;
 
   for (const bet of settled) {
     if (bet.status === 'won' || bet.status === 'lost' || bet.status === 'push') {
@@ -203,6 +224,12 @@ export function computeIndividualStats(bets: TeamBet[], gameLookup: (gameId: str
       const oddsRec = bet.oddsAtPlacement < 0 ? stats.byOddsRange.favorite : stats.byOddsRange.underdog;
       addToRecord(oddsRec, bet.status, bet.stake, profit);
 
+      const marketRec = stats.byMarket[bet.marketKey] ?? emptyRecord();
+      addToRecord(marketRec, bet.status, bet.stake, profit);
+      stats.byMarket[bet.marketKey] = marketRec;
+
+      addToRecord(stats.byOddsBucket[oddsBucket(bet.oddsAtPlacement)], bet.status, bet.stake, profit);
+
       const stakeRec = stats.byStakeSize[stakeBucket(bet.stake)];
       addToRecord(stakeRec, bet.status, bet.stake, profit);
 
@@ -217,6 +244,10 @@ export function computeIndividualStats(bets: TeamBet[], gameLookup: (gameId: str
         addToRecord(daySlotRec, bet.status, bet.stake, profit);
         stats.byDaySlot[game.daySlot] = daySlotRec;
       }
+
+      if (bet.status === 'won' || bet.status === 'lost') impliedSum += americanToImpliedProbability(bet.oddsAtPlacement);
+      if (bet.status === 'won') winProfitSum += profit;
+      if (bet.status === 'lost') lossSum += -profit;
 
       if (bet.status === 'won') {
         curWinStreak += 1;
@@ -234,6 +265,12 @@ export function computeIndividualStats(bets: TeamBet[], gameLookup: (gameId: str
       }
     }
   }
+
+  const decided = stats.wins + stats.losses;
+  stats.avgWin = stats.wins > 0 ? winProfitSum / stats.wins : 0;
+  stats.avgLoss = stats.losses > 0 ? lossSum / stats.losses : 0;
+  stats.winRate = decided > 0 ? stats.wins / decided : 0;
+  stats.impliedWinRate = decided > 0 ? impliedSum / decided : 0;
 
   return stats;
 }
