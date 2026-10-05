@@ -83,8 +83,9 @@ Deno.serve(async (req: Request) => {
     if (!commissionerProfileId || commissionerProfileId === callerId) return json({ ok: true, sent: 0 });
     if (!(await claimNotification(supabase, `void-req:${requestId}:new`))) return json({ ok: true, sent: 0 });
     const r = await sendPushToProfile(supabase, commissionerProfileId, {
-      title: `${leagueName}: void request`,
-      body: `A member asked to void ${player}'s picks for ${weekLabel}. Open Settings, then Void Requests.`,
+      title: 'Void request',
+      subtitle: leagueName,
+      body: `Void ${player}'s picks for ${weekLabel}? Review in Settings.`,
     });
     return json({ ok: true, sent: r.sent });
   }
@@ -95,10 +96,11 @@ Deno.serve(async (req: Request) => {
   if (!(await claimNotification(supabase, `void-req:${requestId}:resolved`))) return json({ ok: true, sent: 0 });
   const approved = reqRow.status === 'approved';
   const r = await sendPushToProfile(supabase, reqRow.requested_by as string, {
-    title: `${leagueName}: void request ${approved ? 'approved' : 'denied'}`,
+    title: `Void request ${approved ? 'approved' : 'denied'}`,
+    subtitle: leagueName,
     body: approved
-      ? `${player}'s Over and Anytime TD picks for ${weekLabel} that did not hit are being voided.`
-      : `Your request to void ${player}'s picks for ${weekLabel} was denied.`,
+      ? `${player}'s missed Over and Anytime TD picks (${weekLabel}) are being voided.`
+      : `Your void request for ${player} (${weekLabel}) was denied.`,
   });
   return json({ ok: true, sent: r.sent });
 });

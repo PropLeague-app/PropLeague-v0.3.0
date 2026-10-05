@@ -5,9 +5,11 @@
 // fallbacks are the dark theme values from src/index.css.
 export const SHARE_W = 1080;
 export const SHARE_H = 1350;
+/** Height of the frame's header (brand row plus the title panel with one row of chips). */
+export const SHARE_HEADER_H = 200;
 /** Height left for a card's own content once the frame's header and footer are in place (at the
  * minimum card height). Taller cards grow their body and keep the same header and footer. */
-export const SHARE_BODY_H = 950;
+export const SHARE_BODY_H = 920;
 /** Everything in a card that is not its body: padding, header, gaps and footer. */
 export const SHARE_CHROME_H = SHARE_H - SHARE_BODY_H;
 

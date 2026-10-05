@@ -82,6 +82,8 @@ async function getAuthJwt(): Promise<string> {
 export interface PushMessage {
   title: string;
   body: string;
+  /** Optional line between the title and body (the league name, so the title can be about the event). */
+  subtitle?: string;
   /** Arbitrary extra fields merged into the APNs payload alongside `aps`, for the client to route on tap (e.g. { screen: 'matchup', matchupId }). */
   data?: Record<string, unknown>;
 }
@@ -111,7 +113,7 @@ export async function sendApnsPush(deviceToken: string, message: PushMessage): P
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      aps: { alert: { title: message.title, body: message.body }, sound: 'default' },
+      aps: { alert: { title: message.title, subtitle: message.subtitle, body: message.body }, sound: 'default' },
       ...message.data,
     }),
   });

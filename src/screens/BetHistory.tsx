@@ -228,8 +228,8 @@ export function BetHistory() {
   };
   const filteredWeek = weekFilter !== 'all' ? weekOptions.find((w) => String(w) === weekFilter) : undefined;
   // Say what the slip is filtered to (market first, since that is what people ask about), so the
-  // image makes sense on its own. With no filters it reads "All weeks". The pick count leads when
-  // the filter text is long, because the card clips a long subtitle at the end.
+  // image makes sense on its own. The share frame turns each " · " piece into a chip. With no
+  // filters it starts with "All weeks".
   const filterParts: string[] = [];
   if (marketFilter !== 'all') filterParts.push(MARKET_LABELS[marketFilter]);
   if (positionFilter !== 'all') filterParts.push(positionFilter === 'ML' ? 'Moneyline slot' : `${positionFilter} slot`);
@@ -241,8 +241,7 @@ export function BetHistory() {
   if (stakeFilter) filterParts.push(stakeSizeLabel(stakeFilter));
   if (search.trim()) filterParts.push(`"${search.trim()}"`);
   const pickCount = `${bets.length} pick${bets.length === 1 ? '' : 's'}`;
-  const filterText = filterParts.length > 0 ? filterParts.join(' · ') : 'All weeks';
-  const slipSubtitle = filterText.length > 40 ? `${pickCount} · ${filterText}` : `${filterText} · ${pickCount}`;
+  const slipSubtitle = [...(filterParts.length > 0 ? filterParts : ['All weeks']), pickCount].join(' · ');
 
   function clearAll() {
     setWeekFilter('all');

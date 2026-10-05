@@ -20,9 +20,10 @@
 // than the league's minimum. Correlation / duplicate rules are not re-checked
 // here, they are enforced when the picks are placed.
 //
-// Body: "ABBR: 5/8 picks in · 2-1 so far (+$12.50) / -$10 vs BB", then the
-// slate countdown, then a min-games risk line only when it applies. Only
-// graded results are used, so hidePicks leagues leak nothing.
+// Text: title "Monday Night kicks off in 75 min", subtitle = league name, body
+// "TU1: 5/8 picks in. $25 unspent. -$10 vs BB." plus a min-games risk line only
+// when it applies. Only graded results feed the matchup number, so hidePicks
+// leagues leak nothing.
 //
 // Preview: call with ?dry=1 (with the normal Authorization header). It returns
 // the would-be messages for each league's NEXT slate, ignoring the time window,
@@ -210,37 +211,31 @@ Deno.serve(async (req) => {
         if (!shouldSend) continue;
 
         // ---- message
-        const graded = wagers.filter((w) => w.status === 'won' || w.status === 'lost' || w.status === 'push');
-        const won = graded.filter((w) => w.status === 'won').length;
-        const lost = graded.filter((w) => w.status === 'lost').length;
-        const pushed = graded.length - won - lost;
-        const pl = graded.reduce((s, w) => s + (w.settled_profit ?? 0), 0);
-
-        let line1 = `${team.abbrev ?? team.team_name ?? 'You'}: ${picksIn}/${totalSlots} picks in`;
-        if (graded.length > 0) line1 += ` · ${won}-${lost}${pushed > 0 ? `-${pushed}` : ''} so far (${fmtMoney(pl)})`;
+        // Short on purpose: a lock screen shows about four lines. The title carries the event
+        // ("Monday Night kicks off in 75 min"), the subtitle the league, and the body the team's
+        // state, most important first: picks in, unspent credits, the matchup, then the one risk.
+        const parts = [`${team.abbrev ?? team.team_name ?? 'You'}: ${picksIn}/${totalSlots} picks in.`];
+        if (!creditsAllocated) parts.push(`$${Math.max(0, weeklyCredits - allocated).toFixed(2).replace(/\.00$/, '')} unspent.`);
         if (mu && hasScore) {
           const opp = teamById.get(mu.oppId);
           const oppName = opp?.abbrev ?? opp?.team_name ?? 'opp';
           const diff = Math.round((mu.mine - mu.theirs) * 100) / 100;
-          line1 += diff === 0 ? ` / even vs ${oppName}` : ` / ${fmtMoney(diff)} vs ${oppName}`;
+          parts.push(diff === 0 ? `Even vs ${oppName}.` : `${fmtMoney(diff)} vs ${oppName}.`);
         }
-        const parts = [`${line1}.`, `${slotLabel(daySlot)} kicks off in ~${minutesOut} min.`];
-
         if (gamesNeeded > 0) {
+          const s = gamesNeeded > 1 ? 's' : '';
           if (gamesLeft < gamesNeeded) {
-            const where = remainingSlates.length > 0 ? `Only ${remainingSlates.join(' and ')} ${remainingSlates.length > 1 ? 'are' : 'is'} left` : 'Not enough games are left';
-            parts.push(`${where}, so this roster can't reach ${minGames} games and can't be marked complete. Picks you add still count.`);
+            parts.push(`Can't reach the ${minGames}-game minimum now. New picks still count.`);
           } else if (gamesLeft === gamesNeeded) {
-            parts.push(`You need ${gamesNeeded} more different game${gamesNeeded > 1 ? 's' : ''} (min ${minGames}) and only ${gamesLeft} ${gamesLeft > 1 ? 'are' : 'is'} left. ${slotsFull ? 'Swap picks onto them.' : 'Every new pick must come from a new game.'}`);
+            parts.push(`Need ${gamesNeeded} more different game${s}, only ${gamesLeft} left.${slotsFull ? ' Swap a pick.' : ''}`);
           } else {
-            parts.push(`Roster needs ${gamesNeeded} more different game${gamesNeeded > 1 ? 's' : ''} (min ${minGames}).${slotsFull ? ' Swap a pick to a new game.' : ''}`);
+            parts.push(`Need ${gamesNeeded} more different game${s}.${slotsFull ? ' Swap a pick.' : ''}`);
           }
-        } else if (!slotsFull || !creditsAllocated) {
-          parts.push('Finish your lineup before it locks.');
         }
 
         const message = {
-          title: needsWork ? `Lineup reminder: ${leagueName}` : `Slate update: ${leagueName}`,
+          title: `${slotLabel(daySlot)} kicks off in ${minutesOut} min`,
+          subtitle: leagueName,
           body: parts.join(' '),
           data: { screen: 'lineup', leagueId, week: weekStr },
         };
