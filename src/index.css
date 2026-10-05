@@ -244,3 +244,19 @@ body {
 .confetti-piece {
   animation: confetti-fall linear forwards;
 }
+
+/* Read-only league settings (members can view the commissioner's settings but not edit
+   them). Applied to the <fieldset disabled> body of a CollapsibleSection. Disabled text
+   inputs would otherwise render in the browser's washed-out disabled color (iOS Safari
+   even overrides `color`), which made values hard to read -- so keep input text at full
+   contrast and dash the border instead, and only dim the buttons/toggles. */
+.settings-readonly input:disabled,
+.settings-readonly textarea:disabled {
+  opacity: 1;
+  -webkit-text-fill-color: var(--color-text);
+  background: transparent;
+  border-style: dashed;
+}
+.settings-readonly button:disabled {
+  opacity: 0.7;
+}

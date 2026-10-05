@@ -7,8 +7,13 @@
 // keeps AuthProfile from growing a field unrelated to what it's actually for.
 import { supabase } from '../lib/supabaseClient';
 
+/** How often the pre-slate push fires (send-roster-reminders). Additive key: a missing
+ * value means 'needs_work', the original behavior. */
+export type SlateUpdates = 'needs_work' | 'trailing' | 'every_slate';
+
 export interface NotificationPrefs {
   lineupReminders: boolean;
+  slateUpdates: SlateUpdates;
   wagerSettled: boolean;
   weekResults: boolean;
 }
@@ -18,6 +23,7 @@ export interface NotificationPrefs {
 // this screen) means every notification type is on.
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   lineupReminders: true,
+  slateUpdates: 'needs_work',
   wagerSettled: true,
   weekResults: true,
 };

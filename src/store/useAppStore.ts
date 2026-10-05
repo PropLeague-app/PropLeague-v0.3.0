@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, MatchupDetailMode, NFLGame, OddsFormat, PlayoffFieldSize, ThemeMode, UserProfile, WeekId } from '../types';
-import { TEAM_LOGO_EMOJIS } from '../types';
+import { DEFAULT_LEAGUE_SETTINGS, TEAM_LOGO_EMOJIS } from '../types';
 import * as leagueService from '../services/leagueService';
 import * as simulationService from '../services/simulationService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -109,6 +109,7 @@ interface AppState {
   updateTargetTeamCount: (leagueId: string, count: number) => void;
   setCurrentLeague: (leagueId: string) => void;
   updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => void;
+  refreshLeagueSettings: (leagueId: string) => Promise<void>;
   transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => Promise<{ ok: boolean; reason?: string }>;
   leaveLeague: (leagueId: string) => Promise<{ ok: boolean; reason?: string }>;
 
@@ -374,6 +375,39 @@ export const useAppStore = create<AppState>()(
         // the local state above is already updated optimistically.
         const updatedLeague = get().leagues[leagueId];
         if (updatedLeague) void updateLeagueSettingsRemote(leagueId, updatedLeague.settings);
+      },
+
+      // Re-pulls the server-authoritative league settings/identity for ONE league, so a
+      // non-commissioner looking at the (read-only) Settings screen sees what the
+      // commissioner has right now instead of whatever was cached at app launch --
+      // hydrateMyLeagues only runs once per session, and there are no realtime
+      // subscriptions. Same merge as buildLeagueFromRealTeams (defaults <- server
+      // settings, name/isPublic from their own columns). Deliberately only called for
+      // non-commissioners: the commissioner's own edits are optimistic and written
+      // fire-and-forget, so a refetch could race one and briefly revert it. A failed
+      // fetch is ignored (keeps whatever is cached), and an unchanged result returns
+      // the same league object so nothing re-renders.
+      refreshLeagueSettings: async (leagueId) => {
+        const meta = await fetchLeagueMeta(leagueId);
+        if (!meta.ok) return;
+        const settings: LeagueSettings = {
+          ...DEFAULT_LEAGUE_SETTINGS,
+          ...meta.settings,
+          leagueName: meta.name,
+          isPublic: meta.isPublic,
+        };
+        set((state) =>
+          updateLeague(state, leagueId, (league) => {
+            const commissionerTeamId = meta.commissionerTeamId ?? league.commissionerTeamId;
+            const unchanged =
+              JSON.stringify(league.settings) === JSON.stringify(settings) &&
+              league.name === meta.name &&
+              league.targetTeamCount === meta.targetTeamCount &&
+              league.commissionerTeamId === commissionerTeamId;
+            if (unchanged) return league;
+            return { ...league, name: meta.name, targetTeamCount: meta.targetTeamCount, commissionerTeamId, settings };
+          }),
+        );
       },
 
       // manual v0.2.0 §6 #12: the commissioner role must move to another team before

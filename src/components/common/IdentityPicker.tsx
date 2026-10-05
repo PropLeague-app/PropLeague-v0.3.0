@@ -58,7 +58,12 @@ export function IdentityPicker({
   colorLabel = 'Background color',
   onSave,
   onDirtyChange,
+  bare = false,
 }: {
+  /** Drops the card chrome (border/background/padding) and styles the title as a
+   * subsection heading -- for use inside a CollapsibleSection body, where a nested
+   * card would read as card-in-card. */
+  bare?: boolean;
   title: string;
   value: LogoIdentity;
   initials: string;
@@ -122,9 +127,9 @@ export function IdentityPicker({
   const emojiResults = emojiSearch.trim() ? searchEmojis(emojiSearch) : EMOJI_CATEGORIES.find((c) => c.id === emojiCategory)!.emojis;
 
   return (
-    <div className="bg-bg-card border border-border rounded-xl p-3 space-y-3">
+    <div className={bare ? 'space-y-3' : 'bg-bg-card border border-border rounded-xl p-3 space-y-3'}>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-text-muted">{title}</p>
+        <p className={bare ? 'text-sm font-semibold text-text' : 'text-xs text-text-muted'}>{title}</p>
         {dirty && <span className="text-[10px] text-accent font-semibold">Unsaved changes</span>}
       </div>
 
