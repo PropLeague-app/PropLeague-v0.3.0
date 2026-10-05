@@ -19,6 +19,9 @@ import { usePlStyle } from '../components/common/usePlStyle';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { MARKET_LABELS, MARKET_SHORT_LABELS } from '../data/propsGenerator';
 import { weekLabel, weekOrder, type LeagueTeam, type WeekId } from '../types';
+import { ShareButton } from '../share/ShareButton';
+import { LeaderboardShareCard, type LeaderRow } from '../share/cards/LeaderboardShareCard';
+import { C, POS_COLOR } from '../share/palette';
 
 type Tab = 'overall' | 'skills' | 'week' | 'players';
 const TABS: { id: Tab; label: string }[] = [
@@ -29,6 +32,10 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const COLLAPSED_ROWS = 5;
+
+/** How a board's value reads in its share picture: the text, plus a P/L amount (and the reference
+ * the screen scales it by) so the picture colors it the way the screen does. */
+type ShareValue = { text: string; amount?: number; ref?: number; gold?: boolean };
 
 const pctText = (n: number, signed = true) => `${signed && n >= 0 ? '+' : ''}${(n * 100).toFixed(1)}%`;
 
@@ -78,6 +85,8 @@ function Board({
   onTeam,
   flameFor,
   empty,
+  leagueName,
+  shareValue,
 }: {
   title: string;
   hint?: string;
@@ -87,13 +96,43 @@ function Board({
   onTeam: (teamId: string) => void;
   flameFor?: (teamId: string) => boolean;
   empty?: string;
+  leagueName: string;
+  /** Text and coloring for the share picture. */
+  shareValue: (row: TeamValue) => ShareValue;
 }) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? rows : rows.slice(0, COLLAPSED_ROWS);
+  const shareRows = (): LeaderRow[] =>
+    rows.map((row, i) => {
+      const team = teamById(row.teamId);
+      const v = shareValue(row);
+      return {
+        rank: rankOf(rows, i),
+        name: team?.teamName ?? 'Unknown',
+        logo: team ? { identity: team, initials: team.abbrev } : undefined,
+        isUser: !!team?.isUser,
+        flame: flameFor?.(row.teamId),
+        value: v.text,
+        amount: v.amount,
+        ref: v.ref,
+        gold: v.gold,
+      };
+    });
   return (
     <Card className="!p-3">
-      <p className="text-xs font-semibold">{title}</p>
-      {hint && <p className="text-[10px] text-text-muted mb-1">{hint}</p>}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold">{title}</p>
+          {hint && <p className="text-[10px] text-text-muted mb-1">{hint}</p>}
+        </div>
+        <ShareButton
+          size="sm"
+          title={title}
+          label={`Share ${title}`}
+          disabled={rows.length === 0}
+          renderCard={() => <LeaderboardShareCard leagueName={leagueName} title={title} subtitle={hint} rows={shareRows()} />}
+        />
+      </div>
       {rows.length === 0 ? (
         <p className="text-[11px] text-text-muted py-2">{empty ?? 'Nothing to rank yet.'}</p>
       ) : (
@@ -123,11 +162,42 @@ function Board({
   );
 }
 
-function PlayerBoard({ title, hint, rows, onPlayer }: { title: string; hint?: string; rows: PlayerRecord[]; onPlayer: (name: string) => void }) {
+function PlayerBoard({
+  title,
+  hint,
+  rows,
+  onPlayer,
+  leagueName,
+}: {
+  title: string;
+  hint?: string;
+  rows: PlayerRecord[];
+  onPlayer: (name: string) => void;
+  leagueName: string;
+}) {
+  const shareRows = (): LeaderRow[] =>
+    rows.map((r, i) => ({
+      rank: i + 1,
+      name: r.playerName,
+      sub: `${r.wins}-${r.losses}-${r.pushes} · ${r.picks} pick${r.picks === 1 ? '' : 's'}`,
+      value: formatCents(r.pl),
+      amount: r.pl,
+    }));
   return (
     <Card className="!p-3">
-      <p className="text-xs font-semibold">{title}</p>
-      {hint && <p className="text-[10px] text-text-muted mb-1">{hint}</p>}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold">{title}</p>
+          {hint && <p className="text-[10px] text-text-muted mb-1">{hint}</p>}
+        </div>
+        <ShareButton
+          size="sm"
+          title={title}
+          label={`Share ${title}`}
+          disabled={rows.length === 0}
+          renderCard={() => <LeaderboardShareCard leagueName={leagueName} title={title} subtitle={hint} rows={shareRows()} />}
+        />
+      </div>
       {rows.length === 0 ? (
         <p className="text-[11px] text-text-muted py-2">Nothing to show yet.</p>
       ) : (
@@ -224,6 +294,8 @@ export function Leaderboards() {
           <>
             <Board
               title="Best ROI"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: pctText(r.value), amount: r.value })}
               hint="Profit per dollar wagered"
               rows={boards.bestROI}
               teamById={teamById}
@@ -232,6 +304,8 @@ export function Leaderboards() {
             />
             <Board
               title="Most total profit"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: formatCents(r.value), amount: r.value, ref: seasonRef })}
               rows={boards.mostProfit}
               teamById={teamById}
               onTeam={openTeam}
@@ -243,6 +317,8 @@ export function Leaderboards() {
             />
             <Board
               title="Best single week"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: formatCents(r.value), amount: r.value })}
               rows={boards.bestSingleWeek}
               teamById={teamById}
               onTeam={openTeam}
@@ -250,6 +326,8 @@ export function Leaderboards() {
             />
             <Board
               title="Most bets won"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: String(r.value) })}
               rows={boards.mostBetsWon}
               teamById={teamById}
               onTeam={openTeam}
@@ -258,6 +336,8 @@ export function Leaderboards() {
             {skills.perfectWeeks.length > 0 && (
               <Board
                 title="Perfect weeks"
+                leagueName={league.name}
+                shareValue={(r) => ({ text: String(r.value), gold: true })}
                 hint="Every slot filled and every bet won"
                 rows={skills.perfectWeeks}
                 teamById={teamById}
@@ -273,6 +353,8 @@ export function Leaderboards() {
           <>
             <Board
               title="Beating the odds"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: `${r.value >= 0 ? '+' : ''}${r.value.toFixed(1)} pts`, amount: r.value })}
               hint={`Win rate minus what the odds implied. Needs ${MIN_DECIDED_FOR_EDGE}+ decided bets.`}
               rows={skills.hitRateEdge}
               teamById={teamById}
@@ -287,6 +369,8 @@ export function Leaderboards() {
             />
             <Board
               title="Longest win streak"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: String(r.value) })}
               hint="Bets won in a row"
               rows={skills.longestWinStreak}
               teamById={teamById}
@@ -295,6 +379,8 @@ export function Leaderboards() {
             />
             <Board
               title="Biggest single win"
+              leagueName={league.name}
+              shareValue={(r) => ({ text: formatCents(r.value), amount: r.value })}
               rows={skills.biggestWin}
               teamById={teamById}
               onTeam={openTeam}
@@ -302,8 +388,37 @@ export function Leaderboards() {
             />
 
             <Card className="!p-3">
-              <p className="text-xs font-semibold">Position specialists</p>
-              <p className="text-[10px] text-text-muted mb-1">Best ROI at each position</p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold">Position specialists</p>
+                  <p className="text-[10px] text-text-muted mb-1">Best ROI at each position</p>
+                </div>
+                <ShareButton
+                  size="sm"
+                  title="Position specialists"
+                  label="Share position specialists"
+                  disabled={boards.positionSpecialists.length === 0}
+                  renderCard={() => (
+                    <LeaderboardShareCard
+                      leagueName={league.name}
+                      title="Position specialists"
+                      subtitle="Best ROI at each position"
+                      rows={boards.positionSpecialists.map((sp) => {
+                        const team = teamById(sp.teamId);
+                        return {
+                          rank: null,
+                          name: team?.teamName ?? 'Unknown',
+                          logo: team ? { identity: team, initials: team.abbrev } : undefined,
+                          tag: { text: sp.position, color: POS_COLOR[sp.position] ?? POS_COLOR.WR },
+                          isUser: !!team?.isUser,
+                          value: pctText(sp.roi),
+                          amount: sp.roi,
+                        };
+                      })}
+                    />
+                  )}
+                />
+              </div>
               {boards.positionSpecialists.length === 0 && <p className="text-[11px] text-text-muted py-2">Nothing to rank yet.</p>}
               {boards.positionSpecialists.map((s) => (
                 <button
@@ -322,8 +437,37 @@ export function Leaderboards() {
             </Card>
 
             <Card className="!p-3">
-              <p className="text-xs font-semibold">Market specialists</p>
-              <p className="text-[10px] text-text-muted mb-1">Best ROI per prop type. Needs {MIN_BETS_FOR_MARKET_SPECIALIST}+ bets in it.</p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold">Market specialists</p>
+                  <p className="text-[10px] text-text-muted mb-1">Best ROI per prop type. Needs {MIN_BETS_FOR_MARKET_SPECIALIST}+ bets in it.</p>
+                </div>
+                <ShareButton
+                  size="sm"
+                  title="Market specialists"
+                  label="Share market specialists"
+                  disabled={skills.marketSpecialists.length === 0}
+                  renderCard={() => (
+                    <LeaderboardShareCard
+                      leagueName={league.name}
+                      title="Market specialists"
+                      subtitle={`Best ROI per prop type. ${MIN_BETS_FOR_MARKET_SPECIALIST}+ bets in it.`}
+                      rows={skills.marketSpecialists.map((sp) => {
+                        const team = teamById(sp.teamId);
+                        return {
+                          rank: null,
+                          name: team?.teamName ?? 'Unknown',
+                          logo: team ? { identity: team, initials: team.abbrev } : undefined,
+                          tag: { text: MARKET_SHORT_LABELS[sp.market] ?? MARKET_LABELS[sp.market], color: C.primary, width: 170 },
+                          isUser: !!team?.isUser,
+                          value: pctText(sp.roi),
+                          amount: sp.roi,
+                        };
+                      })}
+                    />
+                  )}
+                />
+              </div>
               {skills.marketSpecialists.length === 0 && <p className="text-[11px] text-text-muted py-2">Nothing to rank yet.</p>}
               {skills.marketSpecialists.map((s) => (
                 <button
@@ -357,6 +501,8 @@ export function Leaderboards() {
             </div>
             <Board
               title={`${weekLabel(week)} scoreboard`}
+              leagueName={league.name}
+              shareValue={(r) => ({ text: formatCents(r.value), amount: r.value, ref: weekRef })}
               rows={scoreboard}
               teamById={teamById}
               onTeam={openTeam}
@@ -392,9 +538,9 @@ export function Leaderboards() {
             <EmptyState title="No player data yet" subtitle="Player boards fill in once picks are locked in." />
           ) : (
             <>
-              <PlayerBoard title="Most picked players" hint="Across the whole league" rows={highlights.mostPicked} onPlayer={openPlayer} />
-              <PlayerBoard title="League favorites that paid" hint="Biggest combined profit. 2+ settled bets." rows={highlights.best} onPlayer={openPlayer} />
-              <PlayerBoard title="Trap players" hint="Biggest combined loss. 2+ settled bets." rows={highlights.worst} onPlayer={openPlayer} />
+              <PlayerBoard title="Most picked players" hint="Across the whole league" rows={highlights.mostPicked} onPlayer={openPlayer} leagueName={league.name} />
+              <PlayerBoard title="League favorites that paid" hint="Biggest combined profit. 2+ settled bets." rows={highlights.best} onPlayer={openPlayer} leagueName={league.name} />
+              <PlayerBoard title="Trap players" hint="Biggest combined loss. 2+ settled bets." rows={highlights.worst} onPlayer={openPlayer} leagueName={league.name} />
             </>
           )
         )}

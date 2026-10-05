@@ -24,6 +24,8 @@ export const DEFERRED_SETTING_KEYS = [
   'waiverMode',
   'correlationBlockEnabled',
   'correlationRules',
+  'marketRulesEnabled',
+  'marketRules',
   'minGamesPerRoster',
   'buyInEnabled',
   'buyInAmount',
@@ -33,6 +35,7 @@ export const DEFERRED_SETTING_KEYS = [
   'emptySlotFloor',
   'invalidRosterPenaltyEnabled',
   'invalidRosterFee',
+  'aiTeamsAffectPool',
 ] as const satisfies readonly (keyof LeagueSettings)[];
 
 export type DeferredSettingKey = (typeof DEFERRED_SETTING_KEYS)[number];
@@ -183,6 +186,8 @@ export const SETTING_LABELS: Record<DeferredSettingKey, string> = {
   waiverMode: 'contested pick order',
   correlationBlockEnabled: 'correlated picks',
   correlationRules: 'correlation rules',
+  marketRulesEnabled: 'market rules',
+  marketRules: 'market rules',
   minGamesPerRoster: 'minimum games',
   buyInEnabled: 'buy-in',
   buyInAmount: 'buy-in amount',
@@ -192,11 +197,12 @@ export const SETTING_LABELS: Record<DeferredSettingKey, string> = {
   emptySlotFloor: 'empty slot penalty',
   invalidRosterPenaltyEnabled: 'invalid roster penalty',
   invalidRosterFee: 'invalid roster fee',
+  aiTeamsAffectPool: 'AI teams in the prize pool',
 };
 
 /** "weekly credits, minimum bet and pick visibility" */
 export function describePendingKeys(keys: readonly DeferredSettingKey[]): string {
-  const labels = keys.map((k) => SETTING_LABELS[k]);
+  const labels = [...new Set(keys.map((k) => SETTING_LABELS[k]))];
   if (labels.length <= 1) return labels[0] ?? '';
   return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
 }

@@ -2,6 +2,7 @@
 // supabase/migrations/0027_settings_lock_and_stake_rules.sql (the server is the source of truth;
 // this lets the bet slip explain a problem before the request is sent).
 import type { LeagueSettings } from '../types';
+import { marketMaxMessage } from './marketRules';
 
 const EPS = 0.005;
 
@@ -15,6 +16,8 @@ export interface StakeContext {
   /** True when the slot already holds a pick (a swap or a stake edit): the reserve rule is
    * skipped, so moving dollars between picks is never blocked by order of operations. */
   replacing: boolean;
+  /** A commissioner market rule capping the stake on this pick's market (see engine/marketRules.ts). */
+  marketMax?: { max: number; label: string } | null;
 }
 
 const money = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
@@ -27,7 +30,7 @@ export function maxStakeNow(ctx: StakeContext): number {
   const slotMax = ctx.isMLSlot ? (s.mlBetOverride?.max ?? s.maxMLBet) : (s.propBetOverride?.max ?? s.maxPropBet);
   const remaining = s.weeklyCredits - ctx.otherStakes;
   const reserve = ctx.replacing ? 0 : s.minBetPerSlot * ctx.emptyOtherSlots;
-  return Math.max(0, Math.min(slotMax ?? Infinity, s.weeklyCredits * s.singleBetCapPct, remaining - reserve));
+  return Math.max(0, Math.min(slotMax ?? Infinity, ctx.marketMax?.max ?? Infinity, s.weeklyCredits * s.singleBetCapPct, remaining - reserve));
 }
 
 /** The first thing wrong with this stake, or null. Order matches the server's messages. */
@@ -37,6 +40,7 @@ export function stakeError(ctx: StakeContext, stake: number): string | null {
   if (stake < s.minBetPerSlot - EPS) return `Minimum bet is ${money(s.minBetPerSlot)}.`;
   const slotMax = ctx.isMLSlot ? (s.mlBetOverride?.max ?? s.maxMLBet) : (s.propBetOverride?.max ?? s.maxPropBet);
   if (slotMax != null && stake > slotMax + EPS) return `Maximum bet is ${money(slotMax)}.`;
+  if (ctx.marketMax && stake > ctx.marketMax.max + EPS) return marketMaxMessage(ctx.marketMax);
   const cap = s.weeklyCredits * s.singleBetCapPct;
   if (stake > cap + EPS) return `Exceeds the ${Math.round(s.singleBetCapPct * 100)}% single-pick cap (${money(cap)}).`;
   const remaining = s.weeklyCredits - ctx.otherStakes;

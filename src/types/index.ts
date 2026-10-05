@@ -249,16 +249,18 @@ export const DEFAULT_CORRELATION_RULES: CorrelationRule[] = [
     sideB: 'Yes',
     scope: 'same-team',
   },
-  {
-    id: 'rb-rush-yds-team-ml',
-    label: "RB rushing yards Over + that team's moneyline",
-    marketA: 'player_rush_yds',
-    sideA: 'Over',
-    marketB: 'h2h',
-    sideB: 'FavoredTeam',
-    scope: 'same-team',
-  },
 ];
+
+/** One commissioner market rule: a market (optionally one side of it) that is either blocked
+ * outright or capped at a per-pick stake. `side` is only meaningful for over/under markets;
+ * null covers both sides (and is always null for Anytime TD, moneyline and spread). */
+export interface MarketRule {
+  id: string;
+  market: MarketKey;
+  side: 'Over' | 'Under' | null;
+  /** null = blocked entirely; a number = the most that can be staked on one pick. */
+  maxStake: number | null;
+}
 
 // --- Weekly Moments v2 (manual v0.03 §4) -----------------------------------
 
@@ -344,6 +346,9 @@ export interface LeagueSettings {
    * populated with the defaults even while `correlationBlockEnabled` is off, same
    * pattern as `moments` below. */
   correlationRules: CorrelationRule[];
+  /** D: OFF by default. When on, `marketRules` blocks or caps specific markets (e.g. Anytime TD). */
+  marketRulesEnabled: boolean;
+  marketRules: MarketRule[];
   /** C: null = OFF (the manual's baseline minimum of 2 distinct games still applies);
    * a number raises that floor, up to the roster's total slot count. */
   minGamesPerRoster: number | null;
@@ -364,6 +369,9 @@ export interface LeagueSettings {
   eliminationType: 'single' | 'double'; // 'double' stub, non-functional in v0.01
   buyInEnabled: boolean;
   buyInAmount: number;
+  /** Whether AI teams count toward the prize pool (its size, share per team and weekly movement). On by
+   * default, which is how the pool has always worked; off leaves AI teams out of all of it. */
+  aiTeamsAffectPool: boolean;
   /** Ordered by finish place — index 0 is 1st place's cut, index 1 is 2nd, etc.
    * Length is how many places get paid (1..settings.playoffTeams). Must sum to
    * exactly 100 and every entry must be > 0 — enforced by
@@ -415,6 +423,8 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   waiverMode: 'waiver_order',
   correlationBlockEnabled: false,
   correlationRules: DEFAULT_CORRELATION_RULES,
+  marketRulesEnabled: false,
+  marketRules: [],
   minGamesPerRoster: null,
   emptySlotFloor: null,
   invalidRosterPenaltyEnabled: false,
@@ -431,6 +441,7 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   eliminationType: 'single',
   buyInEnabled: false,
   buyInAmount: 0,
+  aiTeamsAffectPool: true,
   payoutSplits: [100],
   showRealDollarStakes: false,
   poolMultipliers: DEFAULT_POOL_MULTIPLIER_SETTINGS,

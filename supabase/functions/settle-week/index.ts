@@ -237,6 +237,9 @@ interface SettingsSlice {
   conferencesEnabled: boolean;
   buyInEnabled: boolean;
   buyInAmount: number;
+  /** Whether AI (simulated) teams count toward the prize pool: its size, per-team share and weekly
+   * movement. Default true (how it always worked); false leaves them out of all three. */
+  aiTeamsAffectPool: boolean;
   poolMultipliers: { enabled: boolean; basis: 'rank' | 'record' | 'seasonPL'; spread: number };
   /** Needed to know how many slots a full roster actually has, for the
    * incomplete-lineup penalty (see chat: engine/scoring.ts's
@@ -261,6 +264,7 @@ const DEFAULT_SETTINGS: SettingsSlice = {
   conferencesEnabled: false,
   buyInEnabled: false,
   buyInAmount: 0,
+  aiTeamsAffectPool: true,
   poolMultipliers: { enabled: false, basis: 'rank', spread: 0 },
   lineupSlots: DEFAULT_LINEUP_SLOTS,
   emptySlotFloor: null,
@@ -282,6 +286,7 @@ function settingsFrom(raw: unknown): SettingsSlice {
     conferencesEnabled: r.conferencesEnabled ?? DEFAULT_SETTINGS.conferencesEnabled,
     buyInEnabled: r.buyInEnabled ?? DEFAULT_SETTINGS.buyInEnabled,
     buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
+    aiTeamsAffectPool: r.aiTeamsAffectPool !== false,
     poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...(r.poolMultipliers ?? {}) },
     lineupSlots: r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_SETTINGS.lineupSlots,
     emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
@@ -581,7 +586,7 @@ Deno.serve(async (req) => {
       // Fetched up-front (not just later for standings) so a team that placed
       // zero picks all week -- and thus has no weekly_rosters row at all -- can
       // still be caught by the incomplete-lineup penalty below.
-      const { data: teams } = await supabase.from('teams').select('id, conference_id, team_name').eq('league_id', leagueId);
+      const { data: teams } = await supabase.from('teams').select('id, conference_id, team_name, is_simulated').eq('league_id', leagueId);
       const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
 
       const { data: rosterRows } = await supabase
@@ -591,6 +596,10 @@ Deno.serve(async (req) => {
         .eq('week', weekStr);
 
       const weeklyScoreByTeam = new Map<string, number>();
+      // What each team's graded bets alone made or lost this week, before any penalty. The prize pool
+      // moves only by this: unspent credits, the empty-slot floor and the roster fees hurt a team's
+      // score and standings, but no bet was placed for them, so they never touch the pool.
+      const weeklyBetPLByTeam = new Map<string, number>();
       // Teams the invalid-roster penalty hit this run (they cannot have a perfect week).
       const penalizedTeamIds = new Set<string>();
       // Weekly Moments (see chat, Sept 2026): wagersThisWeekByTeam holds the SAME
@@ -766,6 +775,7 @@ Deno.serve(async (req) => {
         // and now also on seasonStarted, so a week that happened before the
         // league existed/started never eats this at all (see chat: this is
         // the actual fix for the Week 1 phantom -$100 bug).
+        weeklyBetPLByTeam.set((row as any).team_id, teamTotal);
         if (weekComplete && seasonStarted) {
           const allocated = wagers.reduce((sum: number, w: any) => sum + (w.stake ?? 0), 0);
           const unallocated = Math.max(0, settings.weeklyCredits - allocated);
@@ -820,6 +830,7 @@ Deno.serve(async (req) => {
         const teamId = (t as any).id as string;
         if (!weeklyScoreByTeam.has(teamId)) {
           weeklyScoreByTeam.set(teamId, weekComplete && seasonStarted ? -settings.weeklyCredits : 0);
+          weeklyBetPLByTeam.set(teamId, 0);
         }
       }
 
@@ -1103,15 +1114,24 @@ Deno.serve(async (req) => {
         // Prize pool -- advances on every settled week, regular season or
         // playoffs, same as the client engine did.
         let pool = (league.prize_pool as PrizePool | null) ?? null;
+        // "AI teams count toward the pool" (default on). When a commissioner turns it off, AI teams drop out
+        // of all of it: the starting pool and per-team share count only human teams, only human scores move
+        // the pool, and the standing multipliers are worked out among the humans alone.
+        const aiTeamIds = new Set((teams ?? []).filter((t: any) => t.is_simulated).map((t: any) => t.id as string));
+        const humanCount = (teams ?? []).length - aiTeamIds.size;
+        const excludeAi = !settings.aiTeamsAffectPool && humanCount > 0;
+        const poolTeamCount = excludeAi ? humanCount : teamCount;
+        const poolScores = excludeAi ? new Map([...weeklyBetPLByTeam].filter(([id]) => !aiTeamIds.has(id))) : weeklyBetPLByTeam;
+        const poolStandingLines = excludeAi ? standingLines.filter((s) => !aiTeamIds.has(s.teamId)) : standingLines;
         if (!pool && settings.buyInEnabled) {
-          const initial = teamCount * settings.buyInAmount;
+          const initial = poolTeamCount * settings.buyInAmount;
           pool = { initial, current: initial, locked: false, history: [] };
         }
         if (pool && !pool.locked) {
           const multipliers = settings.poolMultipliers.enabled && league.season_phase === 'regular'
-            ? computeStandingMultipliers(standingLines, settings.poolMultipliers.basis, settings.poolMultipliers.spread)
-            : Object.fromEntries(standingLines.map((s) => [s.teamId, 1]));
-          pool = advancePoolForWeek(pool, parseWeekId(weekStr), weeklyScoreByTeam, settings.weeklyCredits, teamCount, multipliers);
+            ? computeStandingMultipliers(poolStandingLines, settings.poolMultipliers.basis, settings.poolMultipliers.spread)
+            : Object.fromEntries(poolStandingLines.map((s) => [s.teamId, 1]));
+          pool = advancePoolForWeek(pool, parseWeekId(weekStr), poolScores, settings.weeklyCredits, poolTeamCount, multipliers);
           if (seasonJustCompleted) pool = lockPool(pool);
         }
 

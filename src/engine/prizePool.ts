@@ -18,6 +18,16 @@ export function realDollarAmount(virtualAmount: number, weeklyCredits: number, p
   return (virtualAmount / weeklyCredits) * perTeamShare;
 }
 
+/** Teams the pool is sized and shared across. Every team, unless the commissioner turned off "AI teams
+ * count toward the prize pool", in which case only human teams are counted. Mirrors settle-week. */
+export function poolTeamCount(league: Pick<League, 'teams' | 'settings'>): number {
+  if (league.settings.aiTeamsAffectPool === false) {
+    const humans = league.teams.filter((t) => !t.isSimulated).length;
+    if (humans > 0) return humans;
+  }
+  return league.teams.length;
+}
+
 /** Lazily creates the pool the first time buy-ins are enabled for a league that doesn't
  * have one yet. Once a week has actually settled (`history.length > 0`), this is a
  * no-op — buy-in amount changes mid-season don't retroactively resize an
@@ -29,7 +39,7 @@ export function realDollarAmount(virtualAmount: number, weeklyCredits: number, p
  * default $0 it briefly existed at. */
 export function ensurePool(league: League): PrizePool | null {
   if (!league.settings.buyInEnabled) return league.prizePool;
-  const amount = initialPoolAmount(league.teams.length, league.settings.buyInAmount);
+  const amount = initialPoolAmount(poolTeamCount(league), league.settings.buyInAmount);
   if (league.prizePool && (league.prizePool.history.length > 0 || league.prizePool.locked)) return league.prizePool;
   return { initial: amount, current: amount, locked: false, history: [] };
 }

@@ -31,8 +31,9 @@ import {
   type DeferredSettingKey,
 } from '../../engine/settingsRules';
 import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount, structureAvailable } from '../../engine/playoffs';
-import { activeMultipliers, multiplierRangeForSpread } from '../../engine/prizePool';
+import { activeMultipliers, multiplierRangeForSpread, poolTeamCount } from '../../engine/prizePool';
 import { CorrelationRulesEditor } from './CorrelationRulesEditor';
+import { MarketRulesEditor } from './MarketRulesEditor';
 import { PayoutSplitEditor } from './PayoutSplitEditor';
 import { BettingLimitsGroup } from './BettingLimitsGroup';
 import { ChipRow, CollapsibleSection, SectionHeader, SubSection, NumberField, Stepper, TextField, chipClass } from './SettingsPrimitives';
@@ -58,9 +59,9 @@ function leagueMultiplierRows(league: League): { team: LeagueTeam; multiplier: n
 const onOff = (v: boolean) => (v ? 'on' : 'off');
 
 /** Which settings group each gameplay key belongs to, for the "Applies Week N" pills. */
-const ROSTER_KEYS: DeferredSettingKey[] = ['lineupSlots', 'minGamesPerRoster', 'maxDuplicatePicks', 'waiverMode', 'correlationBlockEnabled', 'correlationRules', 'hidePicks'];
+const ROSTER_KEYS: DeferredSettingKey[] = ['lineupSlots', 'minGamesPerRoster', 'maxDuplicatePicks', 'waiverMode', 'correlationBlockEnabled', 'correlationRules', 'marketRulesEnabled', 'marketRules', 'hidePicks'];
 const LIMIT_KEYS: DeferredSettingKey[] = ['weeklyCredits', 'minBetPerSlot', 'maxMLBet', 'maxPropBet', 'minOdds', 'singleBetCapPct', 'wagerPrecision', 'propBetOverride', 'mlBetOverride'];
-const BUYIN_KEYS: DeferredSettingKey[] = ['buyInEnabled', 'buyInAmount', 'poolMultipliers'];
+const BUYIN_KEYS: DeferredSettingKey[] = ['buyInEnabled', 'buyInAmount', 'poolMultipliers', 'aiTeamsAffectPool'];
 const PENALTY_KEYS: DeferredSettingKey[] = ['emptySlotFloor', 'invalidRosterPenaltyEnabled', 'invalidRosterFee'];
 
 /** A small dollar stepper (whole-dollar steps), for penalty amounts. */
@@ -382,6 +383,21 @@ export function LeagueSettingsPanel({
               </div>
             )}
             <ToggleRow
+              label="Block or limit markets"
+              value={settings.marketRulesEnabled}
+              onChange={(v) => update({ marketRulesEnabled: v })}
+            />
+            {settings.marketRulesEnabled && (
+              <div className="pl-1">
+                <MarketRulesEditor
+                  rules={settings.marketRules ?? []}
+                  onChange={(rules) => update({ marketRules: rules })}
+                  minStake={settings.minBetPerSlot}
+                  maxStakeAllowed={settings.weeklyCredits * settings.singleBetCapPct}
+                />
+              </div>
+            )}
+            <ToggleRow
               label="Hide picks until kickoff"
               value={settings.hidePicks}
               onChange={(v) => update({ hidePicks: v })}
@@ -455,8 +471,22 @@ export function LeagueSettingsPanel({
               <SubSection title="Buy-in">
                 <NumberField label="Buy-in per team" value={settings.buyInAmount} onChange={(v) => update({ buyInAmount: v })} />
                 <p className="text-[11px] text-text-muted">
-                  Starting pool: {league.teams.length} × ${settings.buyInAmount.toFixed(2)} = ${(league.teams.length * settings.buyInAmount).toFixed(2)}
+                  Starting pool: {poolTeamCount(league)} × ${settings.buyInAmount.toFixed(2)} = ${(poolTeamCount(league) * settings.buyInAmount).toFixed(2)}
                 </p>
+                {league.teams.some((t) => t.isSimulated) && (
+                  <>
+                    <ToggleRow
+                      label="AI teams count toward the pool"
+                      value={settings.aiTeamsAffectPool}
+                      onChange={(v) => update({ aiTeamsAffectPool: v })}
+                    />
+                    <p className="text-[11px] text-text-muted">
+                      {settings.aiTeamsAffectPool
+                        ? 'AI teams buy in, and their wins and losses (an empty lineup included) move the pool like anyone else.'
+                        : 'Only human teams buy in and move the pool. AI results are ignored.'}
+                    </p>
+                  </>
+                )}
                 <ToggleRow
                   label="Show real $ on picks"
                   value={settings.showRealDollarStakes}

@@ -36,6 +36,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import { teamsActiveInWeek, type PlayoffBracket, type WeekId } from '../_shared/playoffLogic.ts';
 import { fetchRealGamesForWeek, type Position } from '../_shared/realGamesForBots.ts';
+import { blockedMarketRules, isMarketBlocked } from '../_shared/marketRules.ts';
 import { generateAutoLineup, type AutoLineupSettings, type Wager } from '../_shared/autoLineupReal.ts';
 
 const REMINDER_WINDOW_MIN_MS = 45 * 60 * 1000;
@@ -163,12 +164,13 @@ Deno.serve(async (_req) => {
 
     const settings = settingsFrom(league.settings);
     const claimedThisRun = new Set<string>();
+    const blockedRules = blockedMarketRules(league.settings);
     let generated = 0;
     const errors: string[] = [];
 
     for (const teamId of pendingTeamIds) {
       const { slots } = generateAutoLineup(teamId, weekStr, settings, games, (gameId, marketKey, playerId, side, point) =>
-        claimedThisRun.has(claimKey(gameId, marketKey, playerId, side, point)),
+        isMarketBlocked(blockedRules, marketKey, side) || claimedThisRun.has(claimKey(gameId, marketKey, playerId, side, point)),
       );
 
       let placedAny = false;

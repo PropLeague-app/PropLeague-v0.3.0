@@ -14,7 +14,7 @@ import { fetchNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_P
 import logoMark from '../assets/logo-mono-muted.png';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
 import { LeagueSettingsPanel } from '../components/settings/LeagueSettingsPanel';
-import { GameExitsCard } from '../components/settings/GameExitsCard';
+import { VoidRequestsCard } from '../components/settings/VoidRequestsCard';
 import { lossColor, lossIntensity } from '../engine/plColor';
 import { formatCents } from '../engine/oddsMath';
 import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SubSection } from '../components/settings/SettingsPrimitives';
@@ -631,7 +631,7 @@ export function SettingsHome() {
           />
         )}
 
-        {league && isCommissioner && !seasonNotStarted && <GameExitsCard leagueId={league.id} week={league.currentWeek} />}
+        {league && userTeam && !seasonNotStarted && <VoidRequestsCard leagueId={league.id} week={league.currentWeek} isCommissioner={isCommissioner} />}
 
         {/* The "Advance Past Week" commissioner button that used to live here is gone --
             season progression (week advance, live-game status, playoff bracket seeding,

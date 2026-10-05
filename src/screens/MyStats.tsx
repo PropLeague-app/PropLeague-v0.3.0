@@ -18,6 +18,9 @@ import { ODDS_BUCKETS, ODDS_BUCKET_LABELS, type BetPreset } from '../engine/betF
 import { bestAndWorstWeek, matchupStats, playerHighlights, playerRecords, unspentCredits, weeklyPL, type PlayerRecord } from '../engine/statsExtra';
 import { MARKET_LABELS } from '../data/propsGenerator';
 import { TeamLogo } from '../components/common/TeamLogo';
+import { ShareButton } from '../share/ShareButton';
+import { StatsShareCard, type StatsCardData } from '../share/cards/StatsShareCard';
+import { StatsTabShareCard, type Highlight, type ShareCell, type TabBlock, type TableRow } from '../share/cards/StatsTabShareCard';
 
 function pct(n: number): string {
   return `${n >= 0 ? '+' : ''}${(n * 100).toFixed(1)}%`;
@@ -211,9 +214,184 @@ export function MyStats() {
   const breakEven = stats.avgWin + stats.avgLoss > 0 ? stats.avgLoss / (stats.avgWin + stats.avgLoss) : 0;
   const teamName = (id: string) => league.teams.find((t) => t.id === id);
 
+  // Share: the numbers on this screen as one picture (a fixed-size card, not a screenshot).
+  const perfectCount = !isLeagueView && viewedTeam ? perfectWeeksForTeam(league, viewedTeam.id).length : null;
+  const shareData: StatsCardData = {
+    leagueName: league.name,
+    title: isLeagueView ? 'League Stats' : 'Season Stats',
+    subtitle: `${stats.settledBets} settled bet${stats.settledBets === 1 ? '' : 's'}`,
+    identity: isLeagueView ? league : viewedTeam!,
+    initials: isLeagueView ? league.name.slice(0, 2).toUpperCase() : viewedTeam!.abbrev,
+    name: isLeagueView ? league.name : viewedTeam!.teamName,
+    totalPL: stats.totalPL,
+    plRef: isLeagueView ? REFERENCE_FLOOR_SHARE * leagueSeasonAtRisk(league) : seasonScaleRef(league),
+    roiText: pct(stats.roi),
+    roiPositive: stats.roi >= 0,
+    tiles: [
+      { label: 'RECORD', value: `${stats.wins}-${stats.losses}-${stats.pushes}` },
+      { label: 'WIN RATE', value: `${Math.round(stats.winRate * 100)}%` },
+      { label: 'AVG STAKE', value: formatCents(stats.avgStake) },
+      { label: 'BIGGEST WIN', value: formatCents(stats.biggestWin), tone: 'profit' },
+      { label: 'WIN STREAK', value: String(stats.longestWinStreak), tone: 'profit' },
+      perfectCount != null
+        ? { label: 'PERFECT WEEKS', value: String(perfectCount) }
+        : { label: 'WAGERED', value: formatCents(stats.totalWagered) },
+    ],
+    winRate: stats.winRate,
+    impliedWinRate: stats.impliedWinRate,
+    markets: marketRows
+      .filter(([, rec]) => rec.wins + rec.losses > 0)
+      .sort(([, a], [, b]) => b.pl - a.pl)
+      .slice(0, 3)
+      .map(([key, rec]) => ({ label: MARKET_LABELS[key], record: `${rec.wins}-${rec.losses}-${rec.pushes}`, pl: rec.pl })),
+  };
+
+  // Each tab shares its own picture: Overview is the headline card, the others mirror what the tab
+  // lists (tables, weekly bars, head-to-head), so the image matches the screen you are on.
+  const hasData = (rec: RecordPL | undefined): rec is RecordPL => !!rec && rec.wins + rec.losses + rec.pushes > 0;
+  const recCells = (rec: RecordPL): ShareCell[] => [
+    { text: `${rec.wins}-${rec.losses}-${rec.pushes}` },
+    { text: formatCents(rec.pl), amount: rec.pl },
+    { text: rec.wagered > 0 ? pct(rec.pl / rec.wagered) : '-', muted: true },
+  ];
+  type Rec = { label: string; rec: RecordPL | undefined };
+  const recTable = (title: string, items: Rec[], minRows = 1, maxRows = 99): TabBlock | null => {
+    const rows: TableRow[] = items
+      .filter((x): x is { label: string; rec: RecordPL } => hasData(x.rec))
+      .slice(0, maxRows)
+      .map((x) => ({ label: x.label, cells: recCells(x.rec) }));
+    return rows.length >= minRows ? { kind: 'table', title, heads: ['W-L-P', 'P/L', 'ROI'], rows } : null;
+  };
+  const playerTable = (title: string, rows: PlayerRecord[]): TabBlock | null =>
+    rows.length === 0
+      ? null
+      : {
+          kind: 'table',
+          title,
+          heads: ['W-L-P', 'P/L', 'PICKS'],
+          rows: rows.slice(0, 3).map((r) => ({
+            label: r.playerName,
+            cells: [{ text: `${r.wins}-${r.losses}-${r.pushes}` }, { text: formatCents(r.pl), amount: r.pl }, { text: `${r.picks}x`, muted: true }],
+          })),
+        };
+  const compact = <T,>(items: (T | null)[]): T[] => items.filter((x): x is T => x !== null);
+  const recText = (rec: RecordPL) => `${rec.wins}-${rec.losses}-${rec.pushes}`;
+  /** The best (or worst) entry by profit among the ones with decided bets. */
+  const extreme = (items: Rec[], dir: 'best' | 'worst', label: string, requireLoss = false): Highlight | null => {
+    const decided = items.filter((x): x is { label: string; rec: RecordPL } => !!x.rec && x.rec.wins + x.rec.losses > 0);
+    if (decided.length === 0) return null;
+    const pick = decided.reduce((a, b) => ((dir === 'best' ? b.rec.pl > a.rec.pl : b.rec.pl < a.rec.pl) ? b : a));
+    if (requireLoss && !(pick.rec.pl < 0)) return null;
+    return { label, name: pick.label, value: formatCents(pick.rec.pl), amount: pick.rec.pl, sub: recText(pick.rec) };
+  };
+  const marketItems: Rec[] = marketRows.map(([key, rec]) => ({ label: MARKET_LABELS[key], rec }));
+  const slotItems: Rec[] = (['QB', 'RB', 'WR', 'TE', 'K', 'ML'] as const).map((pos) => ({ label: pos, rec: stats.byPosition[pos] }));
+  const oddsItems: Rec[] = ODDS_BUCKETS.map((b) => ({ label: ODDS_BUCKET_LABELS[b].split(' (')[0], rec: stats.byOddsBucket[b] }));
+  const daySlotItems: Rec[] = (['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'] as const).map((slot) => ({ label: slot.replace('_', ' '), rec: stats.byDaySlot[slot] }));
+  const byProfit = (items: Rec[]) => [...items].sort((a, b) => (b.rec?.pl ?? 0) - (a.rec?.pl ?? 0));
+  const tabBlocks = (): TabBlock[] => {
+    if (activeTab === 'markets') {
+      const ou: Rec[] = [{ label: 'Overs', rec: stats.byOverUnder.over }, { label: 'Unders', rec: stats.byOverUnder.under }];
+      const items = compact<Highlight>([
+        extreme(marketItems, 'best', 'BEST MARKET'),
+        extreme(marketItems, 'worst', 'WORST MARKET', true),
+        extreme(slotItems, 'best', 'BEST SLOT'),
+        extreme(oddsItems, 'best', 'BEST ODDS RANGE'),
+        hasData(stats.byOverUnder.over) && hasData(stats.byOverUnder.under) ? extreme(ou, 'best', 'OVER VS UNDER') : null,
+      ]).slice(0, 4);
+      return compact<TabBlock>([
+        items.length > 0 ? { kind: 'highlights', items } : null,
+        recTable('Top markets', byProfit(marketItems), 1, 5),
+        recTable('Position slots', slotItems),
+      ]);
+    }
+    if (activeTab === 'trends') {
+      const wk = (w: WeekId) => (typeof w === 'number' ? `Week ${w}` : weekLabel(w));
+      const topPlayer = highlights.best[0] ?? highlights.mostPicked[0];
+      const items = compact<Highlight>([
+        bestWeek ? { label: 'BEST WEEK', name: wk(bestWeek.week), value: formatCents(bestWeek.pl), amount: bestWeek.pl } : null,
+        worstWeek && weekly.length > 1 ? { label: 'WORST WEEK', name: wk(worstWeek.week), value: formatCents(worstWeek.pl), amount: worstWeek.pl } : null,
+        extreme(daySlotItems, 'best', 'BEST DAY SLOT'),
+        topPlayer
+          ? { label: highlights.best[0] ? 'TOP PLAYER' : 'MOST PICKED', name: topPlayer.playerName, value: formatCents(topPlayer.pl), amount: topPlayer.pl, sub: `${topPlayer.picks}x` }
+          : null,
+      ]);
+      return compact<TabBlock>([
+        items.length > 0 ? { kind: 'highlights', items } : null,
+        weekly.length === 0
+          ? null
+          : {
+              kind: 'bars',
+              title: 'Profit by week',
+              weeks: weekly.map((w) => ({ label: typeof w.week === 'number' ? String(w.week) : weekLabel(w.week).slice(0, 3), pl: w.pl })),
+            },
+        recTable('By day slot', daySlotItems),
+        recTable(
+          'By stake size',
+          [
+            { label: 'Small (< $10)', rec: stats.byStakeSize.small },
+            { label: 'Medium ($10 to $25)', rec: stats.byStakeSize.medium },
+            { label: 'Large (> $25)', rec: stats.byStakeSize.large },
+          ],
+          2,
+        ),
+        playerTable('Best for profit', highlights.best),
+      ]);
+    }
+    if (activeTab === 'matchups' && matchup && matchup.weeks > 0) {
+      const dash = (w: number, l: number, t: number) => `${w}-${l}${t ? `-${t}` : ''}`;
+      return compact<TabBlock>([
+        {
+          kind: 'tiles',
+          cols: 2,
+          tiles: [
+            { label: 'MATCHUP RECORD', value: dash(matchup.record.wins, matchup.record.losses, matchup.record.ties) },
+            { label: 'ALL-PLAY RECORD', value: dash(matchup.allPlay.wins, matchup.allPlay.losses, matchup.allPlay.ties) },
+            { label: 'POINTS FOR', value: formatCents(matchup.pointsFor), amount: matchup.pointsFor },
+            { label: 'POINTS AGAINST', value: formatCents(matchup.pointsAgainst), amount: matchup.pointsAgainst },
+          ],
+        },
+        matchup.headToHead.length === 0
+          ? null
+          : {
+              kind: 'table',
+              title: 'Head to head',
+              heads: ['W-L', 'MARGIN'],
+              rows: matchup.headToHead.map((h) => {
+                const opp = teamName(h.opponentId);
+                const diff = h.pointsFor - h.pointsAgainst;
+                return {
+                  label: opp?.teamName ?? 'Unknown',
+                  logo: opp ? { identity: opp, initials: opp.abbrev } : undefined,
+                  cells: [{ text: dash(h.wins, h.losses, h.ties) }, { text: formatCents(diff), amount: diff }],
+                };
+              }),
+            },
+      ]);
+    }
+    return [];
+  };
+  const tabShareTitle = activeTab === 'overview' ? 'Overview' : activeTab === 'markets' ? 'Markets' : activeTab === 'trends' ? 'Trends' : 'Matchups';
+  const tabSharable = activeTab === 'overview' || tabBlocks().length > 0;
+  const renderShareCard = () =>
+    activeTab === 'overview' ? (
+      <StatsShareCard {...shareData} />
+    ) : (
+      <StatsTabShareCard
+        leagueName={league.name}
+        title={tabShareTitle}
+        subtitle={`${isLeagueView ? league.name : viewedTeam!.teamName} · ${stats.settledBets} settled bet${stats.settledBets === 1 ? '' : 's'}`}
+        blocks={tabBlocks()}
+      />
+    );
+
   return (
     <div className="flex flex-col">
-      <BackHeader title={title} fallback="/bet-history" />
+      <BackHeader
+        title={title}
+        fallback="/bet-history"
+        right={<ShareButton title={activeTab === 'overview' ? title : `${title} ${tabShareTitle}`} label={activeTab === 'overview' ? 'Share these stats' : `Share ${tabShareTitle.toLowerCase()}`} disabled={!tabSharable} renderCard={renderShareCard} />}
+      />
       <div className="p-4 space-y-4">
         <MemberSelector teams={league.teams} selectedTeamId={viewedTeamId ?? userTeam.id} onSelect={setSelectedTeamId} showLeagueOption />
         <div className="grid grid-cols-4 gap-2 text-center">

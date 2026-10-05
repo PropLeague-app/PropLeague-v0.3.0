@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Ticket, X } from 'lucide-react';
+import { ShareButton } from '../share/ShareButton';
+import { SlipShareCard, type SlipRow } from '../share/cards/SlipShareCard';
+import type { ShareStatus } from '../share/palette';
 import { useAppStore } from '../store/useAppStore';
-import { formatCents } from '../engine/oddsMath';
+import { formatCents, formatOdds } from '../engine/oddsMath';
 import { isWagerVisibleToViewer, LEAGUE_VIEW_ID } from '../engine/stats';
 import { resolveGame, gameHasStarted } from '../services/oddsService';
 import { OddsDisplay } from '../components/common/OddsDisplay';
@@ -64,6 +67,7 @@ export function BetHistory() {
   const loadRealGame = useAppStore((s) => s.loadRealGame);
   const realPlayerStatsByWeek = useAppStore((s) => s.realPlayerStatsByWeek);
   const loadRealPlayerStatsForWeek = useAppStore((s) => s.loadRealPlayerStatsForWeek);
+  const oddsFormat = useAppStore((s) => s.profile?.oddsFormat ?? 'american');
 
   // manual v0.3.0 §5: browse any league member's bet history, defaulting to the
   // signed-in user's own team. LEAGUE_VIEW_ID (Sept 2026 chat: "league aggregate
@@ -192,6 +196,54 @@ export function BetHistory() {
   const winRate = won + lost > 0 ? Math.round((won / (won + lost)) * 100) : 0;
   const title = isLeagueView ? 'League Bets' : isOwnTeam ? 'My Bets' : `${viewedTeam!.teamName}'s Bets`;
 
+  // Share: a slip of the bets currently on screen (filters included), or one ticket on its own.
+  const gameStartedFor = (gameId: string) =>
+    gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides));
+  const toSlipRow = ({ slot, teamId }: (typeof bets)[number]): SlipRow => {
+    const wager = slot.wager!;
+    const betTeam = isLeagueView ? league.teams.find((t) => t.id === teamId) : undefined;
+    return {
+      id: wager.id,
+      position: slot.position,
+      name: wager.playerName ?? MARKET_LABELS[wager.marketKey],
+      line: wagerLineDescription(wager),
+      who: betTeam ? (betTeam.isUser ? 'You' : betTeam.teamName) : null,
+      status: wager.status === 'pending' ? (gameStartedFor(wager.gameId) ? 'live' : 'pending') : (wager.status as ShareStatus),
+      stake: wager.stake,
+      oddsText: formatOdds(wager.oddsAtPlacement, oddsFormat),
+      profit: wager.settledProfit ?? null,
+    };
+  };
+  const slipTotals = (items: typeof bets) => {
+    const done = items.filter((b) => b.slot.wager!.status !== 'pending' && b.slot.wager!.status !== 'voided');
+    const w = done.filter((b) => b.slot.wager!.status === 'won').length;
+    const l = done.filter((b) => b.slot.wager!.status === 'lost').length;
+    const p = done.filter((b) => b.slot.wager!.status === 'push').length;
+    return {
+      record: `${w}-${l}${p > 0 ? `-${p}` : ''}`,
+      voids: items.filter((b) => b.slot.wager!.status === 'voided').length,
+      wagered: items.reduce((sum, b) => sum + b.slot.wager!.stake, 0),
+      net: done.length > 0 ? done.reduce((sum, b) => sum + (b.slot.wager!.settledProfit ?? 0), 0) : null,
+    };
+  };
+  const filteredWeek = weekFilter !== 'all' ? weekOptions.find((w) => String(w) === weekFilter) : undefined;
+  // Say what the slip is filtered to (market first, since that is what people ask about), so the
+  // image makes sense on its own. With no filters it reads "All weeks". The pick count leads when
+  // the filter text is long, because the card clips a long subtitle at the end.
+  const filterParts: string[] = [];
+  if (marketFilter !== 'all') filterParts.push(MARKET_LABELS[marketFilter]);
+  if (positionFilter !== 'all') filterParts.push(positionFilter === 'ML' ? 'Moneyline slot' : `${positionFilter} slot`);
+  if (filteredWeek != null) filterParts.push(weekLabel(filteredWeek));
+  if (resultFilter !== 'all') filterParts.push(RESULT_OPTIONS.find((o) => o.value === resultFilter)?.label ?? resultFilter);
+  if (statusFilter !== 'all') filterParts.push(statusFilter === 'open' ? 'Open only' : 'Settled only');
+  if (sideFilter) filterParts.push(sideFilter === 'over' ? 'Overs only' : 'Unders only');
+  if (oddsFilter) filterParts.push(ODDS_BUCKET_LABELS[oddsFilter]);
+  if (stakeFilter) filterParts.push(stakeSizeLabel(stakeFilter));
+  if (search.trim()) filterParts.push(`"${search.trim()}"`);
+  const pickCount = `${bets.length} pick${bets.length === 1 ? '' : 's'}`;
+  const filterText = filterParts.length > 0 ? filterParts.join(' · ') : 'All weeks';
+  const slipSubtitle = filterText.length > 40 ? `${pickCount} · ${filterText}` : `${filterText} · ${pickCount}`;
+
   function clearAll() {
     setWeekFilter('all');
     setStatusFilter('all');
@@ -206,7 +258,20 @@ export function BetHistory() {
 
   return (
     <div className="flex flex-col">
-      <BackHeader title={title} fallback="/home" />
+      <BackHeader
+        title={title}
+        fallback="/home"
+        right={
+          <ShareButton
+            title={title}
+            disabled={bets.length === 0}
+            label="Share these bets"
+            renderCard={() => (
+              <SlipShareCard leagueName={league.name} title={title} subtitle={slipSubtitle} rows={bets.map(toSlipRow)} totals={slipTotals(bets)} />
+            )}
+          />
+        }
+      />
       <div className="p-4 space-y-4">
         <MemberSelector teams={league.teams} selectedTeamId={selectedTeamId ?? userTeam.id} onSelect={setSelectedTeamId} showLeagueOption />
         <div className="grid grid-cols-4 gap-2 text-center">
@@ -325,7 +390,23 @@ export function BetHistory() {
                   </div>
                   <div className="flex justify-between text-[11px] text-text-muted pt-1 border-t border-border">
                     <span>{weekLabel(week)}</span>
-                    <span>{new Date(wager.placedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                    <span className="flex items-center gap-2">
+                      {new Date(wager.placedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      <ShareButton
+                        size="sm"
+                        title="Bet Slip"
+                        label="Share this bet"
+                        renderCard={() => (
+                          <SlipShareCard
+                            leagueName={league.name}
+                            title="Bet Slip"
+                            subtitle={`${weekLabel(week)} · ${league.teams.find((t) => t.id === teamId)?.teamName ?? ''}`}
+                            rows={[toSlipRow({ week, slot, teamId })]}
+                            totals={slipTotals([{ week, slot, teamId }])}
+                          />
+                        )}
+                      />
+                    </span>
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span>

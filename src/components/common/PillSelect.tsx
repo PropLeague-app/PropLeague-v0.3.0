@@ -20,6 +20,7 @@ export function PillSelect<T extends string>({
   ariaLabel,
   label,
   active = false,
+  fill = false,
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -28,15 +29,17 @@ export function PillSelect<T extends string>({
   /** Overrides the text shown on the chip (for "Sort: ..." style prefixes). Defaults to the selected option. */
   label?: string;
   active?: boolean;
+  /** Stretch to the width of its container (a compact form row) instead of hugging its text. */
+  fill?: boolean;
 }) {
   const selected = options.find((o) => o.value === value);
   return (
     <label
-      className={`relative inline-flex items-center gap-1 shrink-0 rounded-full border pl-3 pr-2 py-1 text-[11px] font-semibold ${
-        active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-bg-card text-text-muted'
-      }`}
+      className={`relative items-center gap-1 border text-[11px] font-semibold ${
+        fill ? 'flex min-w-0 flex-1 justify-between rounded-lg px-2.5 py-1' : 'inline-flex shrink-0 rounded-full pl-3 pr-2 py-1'
+      } ${active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-bg-card text-text-muted'}`}
     >
-      <span className="whitespace-nowrap">{label ?? selected?.label ?? ''}</span>
+      <span className={fill ? 'truncate' : 'whitespace-nowrap'}>{label ?? selected?.label ?? ''}</span>
       <ChevronDown size={12} className="shrink-0" />
       <select
         aria-label={ariaLabel}

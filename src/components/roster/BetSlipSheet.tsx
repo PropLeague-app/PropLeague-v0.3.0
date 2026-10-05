@@ -6,6 +6,7 @@ import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
 import { rosterKey } from '../../engine/rosterSlots';
 import { lastSlotPrefill, maxStakeNow, stakeError, type StakeContext } from '../../engine/stakeRules';
+import { activeMarketRules, marketBlockReason, marketMaxStake } from '../../engine/marketRules';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { NumberInput } from '../common/NumberInput';
 
@@ -55,9 +56,12 @@ export function BetSlipSheet({
   // pick that is already in the slot skips that reserve. The server enforces the same rules.
   const slotsNow = league?.rostersByTeamWeek[rosterKey(target.teamId, target.week)]?.slots;
   const otherSlots = slotsNow?.filter((sl) => sl.slotId !== target.slotId);
+  const marketRules = activeMarketRules(settings);
+  const marketBlocked = marketBlockReason(marketRules, target.marketKey, target.outcome.name);
   const stakeCtx: StakeContext = {
     settings,
     isMLSlot: isML,
+    marketMax: marketMaxStake(marketRules, target.marketKey, target.outcome.name),
     otherStakes: otherSlots ? otherSlots.reduce((sum, sl) => sum + (sl.wager?.stake ?? 0), 0) : settings.weeklyCredits - remainingBudget,
     emptyOtherSlots: otherSlots ? otherSlots.filter((sl) => !sl.wager).length : 0,
     replacing: !!slotsNow?.find((sl) => sl.slotId === target.slotId)?.wager,
@@ -83,6 +87,7 @@ export function BetSlipSheet({
   const preClaimReason = preClaimTeamId && league ? claimBlockReason(league, preClaimTeamId) : null;
 
   const reasons: string[] = [];
+  if (marketBlocked) reasons.push(marketBlocked);
   const stakeProblem = stakeError(stakeCtx, stake);
   if (stakeProblem) reasons.push(stakeProblem);
   if (minOdds != null && target.outcome.price < minOdds) reasons.push(`Below minimum odds of ${minOdds}`);

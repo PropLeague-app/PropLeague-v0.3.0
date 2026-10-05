@@ -1,7 +1,7 @@
-// Game exits (void flags): the commissioner searches for a player who left a game early
-// (no snaps in the 2nd half), picks a reason, and settle-week voids that player's Over /
-// Anytime TD picks that did not hit. See supabase/migrations/0025 and 0026 for the rules
-// and the RPCs.
+// Void requests (void flags): any member can ask for a player who left a game early to be voided
+// (a reason and a note are required); the commissioner approves or denies. Approving, or the
+// commissioner flagging directly, creates a flag and settle-week voids that player's Over /
+// Anytime TD picks that did not hit. See supabase/migrations/0025, 0026 and 0032.
 import { supabase } from '../lib/supabaseClient';
 
 export type VoidReason = 'injury' | 'ejection' | 'other';
@@ -97,4 +97,92 @@ export function searchVoidPlayers(groups: VoidPlayerGroup[], query: string): Voi
   const q = norm(query);
   if (q === '') return [];
   return groups.filter((g) => !g.flagId && norm(g.playerName).includes(q)).slice(0, 8);
+}
+
+// ---- Member requests (migration 0032) ----
+
+export type VoidRequestStatus = 'pending' | 'approved' | 'denied';
+
+export interface VoidRequestRow {
+  id: string;
+  player_name: string;
+  player_id: string | null;
+  reason: VoidReason;
+  note: string;
+  status: VoidRequestStatus;
+  team_name: string | null;
+  mine: boolean;
+  created_at: string;
+  resolved_at: string | null;
+  pick_count: number;
+  team_count: number;
+}
+
+/** A player a member can ask about this week. Counts only, never whose picks they are. */
+export interface VoidSearchRow {
+  player_name: string;
+  player_id: string | null;
+  pick_count: number;
+  team_count: number;
+  flag_id: string | null;
+  pending_request_id: string | null;
+  denied: boolean;
+}
+
+export async function fetchVoidRequests(
+  leagueId: string,
+  week: string,
+): Promise<{ ok: true; rows: VoidRequestRow[] } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('league_void_requests', { p_league_id: leagueId, p_week: week });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: ((data ?? []) as VoidRequestRow[]).map((r) => ({ ...r, pick_count: Number(r.pick_count), team_count: Number(r.team_count) })) };
+}
+
+export async function fetchVoidSearch(
+  leagueId: string,
+  week: string,
+): Promise<{ ok: true; rows: VoidSearchRow[] } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('league_void_search', { p_league_id: leagueId, p_week: week });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: ((data ?? []) as VoidSearchRow[]).map((r) => ({ ...r, pick_count: Number(r.pick_count), team_count: Number(r.team_count) })) };
+}
+
+/** Best-effort push (commissioner on a new request, requester on an answer). A failure here never
+ * blocks the action: the in-app badge and list are the source of truth. */
+async function notifyVoidRequest(requestId: string, event: 'new' | 'resolved'): Promise<void> {
+  try {
+    await supabase.functions.invoke('notify-void-request', { method: 'POST', body: { requestId, event } });
+  } catch {
+    // push is a courtesy
+  }
+}
+
+export type RequestVoidResult = { ok: true; status: 'pending' | 'approved' } | { ok: false; error: string };
+
+/** A member's request is queued; the commissioner's goes straight through as a flag. */
+export async function requestVoid(
+  leagueId: string,
+  week: string,
+  playerName: string,
+  reason: VoidReason,
+  note: string,
+): Promise<RequestVoidResult> {
+  const { data, error } = await supabase.rpc('request_void', {
+    p_league_id: leagueId,
+    p_week: week,
+    p_player_name: playerName,
+    p_reason: reason,
+    p_note: note.trim(),
+  });
+  if (error) return { ok: false, error: error.message };
+  const res = (data ?? {}) as { status?: 'pending' | 'approved'; request_id?: string | null };
+  if (res.status === 'pending' && res.request_id) void notifyVoidRequest(res.request_id, 'new');
+  return { ok: true, status: res.status ?? 'pending' };
+}
+
+export async function resolveVoidRequest(requestId: string, approve: boolean): Promise<VoidResult> {
+  const { error } = await supabase.rpc('resolve_void_request', { p_request_id: requestId, p_approve: approve });
+  if (error) return { ok: false, error: error.message };
+  void notifyVoidRequest(requestId, 'resolved');
+  return { ok: true };
 }

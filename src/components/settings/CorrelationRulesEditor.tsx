@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { CorrelationRule, CorrelationSide, MarketKey } from '../../types';
 import { DEFAULT_CORRELATION_RULES, MARKET_ALLOWED_SIDES } from '../../types';
 import { MARKET_LABELS } from '../../data/propsGenerator';
+import { PillSelect } from '../common/PillSelect';
 
 const MARKET_OPTIONS: MarketKey[] = [
   'h2h',
@@ -25,16 +26,16 @@ const MARKET_OPTIONS: MarketKey[] = [
 const SIDE_LABELS: Record<CorrelationSide, string> = {
   Over: 'Over',
   Under: 'Under',
-  Yes: 'Yes (anytime TD)',
-  FavoredTeam: 'Favored team (ML/spread)',
+  Yes: 'Yes',
+  FavoredTeam: 'Favored team',
 };
+const marketOptions = MARKET_OPTIONS.map((m) => ({ value: m, label: MARKET_LABELS[m] }));
+const sideOptionsFor = (m: MarketKey) => MARKET_ALLOWED_SIDES[m].map((s) => ({ value: s, label: SIDE_LABELS[s] }));
 
-/** Commissioner-customizable correlated-picks blocklist editor (manual v0.1.1 §5 B) —
- * the rules themselves are a plain data table (CorrelationRule[] in types/index.ts),
- * so add/remove/reset here never touches engine code. Side options are filtered per
- * market via MARKET_ALLOWED_SIDES (manual v0.2.0 §3 #5) so e.g. "Yes" can never be
- * picked for a yardage market — every market here only ever settles the sides that
- * actually exist for it. */
+/** Commissioner-customizable correlated-picks blocklist editor. The rules are a plain data table
+ * (CorrelationRule[] in types/index.ts), so add/remove/reset never touches engine code. Side options are
+ * filtered per market via MARKET_ALLOWED_SIDES so "Yes" can never be picked for a yardage market. The
+ * builder uses compact pill selects (the app forces native selects to 16px, which made a plain one huge). */
 export function CorrelationRulesEditor({ rules, onChange }: { rules: CorrelationRule[]; onChange: (rules: CorrelationRule[]) => void }) {
   const [marketA, setMarketA] = useState<MarketKey>('player_pass_yds');
   const [sideA, setSideA] = useState<CorrelationSide>('Over');
@@ -42,17 +43,10 @@ export function CorrelationRulesEditor({ rules, onChange }: { rules: Correlation
   const [sideB, setSideB] = useState<CorrelationSide>('Over');
   const [scope, setScope] = useState<'same-team' | 'same-game'>('same-team');
 
-  const sideOptionsA = MARKET_ALLOWED_SIDES[marketA];
-  const sideOptionsB = MARKET_ALLOWED_SIDES[marketB];
-
-  useEffect(() => {
-    if (!sideOptionsA.includes(sideA)) setSideA(sideOptionsA[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marketA]);
-  useEffect(() => {
-    if (!sideOptionsB.includes(sideB)) setSideB(sideOptionsB[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marketB]);
+  function pickMarket(market: MarketKey, setMarket: (m: MarketKey) => void, side: CorrelationSide, setSide: (s: CorrelationSide) => void) {
+    setMarket(market);
+    if (!MARKET_ALLOWED_SIDES[market].includes(side)) setSide(MARKET_ALLOWED_SIDES[market][0]);
+  }
 
   function addRule() {
     const rule: CorrelationRule = {
@@ -68,66 +62,44 @@ export function CorrelationRulesEditor({ rules, onChange }: { rules: Correlation
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {rules.map((rule) => (
-        <div key={rule.id} className="flex items-center justify-between gap-2 bg-bg-raised rounded-lg px-2.5 py-1.5">
-          <span className="text-[11px] flex-1">{rule.label}</span>
-          <button onClick={() => onChange(rules.filter((r) => r.id !== rule.id))} className="text-text-muted text-xs shrink-0">
+        <div key={rule.id} className="flex items-center justify-between gap-2 bg-bg-raised rounded-lg px-2.5 py-1">
+          <span className="text-[11px] flex-1 leading-snug">{rule.label}</span>
+          <button onClick={() => onChange(rules.filter((r) => r.id !== rule.id))} className="text-text-muted text-xs shrink-0" aria-label="Remove rule">
             ✕
           </button>
         </div>
       ))}
-      {rules.length === 0 && <p className="text-[11px] text-text-muted">No rules configured — add one below.</p>}
+      {rules.length === 0 && <p className="text-[11px] text-text-muted">No rules yet. Add one below.</p>}
       <button onClick={() => onChange(DEFAULT_CORRELATION_RULES)} className="text-[11px] text-primary font-medium">
         Reset to default rules
       </button>
 
-      <div className="bg-bg-raised rounded-lg p-2 space-y-1.5 mt-2">
-        <p className="text-[11px] text-text-muted">Add a rule</p>
-        <div className="grid grid-cols-2 gap-1.5">
-          <select value={marketA} onChange={(e) => setMarketA(e.target.value as MarketKey)} className="bg-bg-card border border-border rounded px-1.5 py-1 text-[11px]">
-            {MARKET_OPTIONS.map((m) => (
-              <option key={m} value={m}>
-                {MARKET_LABELS[m]}
-              </option>
-            ))}
-          </select>
-          <select value={sideA} onChange={(e) => setSideA(e.target.value as CorrelationSide)} className="bg-bg-card border border-border rounded px-1.5 py-1 text-[11px]">
-            {sideOptionsA.map((s) => (
-              <option key={s} value={s}>
-                {SIDE_LABELS[s]}
-              </option>
-            ))}
-          </select>
-          <select value={marketB} onChange={(e) => setMarketB(e.target.value as MarketKey)} className="bg-bg-card border border-border rounded px-1.5 py-1 text-[11px]">
-            {MARKET_OPTIONS.map((m) => (
-              <option key={m} value={m}>
-                {MARKET_LABELS[m]}
-              </option>
-            ))}
-          </select>
-          <select value={sideB} onChange={(e) => setSideB(e.target.value as CorrelationSide)} className="bg-bg-card border border-border rounded px-1.5 py-1 text-[11px]">
-            {sideOptionsB.map((s) => (
-              <option key={s} value={s}>
-                {SIDE_LABELS[s]}
-              </option>
-            ))}
-          </select>
+      <div className="bg-bg-raised rounded-lg p-1.5 space-y-1 mt-1">
+        <div className="flex gap-1">
+          <PillSelect fill ariaLabel="First market" value={marketA} options={marketOptions} onChange={(m) => pickMarket(m, setMarketA, sideA, setSideA)} />
+          <PillSelect fill ariaLabel="First side" value={sideA} options={sideOptionsFor(marketA)} onChange={setSideA} />
         </div>
-        <div className="flex gap-2 items-center">
-          <label className="text-[11px] text-text-muted shrink-0">Scope:</label>
-          <select
+        <div className="flex gap-1">
+          <PillSelect fill ariaLabel="Second market" value={marketB} options={marketOptions} onChange={(m) => pickMarket(m, setMarketB, sideB, setSideB)} />
+          <PillSelect fill ariaLabel="Second side" value={sideB} options={sideOptionsFor(marketB)} onChange={setSideB} />
+        </div>
+        <div className="flex gap-1">
+          <PillSelect
+            fill
+            ariaLabel="Scope"
             value={scope}
-            onChange={(e) => setScope(e.target.value as 'same-team' | 'same-game')}
-            className="bg-bg-card border border-border rounded px-1.5 py-1 text-[11px] flex-1"
-          >
-            <option value="same-team">Same team</option>
-            <option value="same-game">Same game (either team)</option>
-          </select>
+            options={[
+              { value: 'same-team', label: 'Same team' },
+              { value: 'same-game', label: 'Same game' },
+            ]}
+            onChange={setScope}
+          />
+          <button onClick={addRule} className="flex-1 bg-primary text-white text-[11px] font-semibold py-1 rounded-lg">
+            Add rule
+          </button>
         </div>
-        <button onClick={addRule} className="w-full bg-primary text-white text-xs font-semibold py-1.5 rounded-lg">
-          Add Rule
-        </button>
       </div>
     </div>
   );

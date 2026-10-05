@@ -22,6 +22,9 @@ import { weekScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WagerStatus } from '../types';
 import { weekLabel } from '../types';
+import { ShareButton } from '../share/ShareButton';
+import { MatchupShareCard, type MatchupCell, type MatchupSide } from '../share/cards/MatchupShareCard';
+import type { ShareStatus } from '../share/palette';
 
 export function MatchupDetail() {
   const { matchupId } = useParams<{ matchupId: string }>();
@@ -165,20 +168,64 @@ export function MatchupDetail() {
   };
   const anyPickLive = rosterA.slots.some(isSlotLive) || rosterB.slots.some(isSlotLive);
 
+  // Share: what this screen shows, as one fixed-size picture. A pick the viewer cannot see yet
+  // (hide-picks, before kickoff) is "Hidden" here too, exactly as on screen.
+  const shareCell = (slot: RosterSlotState, isUser: boolean): MatchupCell => {
+    const w = slot.wager;
+    if (!w) return { kind: 'empty' };
+    const g = realGamesById[w.gameId] ?? getGame(w.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+    const started = !!g && g.status !== 'upcoming';
+    if (!isUser && hidePicks && !started) return { kind: 'hidden' };
+    return {
+      kind: 'pick',
+      name: w.playerName ?? w.side,
+      line: wagerLineDescription(w),
+      status: w.status !== 'pending' ? (w.status as ShareStatus) : started ? 'live' : 'pending',
+      profit: w.settledProfit ?? null,
+    };
+  };
+  const shareSide = (team: LeagueTeam, score: number, progress: ReturnType<typeof pickProgress>, perfect: boolean): MatchupSide => ({
+    name: team.teamName,
+    initials: team.abbrev,
+    identity: team,
+    score,
+    progress: formatProgressLine(progress),
+    perfect,
+  });
+  const shareCard = (
+    <MatchupShareCard
+      leagueName={league.name}
+      weekText={weekLabel(matchup.week)}
+      statusText={isFinal ? 'Final' : anyPickLive ? 'Live' : 'Upcoming'}
+      a={shareSide(teamA, scoreA, progressA, perfectA)}
+      b={shareSide(teamB, scoreB, progressB, perfectB)}
+      winner={isFinal ? (matchup.isTie ? 'tie' : matchup.winnerId === teamA.id ? 'a' : 'b') : null}
+      plRef={scaleRef}
+      rows={rosterA.slots.map((slotA, idx) => ({
+        position: slotA.position,
+        a: shareCell(slotA, teamA.isUser),
+        b: shareCell(rosterB.slots[idx], teamB.isUser),
+      }))}
+    />
+  );
+
   return (
     <div className="flex flex-col">
       <BackHeader
         title="Matchup"
         fallback="/home"
         right={
-          <button
-            onClick={() => setMatchupDetailMode(advanced ? 'simple' : 'advanced')}
-            className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
-              advanced ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
-            }`}
-          >
-            Advanced
-          </button>
+          <div className="flex items-center gap-2">
+            <ShareButton title={`${teamA.teamName} vs ${teamB.teamName}`} label="Share this matchup" renderCard={() => shareCard} />
+            <button
+              onClick={() => setMatchupDetailMode(advanced ? 'simple' : 'advanced')}
+              className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+                advanced ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+              }`}
+            >
+              Advanced
+            </button>
+          </div>
         }
       />
       {orderedWeekMatchups.length > 1 && (

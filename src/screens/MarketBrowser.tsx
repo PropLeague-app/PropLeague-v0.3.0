@@ -1,3 +1,4 @@
+import { activeMarketRules, marketBlockReason } from '../engine/marketRules';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
@@ -123,6 +124,8 @@ export function MarketBrowser() {
   const currentUserTeam = userTeam;
   function checkBlockedFor(gameId: string, marketKey: MarketKey, playerId: string | undefined) {
     return (outcome: OddsOutcome): string | null => {
+      const ruleBlock = marketBlockReason(activeMarketRules(currentLeague.settings), marketKey, outcome.name);
+      if (ruleBlock) return ruleBlock;
       const claimingTeamId = findClaimingTeam(
         currentLeague,
         currentLeague.currentWeek,

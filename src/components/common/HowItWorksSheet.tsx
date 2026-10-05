@@ -89,6 +89,12 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
+      title: 'Blocked and limited markets',
+      body: [
+        'A commissioner can block a market (or just its Over or Under side), or cap how much one pick on it can stake. Blocked markets cannot be picked and a capped market shows its max on the bet slip. Bots skip blocked markets but ignore caps.',
+      ],
+    },
+    {
       title: 'Penalties',
       body: [
         settings?.emptySlotFloor != null
@@ -115,6 +121,13 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
+      title: 'Void requests',
+      body: [
+        'If a player left a game early, open Settings, then Void Requests, find him, choose a reason and add a note. Your commissioner approves or denies it, and you get a notification either way. Only Over and Anytime TD picks that did not hit are voided, for everyone.',
+        'You can have 3 requests waiting at once, and a player the commissioner denied cannot be requested again that week.',
+      ],
+    },
+    {
       title: 'Settlement',
       body: ['Picks are graded automatically from real stats. A week closes Tuesday morning Eastern, after Monday night, and then scores, matchups, standings and playoffs update on their own.'],
     },
@@ -138,7 +151,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
 
   if (!settings || settings.buyInEnabled) {
     const body = [
-      'If buy-ins are on, every team chips in to a shared prize pool. Each week the pool moves by the league\'s combined real-dollar profit or loss, scaled by how much of your weekly budget you used. It locks at the end of the regular season and pays the top finishers.',
+      'If buy-ins are on, every team chips in to a shared prize pool. Each week the pool moves by the league\'s combined real-dollar profit or loss on bets that were actually placed, scaled by how much of your weekly budget you used. Penalties for unspent credits or an empty lineup hurt a team\'s score and standings, but no bet was placed, so they never move the pool. It locks at the end of the regular season and pays the top finishers.',
     ];
     if (settings?.poolMultipliers.enabled) {
       body.push('Standing multipliers are on here: a team ranked higher moves the pool a bit more and a lower one a bit less. Total exposure never changes, only whose picks count more.');
@@ -151,6 +164,12 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Bets',
       body: [
         'Every pick as a compact ticket: player, market, line, odds, stake, result. Filter by week, open or settled, result, position and market, search by player, and sort by newest, biggest win or loss, stake or odds. Other teams\' picks stay hidden until kickoff when Hide Picks is on.',
+      ],
+    },
+    {
+      title: 'Sharing',
+      body: [
+        'Tap the share icon at the top of Bets, My Stats or any Matchup (current or past), or the small one on a leaderboard, to make a picture to send. It is a clean card built from the numbers on screen, not a screenshot. It follows your theme (light or dark, and scaled P/L colors), and a perfect week gets its flames behind the team logo. Bets shares whatever your filters show: a few picks fill a standard 4:5 picture, and a long list makes it taller, like a long parlay slip (up to 30 picks, then "+N more"). Tap the small icon on one ticket to share just that bet. My Stats shares the tab you are on (Overview, Markets, Trends or Matchups). Picks that are hidden until kickoff stay hidden in the picture.',
       ],
     },
     {
@@ -185,7 +204,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Changing settings mid-week',
       body: [
-        'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation and minimum-game rules, buy-in, multipliers and penalties.',
+        'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation, market and minimum-game rules, buy-in, multipliers and penalties.',
         'You can still edit them. The change is saved as scheduled, shows an "Applies Week N" pill, and takes effect after Tuesday\'s settlement. You can discard scheduled changes in one tap.',
         'Everything else applies immediately: league name and visibility, Weekly Moments, perfect week announcements, alt lines, line movement, playoff format, payout splits and conference names.',
       ],
@@ -194,7 +213,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Settings groups',
       body: [
         'League Basics: name, logo, visibility, members and invite code.',
-        'Roster & Picks: slots, minimum games, duplicate and correlation rules, pick visibility.',
+        'Roster & Picks: slots, minimum games, duplicate, correlation and market rules, pick visibility.',
         'Penalties: empty slot minimum loss, invalid roster rule and fee.',
         'Betting & Buy-In: stake limits, buy-in, payout split, standing multipliers.',
         'Lines & Markets: alt lines and live line movement.',
@@ -203,9 +222,10 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
-      title: 'Game Exits',
+      title: 'Void Requests',
       body: [
-        'When a player leaves a game early, open Settings, then Game Exits, find the player, pick a reason and flag it. On the next settlement every Over and Anytime TD pick on him that did not hit is voided. Unders, moneylines and spreads are never touched. Un-flagging restores them, and both actions post a short League Update.',
+        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. You get a push and a pending badge. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
+        'Your own requests skip the queue. Un-flagging restores the picks, and approving or flagging posts a short League Update.',
       ],
     },
   ];
