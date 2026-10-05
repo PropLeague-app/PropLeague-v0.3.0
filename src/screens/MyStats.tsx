@@ -343,7 +343,7 @@ export function MyStats() {
                   <div className="min-w-0">
                     <p className="text-xs text-text-muted">Perfect weeks</p>
                     <p className="text-[10px] text-text-muted">
-                      {perfect.length > 0 ? perfect.map((w) => weekLabel(w)).join(', ') : 'A full roster with no lost bets'}
+                      {perfect.length > 0 ? perfect.map((w) => (typeof w === 'number' ? `W${w}` : weekLabel(w))).join(', ') : 'A full roster with no lost bets'}
                     </p>
                   </div>
                   <p className={`text-lg font-bold shrink-0 flex items-center gap-1.5 ${perfect.length > 0 ? '' : 'text-text-muted'}`}>

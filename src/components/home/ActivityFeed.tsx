@@ -9,6 +9,8 @@ import { LeagueLogo } from '../common/LeagueLogo';
 import { PositionBadge } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { ConfirmSheet } from '../common/ConfirmSheet';
+import { FireAura } from '../common/FireAura';
+import { parsePerfectWeek, type PerfectWeekPost } from '../../engine/perfectAnnouncement';
 import { useAppStore } from '../../store/useAppStore';
 import { teamAccent } from '../../engine/teamColors';
 import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from '../../engine/richText';
@@ -93,6 +95,63 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+/** A perfect week gets its own card: week on top, then the team and "Perfect Week" in large type, then
+ * the record and P/L underneath. Gold wash from both edges and flames around the logo, same look as the
+ * rest of the app's perfect-week treatment. */
+function PerfectWeekCard({
+  league,
+  item,
+  post,
+  onReact,
+  onDelete,
+  canDelete,
+}: {
+  league: League;
+  item: ActivityItem;
+  post: PerfectWeekPost;
+  onReact?: (itemId: string, emoji: string) => void;
+  onDelete?: (itemId: string) => void;
+  canDelete?: boolean;
+}) {
+  const team = league.teams.find((t) => t.id === post.teamId);
+  return (
+    <Card dense className="pl-slip pl-slip-l pl-slip-r border-gold/30! space-y-1">
+      <div className="flex flex-col items-center text-center">
+        <p className="text-[9px] font-bold uppercase tracking-[0.2em] pl-gold-text">{post.weekLabel}</p>
+        <div className="flex items-center justify-center gap-2 mt-1 max-w-full">
+          {team && (
+            <FireAura active>
+              <TeamLogo team={team} size="sm" />
+            </FireAura>
+          )}
+          <p className="text-base font-bold text-text truncate min-w-0">{team?.teamName ?? post.teamName}</p>
+        </div>
+        <p className="pl-fire-name text-xl font-extrabold uppercase tracking-wide leading-none mt-1">Perfect Week</p>
+        <div className="flex items-center justify-center gap-1.5 mt-1.5">
+          <span className="inline-flex items-baseline gap-1 rounded-full bg-black/30 px-2.5 py-0.5 text-sm font-bold text-text">
+            {post.record}
+            <span className="text-[8px] font-semibold uppercase tracking-wide text-text-muted">W-L-P</span>
+          </span>
+          <span className="rounded-full bg-profit/15 px-2.5 py-0.5 text-sm font-bold text-profit">{post.pl}</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] text-text-muted">
+          {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+        </p>
+        <div className="flex items-center gap-2">
+          <Reactions item={item} onReact={onReact} />
+          {canDelete && onDelete && (
+            <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function NewsCard({
   league,
   item,
@@ -117,6 +176,8 @@ function NewsCard({
   onTogglePin?: (item: ActivityItem) => void;
 }) {
   const isAnnouncement = item.type === 'announcement';
+  const perfect = isAnnouncement ? parsePerfectWeek(item.message) : null;
+  if (perfect) return <PerfectWeekCard league={league} item={item} post={perfect} onReact={onReact} onDelete={onDelete} canDelete={canDelete} />;
   // Announcements the commissioner posted (or flagged a void with) carry their team id;
   // system ones (season start, welcome) do not.
   const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;

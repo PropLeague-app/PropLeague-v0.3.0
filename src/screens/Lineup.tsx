@@ -3,6 +3,8 @@ import { Info } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { validateLineup } from '../engine/validation';
+import { rosterPenalties } from '../engine/penalties';
+import { computeIncompleteLineupPenalty } from '../engine/scoring';
 import { activeMultipliers } from '../engine/prizePool';
 import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
@@ -92,6 +94,12 @@ export function Lineup() {
 
   const validation = validateLineup(roster, league.settings);
   const multiplier = activeMultipliers(league)[userTeam.id] ?? 1;
+  // Penalty preview: only shown when a commissioner penalty setting would actually bite, and then
+  // it lists everything the week would cost if it locked as is (including the usual unspent credits).
+  const penalties = rosterPenalties(roster, league.settings);
+  const incompleteLoss = -computeIncompleteLineupPenalty(roster, league.settings);
+  const penaltyTotal = incompleteLoss + penalties.invalidStakeLost + penalties.fee;
+  const showPenaltyPreview = penalties.floorExtra > 0 || penalties.invalidStakeLost > 0 || penalties.fee > 0;
   // The top icon doubles as the lineup-issue indicator: red "!" (and the reasons
   // tucked behind it) when something's blocking submission, blue "i" otherwise
   // (see chat: "some of these lineup warnings can also get dropped in a '!' or
@@ -183,6 +191,27 @@ export function Lineup() {
         className="fixed w-full max-w-md bg-bg-raised border-t border-border p-3 space-y-2"
         style={{ bottom: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
       >
+        {showPenaltyPreview && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 space-y-0.5">
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span>If it locked now</span>
+              <span className="text-loss">-${penaltyTotal.toFixed(2)}</span>
+            </div>
+            {incompleteLoss > 0 && (
+              <p className="text-[11px] text-text-muted">
+                Incomplete lineup: -${incompleteLoss.toFixed(2)}
+                {penalties.floorExtra > 0 ? ` (includes the $${penalties.floorExtra.toFixed(2)} empty slot minimum)` : ''}
+              </p>
+            )}
+            {penalties.invalidStakeLost > 0 && (
+              <p className="text-[11px] text-text-muted">Voided pick{penalties.invalidSlotIds.size > 1 ? 's' : ''}: -${penalties.invalidStakeLost.toFixed(2)} stake</p>
+            )}
+            {penalties.fee > 0 && <p className="text-[11px] text-text-muted">Roster fee: -${penalties.fee.toFixed(2)}</p>}
+            {penalties.reasons.filter((r) => !/empty slot/.test(r)).map((r) => (
+              <p key={r} className="text-[11px] text-warning">{r}</p>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between text-xs text-text-muted px-1">
           <span>Remaining: ${Math.max(0, validation.remaining).toFixed(2)}</span>
           <span>{validation.distinctGames} game(s) used</span>

@@ -58,6 +58,8 @@ import {
   type MomentSettingsReal,
   type MomentWagerInput,
 } from '../_shared/momentsReal.ts';
+import { encodePerfectWeek, signedMoney } from '../_shared/perfectAnnouncement.ts';
+import { checkRosterRules, effectiveEmptyFloor, type CorrelationRuleReal, type PenaltyPickReal } from '../_shared/rosterPenalties.ts';
 import {
   type PlayoffFieldSize,
   type PlayoffBracket,
@@ -240,6 +242,14 @@ interface SettingsSlice {
    * incomplete-lineup penalty (see chat: engine/scoring.ts's
    * computeIncompleteLineupPenalty, ported into this function below). */
   lineupSlots: Record<string, number>;
+  /** Roster penalties (src/engine/penalties.ts), all Off by default. */
+  emptySlotFloor: number | null;
+  invalidRosterPenaltyEnabled: boolean;
+  invalidRosterFee: number;
+  minGamesPerRoster: number | null;
+  correlationBlockEnabled: boolean;
+  correlationRules: CorrelationRuleReal[];
+  perfectWeekAnnouncements: boolean;
 }
 
 const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, ML: 1 };
@@ -253,6 +263,13 @@ const DEFAULT_SETTINGS: SettingsSlice = {
   buyInAmount: 0,
   poolMultipliers: { enabled: false, basis: 'rank', spread: 0 },
   lineupSlots: DEFAULT_LINEUP_SLOTS,
+  emptySlotFloor: null,
+  invalidRosterPenaltyEnabled: false,
+  invalidRosterFee: 0,
+  minGamesPerRoster: null,
+  correlationBlockEnabled: false,
+  correlationRules: [],
+  perfectWeekAnnouncements: true,
 };
 
 function settingsFrom(raw: unknown): SettingsSlice {
@@ -267,6 +284,13 @@ function settingsFrom(raw: unknown): SettingsSlice {
     buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
     poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...(r.poolMultipliers ?? {}) },
     lineupSlots: r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_SETTINGS.lineupSlots,
+    emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
+    invalidRosterPenaltyEnabled: r.invalidRosterPenaltyEnabled === true,
+    invalidRosterFee: typeof r.invalidRosterFee === 'number' ? r.invalidRosterFee : 0,
+    minGamesPerRoster: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : null,
+    correlationBlockEnabled: r.correlationBlockEnabled === true,
+    correlationRules: Array.isArray(r.correlationRules) ? (r.correlationRules as CorrelationRuleReal[]) : [],
+    perfectWeekAnnouncements: r.perfectWeekAnnouncements !== false,
   };
 }
 
@@ -562,11 +586,13 @@ Deno.serve(async (req) => {
 
       const { data: rosterRows } = await supabase
         .from('weekly_rosters')
-        .select('team_id, submitted, wagers(id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, status, settled_profit), teams!inner(league_id)')
+        .select('team_id, submitted, wagers(id, slot_id, game_id, market_key, player_id, player_name, side, point, odds_at_placement, stake, placed_at, status, settled_profit), teams!inner(league_id)')
         .eq('teams.league_id', leagueId)
         .eq('week', weekStr);
 
       const weeklyScoreByTeam = new Map<string, number>();
+      // Teams the invalid-roster penalty hit this run (they cannot have a perfect week).
+      const penalizedTeamIds = new Set<string>();
       // Weekly Moments (see chat, Sept 2026): wagersThisWeekByTeam holds the SAME
       // wager objects the grading loop below mutates in place as it grades them, so
       // by the time moments are computed after standings, every wager here already
@@ -745,7 +771,33 @@ Deno.serve(async (req) => {
           const unallocated = Math.max(0, settings.weeklyCredits - allocated);
           const hasEmptySlot = wagers.length < totalSlots;
           if (!(row as any).submitted || hasEmptySlot) {
-            teamTotal -= unallocated;
+            // Optional floor: every empty slot costs at least a set amount (see
+            // src/engine/penalties.ts). Never less than the unallocated credits.
+            const floor = effectiveEmptyFloor(settings);
+            const emptyCount = Math.max(0, totalSlots - wagers.length);
+            teamTotal -= Math.max(unallocated, floor != null ? floor * emptyCount : 0);
+          }
+          // Roster penalties (src/engine/penalties.ts, Off unless the commissioner turned it on):
+          // an extra pick that breaks a roster rule is voided and its whole stake lost whatever
+          // it did, and a roster that breaks one (or spreads over too few games) pays a flat fee
+          // once. Only the score changes; the wager rows keep their real result.
+          if (settings.invalidRosterPenaltyEnabled) {
+            const picks: PenaltyPickReal[] = wagers.map((w: any) => ({
+              slotId: String(w.slot_id ?? w.id),
+              gameId: w.game_id,
+              marketKey: w.market_key,
+              side: w.side,
+              playerId: w.player_id,
+              stake: w.stake ?? 0,
+              placedAt: String(w.placed_at ?? ''),
+            }));
+            const check = checkRosterRules(picks, settings);
+            const invalidIds = new Set(check.invalidSlotIds);
+            for (const w of wagers) {
+              if (invalidIds.has(String(w.slot_id ?? w.id))) teamTotal += -(w.stake ?? 0) - (w.settled_profit ?? 0);
+            }
+            if (check.feeApplies) teamTotal -= Math.max(0, settings.invalidRosterFee);
+            if (check.feeApplies) penalizedTeamIds.add((row as any).team_id);
           }
         }
         wagersThisWeekByTeam.set((row as any).team_id, wagers);
@@ -936,6 +988,52 @@ Deno.serve(async (req) => {
             moment_extra: moment.extra,
           });
           if (momentErr) errors.push(`moment ${moment.category}: ${momentErr.message}`);
+        }
+
+        // --- Perfect Week announcement (commissioner toggle perfectWeekAnnouncements, default
+        // on, applies immediately). Same test as src/engine/perfectWeek.ts's isPerfectWeek: every
+        // slot filled, all weekly credits placed, enough different games, at least one win, no
+        // losses, nothing pending (voids and pushes are fine), and not hit by the invalid-roster
+        // penalty. Idempotent per league/week/team via notification_dedup, so the Tuesday rerun
+        // never double-posts.
+        if (settings.perfectWeekAnnouncements && seasonStarted) {
+          const weekText = /^[0-9]+$/.test(weekStr) ? `Week ${weekStr}` : weekStr;
+          for (const t of teams ?? []) {
+            const teamId = (t as any).id as string;
+            const ws = wagersThisWeekByTeam.get(teamId) ?? [];
+            if (ws.length === 0 || ws.length < totalSlots || penalizedTeamIds.has(teamId)) continue;
+            if (ws.some((w) => w.status === 'pending' || w.status === 'lost')) continue;
+            if (!ws.some((w) => w.status === 'won')) continue;
+            const staked = ws.reduce((sum, w) => sum + (w.stake ?? 0), 0);
+            if (Math.abs(staked - settings.weeklyCredits) > 0.01) continue;
+            if (new Set(ws.map((w) => w.game_id)).size < (settings.minGamesPerRoster ?? 2)) continue;
+            const dedupKey = `perfect:${leagueId}:${weekStr}:${teamId}`;
+            let claimed: boolean;
+            try {
+              claimed = await claimMomentOnce(supabase, dedupKey);
+            } catch (claimErr) {
+              errors.push(`perfect week ${teamId}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+              continue;
+            }
+            if (!claimed) continue;
+            // The app draws this as its own gold card: week, team, "Perfect Week", record and P/L.
+            const winCount = ws.filter((w) => w.status === 'won').length;
+            const pushCount = ws.length - winCount; // pushes and voids (no losses by now)
+            const weekPL = ws.reduce((sum, w) => sum + (w.settled_profit ?? 0), 0);
+            const { error: perfectErr } = await supabase.from('activity_items').insert({
+              league_id: leagueId,
+              type: 'announcement',
+              message: encodePerfectWeek({
+                weekLabel: weekText,
+                teamName: String(teamNameById.get(teamId) ?? 'A team'),
+                record: `${winCount}-0-${pushCount}`,
+                pl: signedMoney(weekPL),
+                teamId,
+              }),
+              pinned: false,
+            });
+            if (perfectErr) errors.push(`perfect week ${teamId}: ${perfectErr.message}`);
+          }
         }
       }
 

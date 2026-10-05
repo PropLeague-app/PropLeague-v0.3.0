@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock, ClipboardList, Gauge, Lock, Settings, Sparkles, TrendingUp, Trophy } from 'lucide-react';
+import { CalendarClock, ClipboardList, Gauge, Lock, ShieldAlert, Settings, Sparkles, TrendingUp, Trophy } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import type { League, LeagueSettings, LeagueTeam, PlayoffFieldSize, Position } from '../../types';
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../../types';
@@ -51,6 +51,26 @@ const onOff = (v: boolean) => (v ? 'on' : 'off');
 const ROSTER_KEYS: DeferredSettingKey[] = ['lineupSlots', 'minGamesPerRoster', 'maxDuplicatePicks', 'waiverMode', 'correlationBlockEnabled', 'correlationRules', 'hidePicks'];
 const LIMIT_KEYS: DeferredSettingKey[] = ['weeklyCredits', 'minBetPerSlot', 'maxMLBet', 'maxPropBet', 'minOdds', 'singleBetCapPct', 'wagerPrecision', 'propBetOverride', 'mlBetOverride'];
 const BUYIN_KEYS: DeferredSettingKey[] = ['buyInEnabled', 'buyInAmount', 'poolMultipliers'];
+const PENALTY_KEYS: DeferredSettingKey[] = ['emptySlotFloor', 'invalidRosterPenaltyEnabled', 'invalidRosterFee'];
+
+/** A small dollar stepper (whole-dollar steps), for penalty amounts. */
+function MoneyStepper({ label, value, min, max, step = 1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (v: number) => void }) {
+  const clamp = (n: number) => Math.round(Math.min(max, Math.max(min, n)) * 100) / 100;
+  return (
+    <div className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onChange(clamp(value - step))} className="text-text-muted w-5">
+          −
+        </button>
+        <span className="text-sm w-14 text-center">${value.toFixed(2)}</span>
+        <button type="button" onClick={() => onChange(clamp(value + step))} className="text-text-muted w-5">
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** Every league-wide setting, grouped by topic into collapsible sections.
  *
@@ -134,6 +154,12 @@ export function LeagueSettingsPanel({
     .filter((p) => settings.lineupSlots[p] > 0)
     .map((p) => `${settings.lineupSlots[p]} ${p}`)
     .join(' · ');
+  // Most an empty slot can cost: credits split evenly across the slots.
+  const floorCap = totalSlots > 0 ? Math.floor((settings.weeklyCredits / totalSlots) * 100 + 1e-9) / 100 : 0;
+  const penaltySummary = [
+    settings.emptySlotFloor != null ? `empty slot min $${Math.min(settings.emptySlotFloor, floorCap).toFixed(2)}` : 'empty slot floor off',
+    settings.invalidRosterPenaltyEnabled ? `invalid roster fee $${settings.invalidRosterFee.toFixed(2)}` : 'invalid roster penalty off',
+  ].join(' · ');
   const enabledMoments = MOMENT_CATEGORIES.filter((cat) => settings.moments[cat].enabled).length;
   return (
     <section className="space-y-2">
@@ -425,6 +451,61 @@ export function LeagueSettingsPanel({
         </CollapsibleSection>
 
         <CollapsibleSection
+          title="Penalties"
+          icon={<ShieldAlert size={16} />}
+          readOnly={readOnly}
+          badge={pillFor(PENALTY_KEYS)}
+          summary={penaltySummary}
+        >
+          {errorNote}
+          <p className="text-[11px] text-text-muted">Both are off by default and only apply to weeks played after you turn them on.</p>
+          <SubSection
+            title="Empty slot penalty"
+            description="Today an incomplete lineup loses its unspent credits. This sets a minimum loss for each empty slot, so skipping one is never cheap."
+          >
+            <ToggleRow
+              label="Minimum loss per empty slot"
+              value={settings.emptySlotFloor != null}
+              onChange={(v) => update({ emptySlotFloor: v ? Math.min(5, floorCap) : null })}
+            />
+            {settings.emptySlotFloor != null && (
+              <MoneyStepper
+                label="Per empty slot"
+                value={Math.min(settings.emptySlotFloor, floorCap)}
+                min={1}
+                max={Math.max(1, floorCap)}
+                onChange={(v) => update({ emptySlotFloor: v })}
+              />
+            )}
+            <p className="text-[11px] text-text-muted">Capped at {`$${floorCap.toFixed(2)}`}, your credits split across {totalSlots} slots. An empty lineup never loses more than it does now.</p>
+          </SubSection>
+          <SubSection
+            title="Invalid roster penalty"
+            description="An extra pick that breaks a roster rule is voided and its whole stake is lost, even if it wins. Covers the same player in two slots, and correlated pairs when that rule is on."
+          >
+            <ToggleRow
+              label="Penalize invalid rosters"
+              value={settings.invalidRosterPenaltyEnabled}
+              onChange={(v) => update({ invalidRosterPenaltyEnabled: v })}
+            />
+            {settings.invalidRosterPenaltyEnabled && (
+              <>
+                <MoneyStepper
+                  label="Flat fee"
+                  value={settings.invalidRosterFee}
+                  min={0}
+                  max={settings.weeklyCredits}
+                  onChange={(v) => update({ invalidRosterFee: v })}
+                />
+                <p className="text-[11px] text-text-muted">
+                  Charged once per roster that breaks a rule or is spread over too few games. Set it to $0.00 for no fee, only the lost stake.
+                </p>
+              </>
+            )}
+          </SubSection>
+        </CollapsibleSection>
+
+        <CollapsibleSection
           title="Betting & Buy-In"
           icon={<Gauge size={16} />}
           readOnly={readOnly}
@@ -686,6 +767,12 @@ export function LeagueSettingsPanel({
           summary={`${enabledMoments} of ${MOMENT_CATEGORIES.length} awards on`}
         >
           <p className="text-[11px] text-text-muted">Weekly awards posted to the league feed. Turn any off, or give each a custom name.</p>
+          <ToggleRow
+            label="Announce perfect weeks"
+            value={settings.perfectWeekAnnouncements}
+            onChange={(v) => update({ perfectWeekAnnouncements: v })}
+            note="Posts to the feed when a team goes the whole week without a lost bet."
+          />
           <div className="space-y-2">
             {MOMENT_CATEGORIES.map((cat) => {
               const config = settings.moments[cat];

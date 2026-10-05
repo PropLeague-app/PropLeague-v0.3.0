@@ -1,6 +1,7 @@
 import type { LeagueSettings, RosterSlotState, WeeklyRoster } from '../types';
 import { americanToImpliedProbability, profitForStake } from './oddsMath';
 import { settleWager, type GameResult } from './settlement';
+import { effectiveEmptyFloor, rosterPenalties } from './penalties';
 
 /**
  * Spec §4: an incomplete lineup scores as a lost bet averaged across the empty/
@@ -11,15 +12,26 @@ import { settleWager, type GameResult } from './settlement';
 export function computeIncompleteLineupPenalty(roster: WeeklyRoster, settings: LeagueSettings): number {
   const allocated = roster.slots.reduce((sum, s) => sum + (s.wager?.stake ?? 0), 0);
   const unallocated = Math.max(0, settings.weeklyCredits - allocated);
-  const hasEmptySlot = roster.slots.some((s) => !s.wager);
-  if (!roster.submitted || hasEmptySlot) return -unallocated;
+  const emptySlots = roster.slots.filter((s) => !s.wager).length;
+  if (!roster.submitted || emptySlots > 0) {
+    // Optional floor: each empty slot costs at least a set amount (engine/penalties.ts).
+    const floor = effectiveEmptyFloor(settings);
+    const floorLoss = floor != null ? floor * emptySlots : 0;
+    return -Math.max(unallocated, floorLoss);
+  }
   return 0;
 }
 
-/** Weekly team score = sum of all settled wager P/L, plus the incomplete-lineup penalty. */
+/** Weekly team score = sum of all settled wager P/L, plus the incomplete-lineup penalty. A pick
+ * voided by the invalid-roster penalty counts as a lost stake whatever it did, and the flat fee
+ * comes off once (both only when that penalty is on). */
 export function computeWeeklyScore(roster: WeeklyRoster, settings: LeagueSettings): number {
-  const settledPL = roster.slots.reduce((sum, s) => sum + (s.wager?.settledProfit ?? 0), 0);
-  return settledPL + computeIncompleteLineupPenalty(roster, settings);
+  const pen = rosterPenalties(roster, settings);
+  const settledPL = roster.slots.reduce((sum, s) => {
+    if (!s.wager) return sum;
+    return sum + (pen.invalidSlotIds.has(s.slotId) ? -s.wager.stake : (s.wager.settledProfit ?? 0));
+  }, 0);
+  return settledPL + computeIncompleteLineupPenalty(roster, settings) - pen.fee;
 }
 
 export interface DecidedGameLookup {
@@ -55,9 +67,11 @@ export function expectedWeeklyScore(
   // visibility and its roster-card visibility can never drift apart.
   isSlotHidden?: (slot: RosterSlotState) => boolean,
 ): number {
+  const pen = rosterPenalties(roster, settings);
   const expected = roster.slots.reduce((sum, s) => {
     if (!s.wager) return sum;
     if (isSlotHidden?.(s)) return sum;
+    if (pen.invalidSlotIds.has(s.slotId)) return sum - s.wager.stake;
     if (s.wager.status !== 'pending') return sum + (s.wager.settledProfit ?? 0);
     if (decided?.isDecided(s.wager.gameId)) {
       const result = decided.resultFor(s.wager.gameId);
@@ -67,7 +81,7 @@ export function expectedWeeklyScore(
     const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
     return sum + p * profit - (1 - p) * s.wager.stake;
   }, 0);
-  return expected + computeIncompleteLineupPenalty(roster, settings);
+  return expected + computeIncompleteLineupPenalty(roster, settings) - pen.fee;
 }
 
 /** Standard normal CDF via the Abramowitz & Stegun erf approximation (max error

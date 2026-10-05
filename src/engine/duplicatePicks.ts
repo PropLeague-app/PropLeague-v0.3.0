@@ -130,6 +130,41 @@ function teamIdForPick(pick: CorrelationPick, playerTeamId: (playerId: string) =
   return null;
 }
 
+/** Every pair of picks that break a correlation rule (a rule matches whichever pick is "A"
+ * or "B"), each pair once. Used by the roster penalty, which needs all of them rather than
+ * just the first like `findCorrelationViolation`. */
+export function findAllCorrelatedPairs(
+  picks: CorrelationPick[],
+  rules: CorrelationRule[],
+  playerTeamId: (playerId: string) => string | undefined,
+): [string, string][] {
+  const seen = new Set<string>();
+  const pairs: [string, string][] = [];
+  for (const rule of rules) {
+    for (let i = 0; i < picks.length; i++) {
+      for (let j = 0; j < picks.length; j++) {
+        if (i === j) continue;
+        const a = picks[i];
+        const b = picks[j];
+        if (a.marketKey !== rule.marketA || !sideMatches(rule.sideA, a.side)) continue;
+        if (b.marketKey !== rule.marketB || !sideMatches(rule.sideB, b.side)) continue;
+        if (rule.scope === 'same-game') {
+          if (a.gameId !== b.gameId) continue;
+        } else {
+          const ta = teamIdForPick(a, playerTeamId);
+          const tb = teamIdForPick(b, playerTeamId);
+          if (!ta || !tb || ta !== tb) continue;
+        }
+        const key = [a.slotId, b.slotId].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pairs.push([a.slotId, b.slotId]);
+      }
+    }
+  }
+  return pairs;
+}
+
 export interface CorrelationViolation {
   rule: CorrelationRule;
   slotIds: [string, string];

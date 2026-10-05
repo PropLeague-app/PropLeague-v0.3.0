@@ -347,6 +347,15 @@ export interface LeagueSettings {
   /** C: null = OFF (the manual's baseline minimum of 2 distinct games still applies);
    * a number raises that floor, up to the roster's total slot count. */
   minGamesPerRoster: number | null;
+  /** Penalties, all OFF by default. Null = Off; a number is the least an empty lineup slot
+   * costs, even when most credits were staked elsewhere (see engine/penalties.ts). */
+  emptySlotFloor: number | null;
+  /** When on, an extra pick that breaks a roster rule is voided and its stake lost, and a
+   * roster that breaks one (or has too few games) pays `invalidRosterFee` once. */
+  invalidRosterPenaltyEnabled: boolean;
+  invalidRosterFee: number;
+  /** Post a feed announcement when a team has a perfect week. Applies immediately. */
+  perfectWeekAnnouncements: boolean;
   altLinesEnabled: boolean;
   lineMovementEnabled: boolean;
   conferencesEnabled: boolean;
@@ -407,6 +416,10 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   correlationBlockEnabled: false,
   correlationRules: DEFAULT_CORRELATION_RULES,
   minGamesPerRoster: null,
+  emptySlotFloor: null,
+  invalidRosterPenaltyEnabled: false,
+  invalidRosterFee: 0,
+  perfectWeekAnnouncements: true,
   altLinesEnabled: true,
   lineMovementEnabled: true,
   conferencesEnabled: false,

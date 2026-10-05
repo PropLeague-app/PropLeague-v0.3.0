@@ -30,6 +30,9 @@ export const DEFERRED_SETTING_KEYS = [
   'poolMultipliers',
   'propBetOverride',
   'mlBetOverride',
+  'emptySlotFloor',
+  'invalidRosterPenaltyEnabled',
+  'invalidRosterFee',
 ] as const satisfies readonly (keyof LeagueSettings)[];
 
 export type DeferredSettingKey = (typeof DEFERRED_SETTING_KEYS)[number];
@@ -186,6 +189,9 @@ export const SETTING_LABELS: Record<DeferredSettingKey, string> = {
   poolMultipliers: 'standing multipliers',
   propBetOverride: 'prop bet limits',
   mlBetOverride: 'moneyline bet limits',
+  emptySlotFloor: 'empty slot penalty',
+  invalidRosterPenaltyEnabled: 'invalid roster penalty',
+  invalidRosterFee: 'invalid roster fee',
 };
 
 /** "weekly credits, minimum bet and pick visibility" */
