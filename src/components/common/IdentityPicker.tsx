@@ -127,7 +127,7 @@ export function IdentityPicker({
   const emojiResults = emojiSearch.trim() ? searchEmojis(emojiSearch) : EMOJI_CATEGORIES.find((c) => c.id === emojiCategory)!.emojis;
 
   return (
-    <div className={bare ? 'space-y-3' : 'bg-bg-card border border-border rounded-xl p-3 space-y-3'}>
+    <div className={bare ? 'space-y-2' : 'bg-bg-card border border-border rounded-xl p-3 space-y-3'}>
       <div className="flex items-center justify-between">
         <p className={bare ? 'text-sm font-semibold text-text' : 'text-xs text-text-muted'}>{title}</p>
         {dirty && <span className="text-[10px] text-accent font-semibold">Unsaved changes</span>}
@@ -205,9 +205,9 @@ export function IdentityPicker({
                 if (file) handleFile(file);
               }}
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 border border-dashed border-border rounded-lg px-3 py-2.5 text-xs text-text-muted cursor-pointer text-center"
+              className="flex-1 border border-dashed border-border rounded-lg px-3 py-2 text-xs text-text-muted cursor-pointer text-center"
             >
-              {busy ? 'Processing…' : 'Tap or drag an image here'}
+              {busy ? 'Processing…' : 'Tap to choose an image (cropped square)'}
             </div>
             {draft.logoDataUrl && (
               <button
@@ -233,7 +233,6 @@ export function IdentityPicker({
             }}
           />
           {error && <p className="text-[11px] text-loss mt-1">{error}</p>}
-          <p className="text-[11px] text-text-muted mt-1">Cropped to a 256×256 square, capped around 150KB.</p>
         </div>
       )}
 
@@ -262,7 +261,7 @@ export function IdentityPicker({
             onSave(draft, pendingFile);
             setPendingFile(null);
           }}
-          className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+          className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
         >
           Save Changes
         </button>

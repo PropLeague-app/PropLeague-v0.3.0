@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -17,7 +17,7 @@ import { LeagueSettingsPanel } from '../components/settings/LeagueSettingsPanel'
 import { GameExitsCard } from '../components/settings/GameExitsCard';
 import { lossColor, lossIntensity } from '../engine/plColor';
 import { formatCents } from '../engine/oddsMath';
-import { CollapsibleSection, SectionHeader, SubSection, chipClass } from '../components/settings/SettingsPrimitives';
+import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SubSection } from '../components/settings/SettingsPrimitives';
 import {
   ChartColumn,
   Calendar,
@@ -32,6 +32,16 @@ import {
   DoorOpen,
   Lock,
   UserRound,
+  Bell,
+  BellRing,
+  CalendarCheck,
+  CircleCheck,
+  Moon,
+  Repeat,
+  Smartphone,
+  Sun,
+  TrendingDown,
+  Wrench,
 } from 'lucide-react';
 
 const MORE_LINKS = [
@@ -46,6 +56,57 @@ const MORE_LINKS = [
 ];
 
 const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
+
+/** Compact two-or-three option switch used by the display preferences. */
+function Seg<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label?: string; icon?: ReactNode; ariaLabel: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex bg-bg-raised rounded-lg overflow-hidden shrink-0">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-label={o.ariaLabel}
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1 ${value === o.value ? 'bg-primary text-white' : 'text-text-muted'}`}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A group title with a small icon and a scope tag on the right, in place of a description line. */
+function GroupTitle({ icon, title, tag }: { icon: ReactNode; title: string; tag?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <p className="text-[13px] font-semibold flex items-center gap-1.5">
+        <span className="text-text-muted">{icon}</span>
+        {title}
+      </p>
+      {tag && <span className="text-[10px] text-text-muted">{tag}</span>}
+    </div>
+  );
+}
+
+function PrefRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-sm">{label}</p>
+      {children}
+    </div>
+  );
+}
 /** Collapsed to a single row by default; expands into a small inline form.
  * Manages its own state so it doesn't add more hooks to the already-large
  * SettingsHome component. */
@@ -88,7 +149,7 @@ function ChangePasswordRow() {
           setSuccess(false);
           setError(null);
         }}
-        className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left"
       >
         <KeyRound size={16} /> Change Password
       </button>
@@ -103,7 +164,7 @@ function ChangePasswordRow() {
         placeholder="New password"
         type="password"
         autoComplete="new-password"
-        className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
       />
       <input
         value={confirmPassword}
@@ -111,7 +172,7 @@ function ChangePasswordRow() {
         placeholder="Confirm new password"
         type="password"
         autoComplete="new-password"
-        className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
       />
       {error && <p className="text-loss text-xs">{error}</p>}
       {success && <p className="text-profit text-xs">Password updated.</p>}
@@ -119,7 +180,7 @@ function ChangePasswordRow() {
         <button
           onClick={submit}
           disabled={submitting}
-          className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+          className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
         >
           Save
         </button>
@@ -186,6 +247,7 @@ export function SettingsHome() {
     });
   }
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [helpFocus, setHelpFocus] = useState<{ category: string; topic: string } | null>(null);
   const [pendingNav, setPendingNav] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [teamIdentityDirty, setTeamIdentityDirty] = useState(false);
@@ -291,10 +353,19 @@ export function SettingsHome() {
   const profileTeamDirty = profileDirty || teamNameDirty || teamIdentityDirty;
 
   return (
-    <>
-      <h1 className="text-xl font-bold px-4 pt-2 pb-3 sticky top-0 bg-bg-raised z-10">Profile & Settings</h1>
+    <HelpContext.Provider value={(category, topic) => setHelpFocus({ category, topic })}>
+      <div className="flex items-center justify-between px-4 pt-2 pb-3 sticky top-0 bg-bg-raised z-10">
+        <h1 className="text-xl font-bold">Profile & Settings</h1>
+        <button
+          onClick={() => setHowItWorksOpen(true)}
+          aria-label="Help: how PropLeague works"
+          className="w-8 h-8 rounded-full bg-bg-card border border-primary/50 text-primary text-base font-bold flex items-center justify-center shrink-0 active:scale-95"
+        >
+          ?
+        </button>
+      </div>
 
-      <div className="px-4 pt-3 pb-5 space-y-5">
+      <div className="px-4 pt-2 pb-5 space-y-3">
         <div className="grid grid-cols-2 gap-2">
           {MORE_LINKS.map((link) => (
             <button
@@ -312,9 +383,7 @@ export function SettingsHome() {
           <div className="bg-bg-card border border-dashed border-primary rounded-xl p-3 space-y-2">
             <p className="text-sm font-semibold">Start the season</p>
             <p className="text-xs text-text-muted">
-              Generates Week 1 matchups for the {league.teams.length} team{league.teams.length === 1 ? '' : 's'} currently in the league
-              and locks conferences (if enabled). You can still add simulated teams first from the invite screen, or start now with
-              whoever has joined so far. Either way, this is the one thing that actually kicks the season off.
+              Generates Week 1 for the {league.teams.length} team{league.teams.length === 1 ? '' : 's'} in the league and locks conferences.
             </p>
             {startSeasonError && <p className="text-loss text-xs">{startSeasonError}</p>}
             <button
@@ -335,24 +404,24 @@ export function SettingsHome() {
             summary={profileTeamSummary}
             badge={profileTeamDirty ? 'Unsaved changes' : undefined}
           >
-            <SubSection title="Profile" description="Your name and avatar across every league.">
+            <SubSection title="Profile (all leagues)">
               <div>
-                <label className="text-xs text-text-muted mb-1 block">Username</label>
+                <label className="text-xs text-text-muted mb-0.5 block">Username</label>
                 <NameInput
                   value={usernameDraft}
                   fallback="Commissioner"
                   onChange={setUsernameDraft}
-                  className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+                  className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
                 />
               </div>
               <div>
-                <label className="text-xs text-text-muted mb-1 block">Avatar</label>
-                <div className="grid grid-cols-6 gap-1.5">
+                <label className="text-xs text-text-muted mb-0.5 block">Avatar</label>
+                <div className="grid grid-cols-6 gap-1">
                   {AVATARS.map((emoji) => (
                     <button
                       key={emoji}
                       onClick={() => setAvatarDraft(emoji)}
-                      className={`text-xl aspect-square rounded-lg border flex items-center justify-center ${
+                      className={`text-lg h-9 rounded-lg border flex items-center justify-center ${
                         avatarDraft === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
                       }`}
                     >
@@ -366,7 +435,7 @@ export function SettingsHome() {
                 <button
                   disabled={!profileDirty || profileSaving}
                   onClick={handleSaveProfile}
-                  className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+                  className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
                 >
                   {profileSaving ? 'Saving…' : 'Save Changes'}
                 </button>
@@ -386,31 +455,33 @@ export function SettingsHome() {
             </SubSection>
 
             {league && userTeam && (
-              <SubSection title="Team (this league)" description="Only applies in the league you are viewing.">
-                <div>
-                  <label className="text-xs text-text-muted mb-1 block">Team name</label>
-                  <NameInput
-                    value={teamNameDraft}
-                    fallback={profile?.username ?? 'My Team'}
-                    onChange={setTeamNameDraft}
-                    className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-text-muted mb-1 block">Abbreviation</label>
-                  <NameInput
-                    maxLength={4}
-                    value={abbrevDraft}
-                    fallback={abbrevFromName(teamNameDraft)}
-                    onChange={(v) => setAbbrevDraft(v.toUpperCase())}
-                    className="w-24 bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm uppercase"
-                  />
+              <SubSection title="Team (this league)">
+                <div className="grid grid-cols-[1fr_4.5rem] gap-2">
+                  <div>
+                    <label className="text-xs text-text-muted mb-0.5 block">Team name</label>
+                    <NameInput
+                      value={teamNameDraft}
+                      fallback={profile?.username ?? 'My Team'}
+                      onChange={setTeamNameDraft}
+                      className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-text-muted mb-0.5 block">Abbr.</label>
+                    <NameInput
+                      maxLength={4}
+                      value={abbrevDraft}
+                      fallback={abbrevFromName(teamNameDraft)}
+                      onChange={(v) => setAbbrevDraft(v.toUpperCase())}
+                      className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm uppercase"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     disabled={!teamNameDirty}
                     onClick={handleSaveTeam}
-                    className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm disabled:opacity-40"
+                    className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
                   >
                     Save Changes
                   </button>
@@ -430,7 +501,7 @@ export function SettingsHome() {
             )}
 
             {league && userTeam && (
-              <div className="pt-4 border-t border-border">
+              <div className="pt-3 border-t border-border">
                 <IdentityPicker
                   key={`team-${userTeam.id}`}
                   bare
@@ -460,106 +531,94 @@ export function SettingsHome() {
 
         <section className="space-y-2">
           <SectionHeader>App Preferences</SectionHeader>
-          <div className="bg-bg-card border border-border rounded-xl p-3 space-y-4">
-            <SubSection title="Display" description="Saved on this device only.">
-              <div className="flex items-center justify-between">
-                <p className="text-sm">Odds format</p>
-                <div className="flex bg-bg-raised rounded-lg overflow-hidden">
-                  {(['american', 'decimal'] as const).map((format) => (
-                    <button
-                      key={format}
-                      onClick={() => setOddsFormat(format)}
-                      className={`px-3 py-1.5 text-xs font-semibold capitalize ${
-                        profile?.oddsFormat === format ? 'bg-primary text-white' : 'text-text-muted'
-                      }`}
-                    >
-                      {format}
-                    </button>
-                  ))}
-                </div>
+          <div className="bg-bg-card border border-border rounded-xl p-2.5 space-y-3">
+            <div className="space-y-2.5">
+              <GroupTitle icon={<Smartphone size={14} />} title="Display" tag="This device" />
+              <PrefRow label="Odds">
+                <Seg
+                  value={profile?.oddsFormat ?? 'american'}
+                  onChange={setOddsFormat}
+                  options={[
+                    { value: 'american', label: 'American', ariaLabel: 'American odds' },
+                    { value: 'decimal', label: 'Decimal', ariaLabel: 'Decimal odds' },
+                  ]}
+                />
+              </PrefRow>
+              <PrefRow label="Theme">
+                <Seg
+                  value={profile?.themeMode ?? 'dark'}
+                  onChange={setThemeMode}
+                  options={[
+                    { value: 'dark', label: 'Dark', icon: <Moon size={13} />, ariaLabel: 'Dark theme' },
+                    { value: 'light', label: 'Light', icon: <Sun size={13} />, ariaLabel: 'Light theme' },
+                  ]}
+                />
+              </PrefRow>
+              {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
+              <PrefRow label="Loss colors">
+                <Seg
+                  value={profile?.plColorScale ?? 'classic'}
+                  onChange={(mode) => updateProfile({ plColorScale: mode })}
+                  options={[
+                    { value: 'classic', label: 'Classic', ariaLabel: 'Every loss red' },
+                    { value: 'scaled', label: 'Scaled', ariaLabel: 'Losses fade from yellow to red' },
+                  ]}
+                />
+              </PrefRow>
+              <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-1.5 text-xs font-semibold tabular-nums">
+                <span className="text-profit">{formatCents(20)}</span>
+                {[-5, -30, -75].map((amount) => (
+                  <span
+                    key={amount}
+                    className="text-loss"
+                    style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
+                  >
+                    {formatCents(amount)}
+                  </span>
+                ))}
               </div>
-              {/* Local-only, same tier as Odds format above -- never synced to Supabase,
-                  doesn't follow the account to another device (see chat, Sept 2026). */}
-              <div className="flex items-center justify-between">
-                <p className="text-sm">Appearance</p>
-                <div className="flex bg-bg-raised rounded-lg overflow-hidden">
-                  {(['dark', 'light'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setThemeMode(mode)}
-                      className={`px-3 py-1.5 text-xs font-semibold capitalize ${
-                        (profile?.themeMode ?? 'dark') === mode ? 'bg-primary text-white' : 'text-text-muted'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Local-only like the two above. Gains are always solid green; this only changes how
-                  losses are tinted (see engine/plColor.ts). */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm">Loss colors</p>
-                  <div className="flex bg-bg-raised rounded-lg overflow-hidden">
-                    {(['classic', 'scaled'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => updateProfile({ plColorScale: mode })}
-                        className={`px-3 py-1.5 text-xs font-semibold capitalize ${
-                          (profile?.plColorScale ?? 'classic') === mode ? 'bg-primary text-white' : 'text-text-muted'
-                        }`}
-                      >
-                        {mode}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-[11px] text-text-muted">
-                  {(profile?.plColorScale ?? 'classic') === 'scaled'
-                    ? 'The worst loss in the comparison is the reddest. Smaller ones fade toward yellow. Gains stay green.'
-                    : 'Every loss is red.'}
-                </p>
-                <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-2 text-xs font-semibold tabular-nums">
-                  <span className="text-profit">{formatCents(20)}</span>
-                  {[-5, -30, -75].map((amount) => (
-                    <span
-                      key={amount}
-                      className="text-loss"
-                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
-                    >
-                      {formatCents(amount)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </SubSection>
-            <SubSection title="Notifications">
-              <ToggleRow label="Lineup reminders" value={notificationPrefs.lineupReminders} onChange={(v) => toggleNotificationPref('lineupReminders', v)} />
+            </div>
+            <div className="pt-3 border-t border-border space-y-2.5">
+              <GroupTitle icon={<Bell size={14} />} title="Notifications" />
+              <ToggleRow
+                icon={<BellRing size={15} />}
+                label="Lineup reminders"
+                value={notificationPrefs.lineupReminders}
+                onChange={(v) => toggleNotificationPref('lineupReminders', v)}
+              />
               {notificationPrefs.lineupReminders && (
-                <div className="pl-1 space-y-1.5">
-                  <label className="text-xs text-text-muted block">Send me a heads-up before a slate</label>
-                  {(
-                    [
-                      ['needs_work', 'Only if my lineup needs work', 'Empty slots, unspent credits, or too few games.'],
-                      ['trailing', 'Also when I am trailing my matchup', 'Includes the score and your pick count.'],
-                      ['every_slate', 'Before every slate', 'Even when your roster is full and you are ahead.'],
-                    ] as const
-                  ).map(([value, label, note]) => (
-                    <button
-                      key={value}
-                      onClick={() => chooseSlateUpdates(value)}
-                      className={`w-full text-left rounded-lg border px-3 py-2 ${chipClass(notificationPrefs.slateUpdates === value)}`}
-                    >
-                      <span className="block text-xs font-medium">{label}</span>
-                      <span className="block text-[11px] opacity-75">{note}</span>
-                    </button>
-                  ))}
+                <div className="space-y-1">
+                  <ChipRow
+                    value={notificationPrefs.slateUpdates}
+                    onChange={chooseSlateUpdates}
+                    options={[
+                      { value: 'needs_work', label: 'Needs work', icon: <Wrench size={14} /> },
+                      { value: 'trailing', label: 'Trailing', icon: <TrendingDown size={14} /> },
+                      { value: 'every_slate', label: 'Every slate', icon: <Repeat size={14} /> },
+                    ]}
+                  />
+                  <p className="text-[11px] text-text-muted">
+                    {notificationPrefs.slateUpdates === 'needs_work'
+                      ? 'Only when slots are empty, credits unspent or games too few.'
+                      : notificationPrefs.slateUpdates === 'trailing'
+                        ? 'Also when you are behind in your matchup.'
+                        : 'Before every slate, even when you are set.'}
+                  </p>
                 </div>
               )}
-              <ToggleRow label="Settled-bet alerts" value={notificationPrefs.wagerSettled} onChange={(v) => toggleNotificationPref('wagerSettled', v)} />
-              <ToggleRow label="Week results ready" value={notificationPrefs.weekResults} onChange={(v) => toggleNotificationPref('weekResults', v)} />
-            </SubSection>
+              <ToggleRow
+                icon={<CircleCheck size={15} />}
+                label="Settled-bet alerts"
+                value={notificationPrefs.wagerSettled}
+                onChange={(v) => toggleNotificationPref('wagerSettled', v)}
+              />
+              <ToggleRow
+                icon={<CalendarCheck size={15} />}
+                label="Week results ready"
+                value={notificationPrefs.weekResults}
+                onChange={(v) => toggleNotificationPref('weekResults', v)}
+              />
+            </div>
           </div>
         </section>
 
@@ -581,16 +640,16 @@ export function SettingsHome() {
         <section className="space-y-2">
           <SectionHeader>League</SectionHeader>
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
-            <button onClick={() => goTo('/create-league')} className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left">
+            <button onClick={() => goTo('/create-league')} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left">
               <Plus size={16} /> Create a League
             </button>
-            <button onClick={() => goTo('/join-league')} className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left">
+            <button onClick={() => goTo('/join-league')} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left">
               <KeyRound size={16} /> Join a League
             </button>
             {league && userTeam && (
               <button
                 onClick={() => setLeaveSheetOpen(true)}
-                className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left text-loss"
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-loss"
               >
                 <DoorOpen size={16} /> Leave This League
               </button>
@@ -604,7 +663,7 @@ export function SettingsHome() {
             <ChangePasswordRow />
             <button
               onClick={() => setLogoutConfirmOpen(true)}
-              className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left text-loss"
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-loss"
             >
               <Lock size={16} /> Log Out
             </button>
@@ -615,20 +674,16 @@ export function SettingsHome() {
           <img src={logoMark} alt="" className="w-6 h-6 object-contain opacity-80" />
           <p className="text-[11px]">PropLeague</p>
         </div>
-        {/* manual v0.2.0 §4 #10: was anchored bottom-24 left-4, which clipped off the left
-            edge of the centered mobile shell on wider viewports. Moved to the bottom-right.
-            Used to sit at bottom-40 to stack above the always-present DEV button (also
-            bottom-right, at bottom-24) -- the DEV button is gone now (see chat), so this
-            drops back down to bottom-24, just clear of the tab bar. */}
-        <button
-          onClick={() => setHowItWorksOpen(true)}
-          aria-label="How does PropLeague work?"
-          className="fixed bottom-24 right-4 z-50 w-10 h-10 rounded-full bg-bg-raised border border-border text-primary font-bold shadow-lg"
-          style={{ right: 'max(1rem, calc(50% - 14rem))' }}
-        >
-          ?
-        </button>
-        {howItWorksOpen && <HowItWorksSheet settings={settings ?? null} onClose={() => setHowItWorksOpen(false)} />}
+        {(howItWorksOpen || helpFocus) && (
+          <HowItWorksSheet
+            settings={settings ?? null}
+            focus={helpFocus ?? undefined}
+            onClose={() => {
+              setHowItWorksOpen(false);
+              setHelpFocus(null);
+            }}
+          />
+        )}
         {leaveSheetOpen && league && userTeam && (
           <LeaveLeagueSheet
             league={league}
@@ -670,6 +725,6 @@ export function SettingsHome() {
           />
         )}
       </div>
-    </>
+    </HelpContext.Provider>
   );
 }

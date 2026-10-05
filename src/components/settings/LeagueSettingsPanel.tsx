@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { CalendarClock, ClipboardList, Gauge, Lock, ShieldAlert, Settings, Sparkles, TrendingUp, Trophy } from 'lucide-react';
+import {
+  CalendarClock,
+  ClipboardList,
+  Gauge,
+  Lock,
+  ShieldAlert,
+  Settings,
+  Sparkles,
+  TrendingUp,
+  Trophy,
+} from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import type { League, LeagueSettings, LeagueTeam, PlayoffFieldSize, Position } from '../../types';
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../../types';
@@ -25,7 +35,7 @@ import { activeMultipliers, multiplierRangeForSpread } from '../../engine/prizeP
 import { CorrelationRulesEditor } from './CorrelationRulesEditor';
 import { PayoutSplitEditor } from './PayoutSplitEditor';
 import { BettingLimitsGroup } from './BettingLimitsGroup';
-import { CollapsibleSection, SectionHeader, SubSection, NumberField, TextField, chipClass } from './SettingsPrimitives';
+import { ChipRow, CollapsibleSection, SectionHeader, SubSection, NumberField, Stepper, TextField, chipClass } from './SettingsPrimitives';
 
 const POSITIONS: Position[] = ['QB', 'RB', 'WR', 'TE', 'K'];
 const POSITION_RANGE: Record<Position | 'ML', [number, number]> = {
@@ -57,9 +67,9 @@ const PENALTY_KEYS: DeferredSettingKey[] = ['emptySlotFloor', 'invalidRosterPena
 function MoneyStepper({ label, value, min, max, step = 1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (v: number) => void }) {
   const clamp = (n: number) => Math.round(Math.min(max, Math.max(min, n)) * 100) / 100;
   return (
-    <div className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
+    <div className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
       <span className="text-xs font-medium">{label}</span>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <button type="button" onClick={() => onChange(clamp(value - step))} className="text-text-muted w-5">
           −
         </button>
@@ -166,7 +176,7 @@ export function LeagueSettingsPanel({
       <SectionHeader>League Settings</SectionHeader>
       {/* One line, always. Orange for the commissioner, gray for everyone else. */}
       <div
-        className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 ${
+        className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${
           readOnly ? 'bg-bg-card border-border' : 'bg-warning/10 border-warning/40'
         }`}
       >
@@ -184,7 +194,7 @@ export function LeagueSettingsPanel({
       </div>
 
       {settingsLocked && isCommissioner && (
-        <div className="flex items-start gap-2 bg-bg-card border border-border rounded-xl px-3 py-2.5">
+        <div className="flex items-start gap-2 bg-bg-card border border-border rounded-xl px-3 py-1.5">
           <CalendarClock size={14} className="shrink-0 mt-0.5 text-accent" />
           <p className="text-xs text-text-muted">
             <span className="font-semibold text-text">Picks are in.</span> Gameplay changes start {nextWeek}.
@@ -193,7 +203,7 @@ export function LeagueSettingsPanel({
       )}
 
       {scheduledKeys.length > 0 && (
-        <div className="bg-accent/10 border border-accent/30 rounded-xl px-3 py-2.5 space-y-2">
+        <div className="bg-accent/10 border border-accent/30 rounded-xl px-3 py-2 space-y-1.5">
           <p className="text-xs text-text">
             {isCommissioner ? (
               <>
@@ -222,6 +232,7 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="League Basics"
           icon={<Settings size={16} />}
+          help={['commissioner', 'Who can change what']}
           readOnly={readOnly}
           badge={identityDirty ? 'Unsaved changes' : undefined}
           summary={`${settings.leagueName || league.name} · ${league.targetTeamCount} teams · ${settings.isPublic ? 'Public' : 'Private'}`}
@@ -250,9 +261,6 @@ export function LeagueSettingsPanel({
                 onIdentityDirtyChange(dirty);
               }}
             />
-            <p className="text-[11px] text-text-muted mt-1.5">
-              Shown on League Home, the invite screen, standings, and feed announcements.
-            </p>
             {logoUploadError && <p className="text-loss text-xs mt-1">{logoUploadError}</p>}
           </div>
           <SubSection title="League details">
@@ -263,40 +271,20 @@ export function LeagueSettingsPanel({
               onChange={(v) => update({ leagueName: v })}
             />
             <ToggleRow
-              label="Private league"
+              label="Private (invite code only)"
               value={!settings.isPublic}
               onChange={(v) => update({ isPublic: !v })}
-              note="Joining always requires the invite code."
             />
-            <div>
-              <label className="text-xs text-text-muted mb-1.5 block">Team count: {league.targetTeamCount}</label>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={!seasonNotStarted}
-                  onClick={() => {
-                    if (isCommissioner) updateTargetTeamCountStore(league.id, league.targetTeamCount - 1);
-                  }}
-                  className="w-8 h-8 rounded-lg border border-border text-text-muted disabled:opacity-30"
-                >
-                  −
-                </button>
-                <span className="flex-1 text-center text-sm">{league.targetTeamCount}</span>
-                <button
-                  disabled={!seasonNotStarted}
-                  onClick={() => {
-                    if (isCommissioner) updateTargetTeamCountStore(league.id, league.targetTeamCount + 1);
-                  }}
-                  className="w-8 h-8 rounded-lg border border-border text-text-muted disabled:opacity-30"
-                >
-                  +
-                </button>
-              </div>
-              <p className="text-[11px] text-text-muted mt-1">
-                {!seasonNotStarted
-                  ? 'Locked once the season starts. Resizing after that would leave the schedule and rosters inconsistent.'
-                  : 'Resizing before the season starts may change which playoff fields are available.'}
-              </p>
-            </div>
+            <Stepper
+              label={seasonNotStarted ? 'Team count' : 'Team count (locked)'}
+              value={league.targetTeamCount}
+              min={4}
+              max={32}
+              disabled={!seasonNotStarted}
+              onChange={(v) => {
+                if (isCommissioner) updateTargetTeamCountStore(league.id, v);
+              }}
+            />
             <p className="text-[11px] text-text-muted">
               Members: {league.teams.length} joined (min 4 to begin) · Invite code {league.inviteCode}
             </p>
@@ -306,21 +294,19 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="Roster & Picks"
           icon={<ClipboardList size={16} />}
+          help={['lineup', 'Duplicate and correlated picks']}
           readOnly={readOnly}
           badge={pillFor(ROSTER_KEYS)}
           summary={`${totalSlots} slots: ${slotSummary} · min ${settings.minGamesPerRoster ?? 2} games · duplicates ${settings.maxDuplicatePicks != null ? `capped at ${settings.maxDuplicatePicks}` : 'allowed'}`}
         >
           {errorNote}
-          <SubSection title="Lineup slots" description={`${totalSlots} total. Every slot must be filled with a bet each week.`}>
-            {/* manual v0.3.0 §7: column-major fill puts QB/RB/WR down the left column
-                and TE/K/ML down the right, instead of the old row-major pairing
-                (QB+RB / WR+TE / K+ML) that split the offensive skill positions across
-                both columns for no reason. */}
-            <div className="grid grid-cols-2 grid-rows-3 grid-flow-col gap-2">
+          <SubSection title={`Lineup slots (${totalSlots})`}>
+            {/* Column-major fill puts QB/RB/WR down the left column and TE/K/ML down the right. */}
+            <div className="grid grid-cols-2 grid-rows-3 grid-flow-col gap-1.5">
               {[...POSITIONS, 'ML' as const].map((pos) => (
-                <div key={pos} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
+                <div key={pos} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
                   <span className="text-xs font-medium">{pos}</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() =>
                         update({
@@ -330,7 +316,7 @@ export function LeagueSettingsPanel({
                           },
                         })
                       }
-                      className="text-text-muted w-5"
+                      className="text-text-muted w-6 h-6"
                     >
                       −
                     </button>
@@ -344,7 +330,7 @@ export function LeagueSettingsPanel({
                           },
                         })
                       }
-                      className="text-text-muted w-5"
+                      className="text-text-muted w-6 h-6"
                     >
                       +
                     </button>
@@ -353,99 +339,52 @@ export function LeagueSettingsPanel({
               ))}
             </div>
           </SubSection>
-          <SubSection
-            title="Minimum games per roster"
-            description="How many different NFL games a roster has to be spread across, so one game cannot decide a whole week."
-          >
-            <ToggleRow
-              label="Require more than 2 games"
-              value={settings.minGamesPerRoster != null}
-              onChange={(v) => update({ minGamesPerRoster: v ? 3 : null })}
-              note={settings.minGamesPerRoster == null ? 'Off. The 2-game baseline always applies and cannot be turned off, only raised.' : 'The 2-game baseline always applies. This raises it for this league.'}
+          <SubSection title="Rules">
+            <Stepper
+              label="Min games per roster"
+              value={settings.minGamesPerRoster ?? 2}
+              min={2}
+              max={Math.max(2, totalSlots - 1)}
+              onChange={(v) => update({ minGamesPerRoster: v <= 2 ? null : v })}
             />
-            {settings.minGamesPerRoster != null && (
-              <div className="pl-1">
-                <label className="text-xs text-text-muted mb-1 block">Minimum distinct games: {settings.minGamesPerRoster}</label>
-                <div className="flex gap-1.5 flex-wrap">
-                  {Array.from({ length: Math.max(0, totalSlots - 1) }, (_, i) => i + 2).map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => update({ minGamesPerRoster: n })}
-                      className={`w-8 h-8 rounded-lg text-xs border ${chipClass(settings.minGamesPerRoster === n)}`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </SubSection>
-          <SubSection
-            title="Duplicate pick rules"
-            description="Control how many teams in the league can hold the exact same prop in a given week."
-          >
             <ToggleRow
               label="Cap teams per pick"
               value={settings.maxDuplicatePicks != null}
               onChange={(v) => update({ maxDuplicatePicks: v ? 1 : null })}
-              note={
-                settings.maxDuplicatePicks == null
-                  ? 'Off. Any number of teams can hold the same pick.'
-                  : 'Once a pick has this many holders, it is off-limits to other teams that week.'
-              }
             />
             {settings.maxDuplicatePicks != null && (
-              <div className="pl-1 space-y-3">
-                <div>
-                  <label className="text-xs text-text-muted mb-1 block">Max teams per pick: {settings.maxDuplicatePicks}</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {Array.from({ length: Math.max(1, Math.floor(league.targetTeamCount / 2)) }, (_, i) => i + 1).map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => update({ maxDuplicatePicks: n })}
-                        className={`w-8 h-8 rounded-lg text-xs border ${chipClass(settings.maxDuplicatePicks === n)}`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-text-muted mb-1 block">Who gets a contested pick</label>
-                  <div className="flex gap-2">
-                    {(['waiver_order', 'fcfs'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => update({ waiverMode: mode })}
-                        className={`flex-1 py-1.5 rounded-lg text-xs border ${chipClass(settings.waiverMode === mode)}`}
-                      >
-                        {mode === 'waiver_order' ? 'Inverse-standings waiver' : 'Pure FCFS'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div className="pl-1 space-y-1.5">
+                <Stepper
+                  label="Max teams per pick"
+                  value={settings.maxDuplicatePicks}
+                  min={1}
+                  max={Math.max(1, Math.floor(league.targetTeamCount / 2))}
+                  onChange={(n) => update({ maxDuplicatePicks: n })}
+                />
+                <ChipRow
+                  value={settings.waiverMode}
+                  onChange={(mode) => update({ waiverMode: mode })}
+                  options={[
+                    { value: 'waiver_order', label: 'Waiver order' },
+                    { value: 'fcfs', label: 'First come' },
+                  ]}
+                />
               </div>
             )}
-          </SubSection>
-          <SubSection title="Correlated picks" description="Stop a roster from stacking props that tend to hit or miss together.">
             <ToggleRow
               label="Block correlated picks"
               value={settings.correlationBlockEnabled}
               onChange={(v) => update({ correlationBlockEnabled: v })}
-              note="Blocks a roster from stacking highly dependent same-team props (e.g. a QB's pass yds + his own WR's rec yds)."
             />
             {settings.correlationBlockEnabled && (
               <div className="pl-1">
                 <CorrelationRulesEditor rules={settings.correlationRules} onChange={(rules) => update({ correlationRules: rules })} />
               </div>
             )}
-          </SubSection>
-          <SubSection title="Pick visibility">
             <ToggleRow
-              label="Hide picks before game start"
+              label="Hide picks until kickoff"
               value={settings.hidePicks}
               onChange={(v) => update({ hidePicks: v })}
-              note="Other teams' picks stay hidden until that game kicks off."
             />
           </SubSection>
         </CollapsibleSection>
@@ -453,61 +392,46 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="Penalties"
           icon={<ShieldAlert size={16} />}
+          help={['lineup', 'Penalties']}
           readOnly={readOnly}
           badge={pillFor(PENALTY_KEYS)}
           summary={penaltySummary}
         >
           {errorNote}
-          <p className="text-[11px] text-text-muted">Both are off by default and only apply to weeks played after you turn them on.</p>
-          <SubSection
-            title="Empty slot penalty"
-            description="Today an incomplete lineup loses its unspent credits. This sets a minimum loss for each empty slot, so skipping one is never cheap."
-          >
-            <ToggleRow
-              label="Minimum loss per empty slot"
-              value={settings.emptySlotFloor != null}
-              onChange={(v) => update({ emptySlotFloor: v ? Math.min(5, floorCap) : null })}
+          <ToggleRow
+            label="Minimum loss per empty slot"
+            value={settings.emptySlotFloor != null}
+            onChange={(v) => update({ emptySlotFloor: v ? Math.min(5, floorCap) : null })}
+          />
+          {settings.emptySlotFloor != null && (
+            <MoneyStepper
+              label="Per empty slot"
+              value={Math.min(settings.emptySlotFloor, floorCap)}
+              min={1}
+              max={Math.max(1, floorCap)}
+              onChange={(v) => update({ emptySlotFloor: v })}
             />
-            {settings.emptySlotFloor != null && (
-              <MoneyStepper
-                label="Per empty slot"
-                value={Math.min(settings.emptySlotFloor, floorCap)}
-                min={1}
-                max={Math.max(1, floorCap)}
-                onChange={(v) => update({ emptySlotFloor: v })}
-              />
-            )}
-            <p className="text-[11px] text-text-muted">Capped at {`$${floorCap.toFixed(2)}`}, your credits split across {totalSlots} slots. An empty lineup never loses more than it does now.</p>
-          </SubSection>
-          <SubSection
-            title="Invalid roster penalty"
-            description="An extra pick that breaks a roster rule is voided and its whole stake is lost, even if it wins. Covers the same player in two slots, and correlated pairs when that rule is on."
-          >
-            <ToggleRow
-              label="Penalize invalid rosters"
-              value={settings.invalidRosterPenaltyEnabled}
-              onChange={(v) => update({ invalidRosterPenaltyEnabled: v })}
+          )}
+          <ToggleRow
+            label="Penalize invalid rosters"
+            value={settings.invalidRosterPenaltyEnabled}
+            onChange={(v) => update({ invalidRosterPenaltyEnabled: v })}
+          />
+          {settings.invalidRosterPenaltyEnabled && (
+            <MoneyStepper
+              label="Flat fee"
+              value={settings.invalidRosterFee}
+              min={0}
+              max={settings.weeklyCredits}
+              onChange={(v) => update({ invalidRosterFee: v })}
             />
-            {settings.invalidRosterPenaltyEnabled && (
-              <>
-                <MoneyStepper
-                  label="Flat fee"
-                  value={settings.invalidRosterFee}
-                  min={0}
-                  max={settings.weeklyCredits}
-                  onChange={(v) => update({ invalidRosterFee: v })}
-                />
-                <p className="text-[11px] text-text-muted">
-                  Charged once per roster that breaks a rule or is spread over too few games. Set it to $0.00 for no fee, only the lost stake.
-                </p>
-              </>
-            )}
-          </SubSection>
+          )}
         </CollapsibleSection>
 
         <CollapsibleSection
           title="Betting & Buy-In"
           icon={<Gauge size={16} />}
+          help={['lineup', 'Stakes and games']}
           readOnly={readOnly}
           badge={pillFor([...LIMIT_KEYS, ...BUYIN_KEYS])}
           summary={`$${settings.weeklyCredits} weekly · ML max $${settings.maxMLBet} · prop ${settings.maxPropBet != null ? `max $${settings.maxPropBet}` : 'no max'} · buy-in ${settings.buyInEnabled ? `$${settings.buyInAmount.toFixed(2)}` : 'off'}`}
@@ -521,29 +445,25 @@ export function LeagueSettingsPanel({
               onSave={update}
             />
           </SubSection>
-          <SubSection title="Buy-in & prize pool">
-            <ToggleRow
-              label="Buy-in & prize pool"
-              value={settings.buyInEnabled}
-              onChange={(v) => update({ buyInEnabled: v })}
-              note="All virtual, no real money. Locks at end of regular season or if it hits $0."
-            />
-          </SubSection>
+          <ToggleRow
+            label="Buy-in & prize pool"
+            value={settings.buyInEnabled}
+            onChange={(v) => update({ buyInEnabled: v })}
+          />
           {settings.buyInEnabled && (
             <>
               <SubSection title="Buy-in">
                 <NumberField label="Buy-in per team" value={settings.buyInAmount} onChange={(v) => update({ buyInAmount: v })} />
                 <p className="text-[11px] text-text-muted">
-                  Starting pool: {league.teams.length} teams × ${settings.buyInAmount.toFixed(2)} = $
-                  {(league.teams.length * settings.buyInAmount).toFixed(2)}
+                  Starting pool: {league.teams.length} × ${settings.buyInAmount.toFixed(2)} = ${(league.teams.length * settings.buyInAmount).toFixed(2)}
                 </p>
                 <ToggleRow
-                  label="Show real $ at stake on picks"
+                  label="Show real $ on picks"
                   value={settings.showRealDollarStakes}
                   onChange={(v) => update({ showRealDollarStakes: v })}
                 />
               </SubSection>
-              <SubSection title="Payouts" description="How the pool is split among the top finishers. Percentages must add up to 100.">
+              <SubSection title="Payouts (must total 100%)">
                 <PayoutSplitEditor
                   key={`payout-${league.id}`}
                   splits={settings.payoutSplits}
@@ -551,12 +471,11 @@ export function LeagueSettingsPanel({
                   onSave={(payoutSplits) => update({ payoutSplits })}
                 />
               </SubSection>
-              <SubSection title="Standing multipliers">
+              <SubSection title="Multipliers">
                 <ToggleRow
-                  label="Prize pool impact multipliers"
+                  label="Scale pool impact by standing"
                   value={settings.poolMultipliers.enabled}
                   onChange={(v) => update({ poolMultipliers: { ...settings.poolMultipliers, enabled: v } })}
-                  note="Scales how much each team's wagers move the pool, based on standing. Off = every team wagers at a flat 1.0x. Always off during the playoffs."
                 />
                 {settings.poolMultipliers.enabled && (
                   <div className="space-y-3 pl-1">
@@ -597,13 +516,12 @@ export function LeagueSettingsPanel({
                         onChange={(e) => update({ poolMultipliers: { ...settings.poolMultipliers, spread: Number(e.target.value) / 100 } })}
                         className="w-full accent-primary"
                       />
-                      <p className="text-[11px] text-text-muted mt-1">0 = flat (everyone 1.0x). Hard-capped at 0.5x-1.5x regardless.</p>
                     </div>
                     <div>
                       <p className="text-xs text-text-muted mb-1.5">Current multipliers</p>
                       <div className="space-y-1">
                         {leagueMultiplierRows(league).map(({ team, multiplier }) => (
-                          <div key={team.id} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
+                          <div key={team.id} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
                             <span className="text-xs flex items-center gap-1.5 min-w-0 truncate">
                               <TeamLogo team={team} size="sm" /> <span className="truncate">{team.teamName}</span>
                             </span>
@@ -614,7 +532,7 @@ export function LeagueSettingsPanel({
                         ))}
                       </div>
                       {league.seasonPhase !== 'regular' && (
-                        <p className="text-[11px] text-text-muted mt-1">Every team is at a flat 1.0x during the playoffs.</p>
+                        <p className="text-[11px] text-text-muted mt-1">Flat 1.0x in the playoffs.</p>
                       )}
                     </div>
                   </div>
@@ -627,6 +545,7 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="Lines & Markets"
           icon={<TrendingUp size={16} />}
+          help={['commissioner', 'Settings groups']}
           readOnly={readOnly}
           summary={`Alt lines ${onOff(settings.altLinesEnabled)} · line movement ${onOff(settings.lineMovementEnabled)}`}
         >
@@ -635,12 +554,13 @@ export function LeagueSettingsPanel({
             value={settings.altLinesEnabled}
             onChange={(v) => update({ altLinesEnabled: v })}
           />
-          <ToggleRow label="Line movement" value={settings.lineMovementEnabled} onChange={(v) => update({ lineMovementEnabled: v })} />
+          <ToggleRow label="Live line movement" value={settings.lineMovementEnabled} onChange={(v) => update({ lineMovementEnabled: v })} />
         </CollapsibleSection>
 
         <CollapsibleSection
           title="Playoffs & Conferences"
           icon={<Trophy size={16} />}
+          help={['scoring', 'Playoffs']}
           readOnly={readOnly}
           summary={`${settings.playoffTeams}-team ${settings.eliminationType} elimination · conferences ${onOff(settings.conferencesEnabled)}`}
         >
@@ -689,11 +609,7 @@ export function LeagueSettingsPanel({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-text-muted mt-1">
-                {bracketLocked
-                  ? 'Playoff format is locked. The bracket has already been generated.'
-                  : 'Editable through the regular season. Each field size/format disappears once there would no longer be enough weeks left to run it.'}
-              </p>
+              {bracketLocked && <p className="text-[11px] text-text-muted mt-1">Locked: the bracket is already set.</p>}
             </div>
           </SubSection>
           <SubSection title="Conferences">
@@ -703,16 +619,10 @@ export function LeagueSettingsPanel({
               return (
                 <>
                   <ToggleRow
-                    label="Conferences"
+                    label="Split into conferences"
                     value={settings.conferencesEnabled}
                     disabled={!eligible || locked}
-                    note={
-                      !eligible
-                        ? 'Requires an even team count (4+)'
-                        : locked
-                          ? 'Assignment locks once the season starts. Adjust members from League Members.'
-                          : undefined
-                    }
+                    note={!eligible ? 'Needs an even team count (4+)' : locked ? 'Locked once the season starts' : undefined}
                     onChange={(v) =>
                       update({
                         conferencesEnabled: v,
@@ -751,7 +661,6 @@ export function LeagueSettingsPanel({
                           }
                         />
                       ))}
-                      {locked && <p className="text-[11px] text-text-muted">Manage which team is in which conference from League Members.</p>}
                     </div>
                   )}
                 </>
@@ -763,15 +672,14 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="Weekly Moments"
           icon={<Sparkles size={16} />}
+          help={['scoring', 'Perfect weeks']}
           readOnly={readOnly}
           summary={`${enabledMoments} of ${MOMENT_CATEGORIES.length} awards on`}
         >
-          <p className="text-[11px] text-text-muted">Weekly awards posted to the league feed. Turn any off, or give each a custom name.</p>
           <ToggleRow
             label="Announce perfect weeks"
             value={settings.perfectWeekAnnouncements}
             onChange={(v) => update({ perfectWeekAnnouncements: v })}
-            note="Posts to the feed when a team goes the whole week without a lost bet."
           />
           <div className="space-y-2">
             {MOMENT_CATEGORIES.map((cat) => {
@@ -791,7 +699,7 @@ export function LeagueSettingsPanel({
                         value={config.displayName}
                         fallback={DEFAULT_MOMENT_DISPLAY_NAMES[cat]}
                         onChange={(v) => update({ moments: { ...settings.moments, [cat]: { ...config, displayName: v } } })}
-                        className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                        className="flex-1 bg-bg-card border border-border rounded-lg px-2.5 py-1.5 text-sm"
                       />
                       <button
                         onClick={() =>

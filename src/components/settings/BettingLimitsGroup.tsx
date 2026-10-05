@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { LeagueSettings } from '../../types';
-import { maxMinBetFor, settingsInfeasibility, totalSlotsOf } from '../../engine/settingsRules';
+import { settingsInfeasibility } from '../../engine/settingsRules';
 import { NumberField, NullableNumberField } from './SettingsPrimitives';
 
 type LimitsDraft = {
@@ -50,7 +50,6 @@ export function BettingLimitsGroup({
 
   const original = draftFrom(settings);
   const dirty = JSON.stringify(draft) !== JSON.stringify(original);
-  const slots = totalSlotsOf(settings.lineupSlots);
   const reasons = settingsInfeasibility({ ...settings, ...patchFrom(draft) });
   const canSave = dirty && reasons.length === 0 && !saving;
 
@@ -67,10 +66,8 @@ export function BettingLimitsGroup({
     if (!res.ok) setServerError(res.error ?? 'Could not save these limits.');
   }
 
-  const highestMin = slots > 0 ? maxMinBetFor(draft.weeklyCredits, slots) : 0;
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <NumberField label="Weekly credit allocation" value={draft.weeklyCredits} onChange={(v) => set('weeklyCredits', v)} />
       <NumberField
         label="Minimum bet per slot"
@@ -78,11 +75,10 @@ export function BettingLimitsGroup({
         min={0}
         decimals={2}
         onChange={(v) => set('minBetPerSlot', v)}
-        hint={slots > 0 ? `With ${slots} slots and $${draft.weeklyCredits} weekly, the highest minimum is $${highestMin.toFixed(2)}.` : undefined}
       />
       <NumberField label="Max moneyline/spread bet" value={draft.maxMLBet} onChange={(v) => set('maxMLBet', v)} />
       <NullableNumberField
-        label="Max prop bet (blank = none)"
+        label="Max prop bet"
         value={draft.maxPropBet}
         placeholder="No max"
         onChange={(v) => set('maxPropBet', v)}
@@ -112,7 +108,7 @@ export function BettingLimitsGroup({
             setServerError(null);
             setDraft(original);
           }}
-          className="flex-1 py-2 rounded-lg text-sm border border-border text-text-muted disabled:opacity-40"
+          className="flex-1 py-1.5 rounded-lg text-sm border border-border text-text-muted disabled:opacity-40"
         >
           Discard
         </button>
@@ -120,7 +116,7 @@ export function BettingLimitsGroup({
           type="button"
           disabled={!canSave}
           onClick={() => void save()}
-          className="flex-1 py-2 rounded-lg text-sm font-semibold bg-primary text-white disabled:opacity-40"
+          className="flex-1 py-1.5 rounded-lg text-sm font-semibold bg-primary text-white disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save limits'}
         </button>

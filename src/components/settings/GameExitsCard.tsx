@@ -192,22 +192,13 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
       <CollapsibleSection
         title="Game Exits"
         icon={<UserX size={16} />}
+        help={['commissioner', 'Game Exits']}
         summary={flagged.length > 0 ? `${flagged.length} player${flagged.length > 1 ? 's' : ''} flagged this week` : 'Void picks when a player leaves a game early'}
       >
-        <div className="rounded-lg bg-bg-raised px-3 py-2.5 space-y-1.5">
-          <p className="text-[11px] text-text">
-            Flag a player who left a game early and his Over and Anytime TD picks that had not hit are voided, like a sportsbook.
-          </p>
-          <ul className="space-y-0.5">
-            {['Unders and picks that already hit are never touched', 'Played a snap in the 2nd half? Do not flag'].map((rule) => (
-              <li key={rule} className="flex items-start gap-1.5 text-[10px] text-text-muted">
-                <Check size={11} className="shrink-0 mt-px text-primary" />
-                {rule}
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-text-muted">Applies within about 15 minutes and is posted to the feed.</p>
-        </div>
+        <p className="flex items-start gap-1.5 text-[11px] text-text-muted">
+          <Check size={12} className="shrink-0 mt-px text-primary" />
+          Voids his unhit Overs and Anytime TDs. Unders and hits are safe. Skip if he played in the 2nd half.
+        </p>
         {error && <p className="text-[11px] text-loss">{error}</p>}
 
         {flagged.length > 0 && (
@@ -250,9 +241,6 @@ export function GameExitsCard({ leagueId, week }: { leagueId: string; week: Week
           {!selectedGroup && (
             <>
               <CompactInput tone="raised" value={query} onChange={setQuery} placeholder="Search a player in your league" icon={<Search size={16} />} />
-              {query.trim() === '' && (
-                <p className="text-[10px] text-text-muted">Players with an Over or Anytime TD pick in a started game show up here.</p>
-              )}
               {query.trim() !== '' && matches.length === 0 && (
                 <p className="text-[11px] text-text-muted">No match. Only started games with an Over or Anytime TD pick count.</p>
               )}
