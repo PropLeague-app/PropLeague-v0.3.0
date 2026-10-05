@@ -16,6 +16,9 @@ import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenerator';
 import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
 import { isWagerVisibleToViewer } from '../engine/stats';
+import { isPerfectWeek } from '../engine/perfectWeek';
+import { weeklyAtRisk } from '../engine/plColor';
+import { usePlStyle } from '../components/common/usePlStyle';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WagerStatus } from '../types';
 import { weekLabel } from '../types';
 
@@ -179,7 +182,7 @@ export function MatchupDetail() {
       )}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} progress={progressA} />
+          <TeamHeader team={teamA} score={scoreA} progress={progressA} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterA, league.settings, isFinal)} />
           <div className="flex flex-col items-center gap-1">
             {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
@@ -190,7 +193,7 @@ export function MatchupDetail() {
               {weekLabel(matchup.week)}
             </span>
           </div>
-          <TeamHeader team={teamB} score={scoreB} progress={progressB} reverse />
+          <TeamHeader team={teamB} score={scoreB} progress={progressB} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterB, league.settings, isFinal)} reverse />
         </div>
 
         <div className="space-y-1.5">
@@ -282,12 +285,18 @@ function TeamHeader({
   score,
   progress,
   reverse,
+  atRisk,
+  perfect = false,
 }: {
   team: League['teams'][number];
   score: number;
   progress: { active: number; won: number; lost: number; pushed: number; open: number };
   reverse?: boolean;
+  atRisk: number;
+  /** A perfect week: the headline number is drawn as fire. */
+  perfect?: boolean;
 }) {
+  const plStyle = usePlStyle();
   // Name used to share its row with the logo, truncating hard into the leftover
   // space next to it ("Wilhelm's Wild Wagers" -> "Wilhelm's Wild ...") even though
   // the $ line right below -- which doesn't compete with the logo for width --
@@ -303,7 +312,12 @@ function TeamHeader({
       <div className={`flex items-center gap-1.5 mt-1 ${reverse ? 'flex-row-reverse' : ''}`}>
         <TeamLogo team={team} size="sm" />
         <div className="min-w-0">
-          <p className={`text-sm font-bold ${score >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(score)}</p>
+          <p
+            className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : score >= 0 ? 'text-profit' : 'text-loss'}`}
+            style={perfect ? undefined : plStyle(score, atRisk)}
+          >
+            {formatCents(score)}
+          </p>
           {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
               2026) -- now living where the old bare "Live"/"Final" text used to sit,
               since that moved up next to the Week pill above. */}

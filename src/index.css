@@ -260,3 +260,59 @@ body {
 .settings-readonly button:disabled {
   opacity: 0.7;
 }
+
+/* Perfect week: a team that did not lose a single bet in a settled week (see
+   engine/perfectWeek.ts for exactly what counts). The number itself is painted as fire: a
+   warm gradient clipped to the text with a soft glow that gently flickers. It replaces the
+   usual profit green on that one figure, nothing else about the layout changes.
+   .pl-fire-hero adds a slow shimmer sweep and is used only on the big headline numbers.
+   The gradients are tuned per theme (bright on dark, deeper on light) so the digits stay
+   readable on both, and everything holds still under prefers-reduced-motion. */
+.pl-fire,
+.pl-fire-hero {
+  display: inline-block;
+  background-image: linear-gradient(180deg, #fff1a8 0%, #ffb52e 48%, #ff5a1f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 5px rgba(255, 120, 30, 0.55));
+  animation: pl-flicker 2.4s ease-in-out infinite;
+}
+:root[data-theme='light'] .pl-fire,
+:root[data-theme='light'] .pl-fire-hero {
+  background-image: linear-gradient(180deg, #ff9f1a 0%, #ee5a14 52%, #b92d0c 100%);
+  filter: drop-shadow(0 0 4px rgba(238, 90, 20, 0.35));
+}
+.pl-fire-hero {
+  /* Symmetric gradient on a double-height tile, scrolled one full tile: loops seamlessly. */
+  background-image: linear-gradient(180deg, #fff1a8 0%, #ffb52e 25%, #ff5a1f 50%, #ffb52e 75%, #fff1a8 100%);
+  background-size: 100% 200%;
+  animation: pl-flicker 2.4s ease-in-out infinite, pl-shimmer 3.6s linear infinite;
+}
+:root[data-theme='light'] .pl-fire-hero {
+  background-image: linear-gradient(180deg, #ff9f1a 0%, #ee5a14 25%, #b92d0c 50%, #ee5a14 75%, #ff9f1a 100%);
+}
+@keyframes pl-flicker {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(255, 120, 30, 0.5)) brightness(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(255, 150, 40, 0.8)) brightness(1.1);
+  }
+}
+@keyframes pl-shimmer {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 200%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-fire,
+  .pl-fire-hero {
+    animation: none;
+  }
+}

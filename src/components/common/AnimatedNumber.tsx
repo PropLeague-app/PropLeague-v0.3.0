@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatCents } from '../../engine/oddsMath';
+import { usePlStyle } from './usePlStyle';
 
-export function AnimatedNumber({ value, className = '' }: { value: number; className?: string }) {
+export function AnimatedNumber({
+  value,
+  className = '',
+  atRisk,
+  perfect = false,
+}: {
+  value: number;
+  className?: string;
+  /** What this amount is measured against for the optional P/L color scale (weekly credits for a
+   * week's score). Omit and a loss keeps the classic red. */
+  atRisk?: number;
+  /** A perfect week: the number is drawn as fire instead of plain green. */
+  perfect?: boolean;
+}) {
+  const plStyle = usePlStyle();
   const [displayed, setDisplayed] = useState(value);
   const [flash, setFlash] = useState<'profit' | 'loss' | null>(null);
   const prevValue = useRef(value);
@@ -35,11 +50,11 @@ export function AnimatedNumber({ value, className = '' }: { value: number; class
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const colorClass = displayed > 0 ? 'text-profit' : displayed < 0 ? 'text-loss' : 'text-text';
+  const colorClass = perfect ? 'pl-fire' : displayed > 0 ? 'text-profit' : displayed < 0 ? 'text-loss' : 'text-text';
   const flashClass = flash === 'profit' ? 'flash-profit' : flash === 'loss' ? 'flash-loss' : '';
 
   return (
-    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`}>
+    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect ? undefined : plStyle(displayed, atRisk)}>
       {formatCents(displayed)}
     </span>
   );

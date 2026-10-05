@@ -207,6 +207,23 @@ interface WagerRow {
   odds_at_placement: number; stake: number; status: string; settled_profit: number | null;
 }
 
+/** Game exits (see migration 0025_wager_void_flags.sql). A sportsbook voids an Over or
+ * Anytime TD prop when the player has 0 snaps in the 2nd half, unless it already hit.
+ * Only these picks are ever touched by a commissioner's void flag: Unders are honored
+ * with an early exit, and game lines (moneyline/spread/total) are not player props. */
+function isVoidFlagEligible(w: { market_key: string; side: string }): boolean {
+  if (w.market_key === 'h2h' || w.market_key === 'spreads' || w.market_key === 'totals') return false;
+  return w.market_key === 'player_anytime_td' || w.side.toLowerCase() === 'over';
+}
+
+/** What a flagged player's pick becomes. 'void' = void it at $0; 'normal' = leave it to the
+ * regular grading path (it won, pushed, or cannot be graded yet). Pure so it is easy to test. */
+function voidFlagAction(currentStatus: string, gradedStatus: string | null): 'void' | 'normal' {
+  if (currentStatus === 'lost') return 'void'; // already graded lost: it never hit, so it is voided
+  if (currentStatus === 'pending' && gradedStatus === 'lost') return 'void';
+  return 'normal'; // won stays won; pending that wins/pushes (or has no stats yet) grades as usual
+}
+
 /** Minimal shape of LeagueSettings that this function actually reads. Everything
  * else on the real client type is irrelevant here. A league with `settings: null`
  * (not yet saved by the client -- see chat) falls back to these app-wide defaults
@@ -492,7 +509,7 @@ Deno.serve(async (req) => {
     // fire from an explicit manual call.
     let leaguesQuery = supabase
       .from('leagues')
-      .select('id, current_week, season_phase, bracket, settings, prize_pool, target_team_count, season_start_week');
+      .select('id, current_week, season_phase, bracket, settings, pending_settings, prize_pool, target_team_count, season_start_week');
     // strayIds: leagues one week ahead of weekStr, included here so a wager left
     // pending on weekStr after its league already advanced still gets a grading
     // pass (see strayWeekLeagueIds above). The season-advancement write near the
@@ -577,10 +594,51 @@ Deno.serve(async (req) => {
       // the mystery is resolved -- it only ever appends to the response, it
       // never changes grading behavior.
       const skipped: { wagerId: string; playerName: string | null; marketKey: string; reason: string }[] = [];
+      // Commissioner game-exit flags for this league/week (migration 0025). A missing table
+      // (migration not run yet) just yields no flags, never an error.
+      const { data: voidFlagRows } = await supabase
+        .from('wager_void_flags')
+        .select('id, player_name')
+        .eq('league_id', leagueId)
+        .eq('week', weekStr);
+      const voidFlagIdByPlayer = new Map<string, string>((voidFlagRows ?? []).map((f: any) => [f.player_name as string, f.id as string]));
       for (const row of rosterRows ?? []) {
         let teamTotal = 0;
         const wagers = (row as any).wagers ?? [];
         for (const wager of wagers) {
+          // Game exits: a flagged player's Over / Anytime TD pick that did not hit is voided,
+          // including one already graded lost. See isVoidFlagEligible / voidFlagAction.
+          const voidFlagId = wager.player_name ? voidFlagIdByPlayer.get(String(wager.player_name)) : undefined;
+          if (voidFlagId && isVoidFlagEligible(wager) && (wager.status === 'lost' || wager.status === 'pending')) {
+            let graded: string | null = null;
+            if (wager.status === 'pending') {
+              const flaggedGame = gameById.get(wager.game_id);
+              const flaggedStat = statByPlayerName.get(normalizePlayerName(String(wager.player_name)));
+              if (flaggedGame && flaggedStat) graded = gradeWager(wager, flaggedGame, flaggedStat).status;
+              else if (flaggedGame) {
+                // Final game, flagged player, still no stat row: he left without recording anything
+                // the pick could have hit on, so treat it as a miss (voided) once the usual ingestion
+                // grace has passed instead of waiting a day for data that may never come. Un-flagging
+                // puts the pick back to pending if a stat row shows up later.
+                const fs = flaggedGame.final_since ? new Date(flaggedGame.final_since).getTime() : null;
+                if (fs != null && now - fs >= VOID_GRACE_MS) graded = 'lost';
+              }
+            }
+            if (voidFlagAction(wager.status, graded) === 'void') {
+              const { error: flagVoidErr } = await supabase.rpc('settle_wager', { p_wager_id: wager.id, p_status: 'voided', p_settled_profit: 0 });
+              if (flagVoidErr) {
+                errors.push(`wager ${wager.id}: ${flagVoidErr.message}`);
+                teamTotal += wager.settled_profit ?? 0; // unchanged this run, retried next run
+                continue;
+              }
+              await supabase.from('wagers').update({ void_flag_id: voidFlagId }).eq('id', wager.id);
+              gradedCount++;
+              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'voided-game-exit-flag' });
+              wager.status = 'voided';
+              wager.settled_profit = 0;
+              continue; // voided = $0, nothing to add to teamTotal
+            }
+          }
           if (wager.status !== 'pending') {
             teamTotal += wager.settled_profit ?? 0;
             if (wager.status === 'lost' && !lostDistanceByWagerId.has(wager.id)) {
@@ -961,9 +1019,29 @@ Deno.serve(async (req) => {
 
         // Optimistic-concurrency guard: only write if this league is still
         // where we started (protects against two overlapping cron runs).
+        // Scheduled settings changes (migration 0027): a commissioner who edited gameplay settings
+        // while picks were already in saved them as pending. They go live in the SAME update that
+        // advances the week, so there is never a moment with the new week and the old rules (or the
+        // reverse). Re-checked against the server's feasibility rule first; an unreachable
+        // combination is dropped rather than applied.
+        const leagueUpdate: Record<string, unknown> = { current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool };
+        const pendingRaw = (league as any).pending_settings;
+        if (pendingRaw && typeof pendingRaw === 'object' && Object.keys(pendingRaw).length > 0 && newWeek !== weekStr) {
+          const merged = { ...((league.settings as Record<string, unknown> | null) ?? {}), ...pendingRaw };
+          const { data: infeasible, error: feasErr } = await supabase.rpc('settings_infeasibility', { p_settings: merged });
+          if (feasErr) {
+            errors.push(`pending settings check: ${feasErr.message}`); // leave them pending, retry on the next run
+          } else if (infeasible) {
+            errors.push(`pending settings dropped: ${infeasible}`);
+            leagueUpdate.pending_settings = null;
+          } else {
+            leagueUpdate.settings = merged;
+            leagueUpdate.pending_settings = null;
+          }
+        }
         const { error: updateErr } = await supabase
           .from('leagues')
-          .update({ current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool })
+          .update(leagueUpdate)
           .eq('id', leagueId)
           .eq('current_week', weekStr)
           .eq('season_phase', league.season_phase);

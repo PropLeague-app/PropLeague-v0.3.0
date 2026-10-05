@@ -625,6 +625,13 @@ export interface League {
   inviteCode: string;
   commissionerTeamId: string;
   settings: LeagueSettings;
+  /** Gameplay settings the commissioner changed while picks were already in for the week
+   * (migration 0027): saved server-side as pending and applied by settle-week when the week
+   * rolls over. Null/undefined = nothing scheduled. */
+  pendingSettings?: Partial<LeagueSettings> | null;
+  /** True once any pick exists in the league's current week: gameplay setting edits are
+   * scheduled for next week instead of applying now. Refreshed from the server. */
+  settingsLocked?: boolean;
   targetTeamCount: number;
   /** League-level identity (manual v0.03 §3 #7, gained the emoji mode manual v0.1.1
    * §2 #3) — same three-mode shape as a team's identity, rendered by the same
@@ -689,6 +696,9 @@ export interface UserProfile {
   /** See MatchupDetailMode above. Optional/undefined on any profile persisted
    * before this field existed; every read treats that as 'simple'. */
   matchupDetailMode?: MatchupDetailMode;
+  /** How negative P/L is colored: 'classic' (any loss is red) or 'scaled' (tinted by how big the
+   * loss is against what was at risk). Local per-device like the two above; undefined means classic. */
+  plColorScale?: 'classic' | 'scaled';
 }
 
 // --- Validation --------------------------------------------------------------

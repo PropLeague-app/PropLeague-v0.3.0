@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2 } from 'lucide-react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
@@ -9,6 +9,9 @@ import { LeagueLogo } from '../common/LeagueLogo';
 import { PositionBadge } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { ConfirmSheet } from '../common/ConfirmSheet';
+import { useAppStore } from '../../store/useAppStore';
+import { teamAccent } from '../../engine/teamColors';
+import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from '../../engine/richText';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
   announcement: <Megaphone size={16} />,
@@ -52,12 +55,52 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
   );
 }
 
+/** Renders announcement text with the tiny **highlight** / *italic* markup (see
+ * engine/richText). Plain messages come through unchanged. */
+function RichText({ text }: { text: string }) {
+  const mode = useAppStore((s) => s.profile?.themeMode) ?? 'dark';
+  return (
+    <>
+      {parseRichText(text).map((seg, i) => {
+        if (seg.style === 'highlight') {
+          // A player's name carries his NFL team; wear that team's color (nudged to stay readable
+          // on the card in either theme). Anything else uses the app's accent.
+          const color = seg.team ? teamAccent(seg.team, mode) : null;
+          return color ? (
+            <span
+              key={i}
+              className="font-semibold rounded px-1 py-px"
+              style={{ color, backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)` }}
+            >
+              {seg.text}
+            </span>
+          ) : (
+            <span key={i} className="font-semibold text-accent bg-accent/15 rounded px-1 py-px">
+              {seg.text}
+            </span>
+          );
+        }
+        if (seg.style === 'italic') {
+          return (
+            <em key={i} className="text-text-muted">
+              {seg.text}
+            </em>
+          );
+        }
+        return <span key={i}>{seg.text}</span>;
+      })}
+    </>
+  );
+}
+
 function NewsCard({
   league,
   item,
   onReact,
   onDelete,
   canDelete,
+  canPin,
+  onTogglePin,
 }: {
   league: League;
   item: ActivityItem;
@@ -68,22 +111,48 @@ function NewsCard({
    * that would fail). */
   onDelete?: (itemId: string) => void;
   canDelete?: boolean;
+  /** Commissioner only: shows the pin icon as a toggle. Everyone else just sees a
+   * static (highlighted) pin on pinned announcements. */
+  canPin?: boolean;
+  onTogglePin?: (item: ActivityItem) => void;
 }) {
+  const isAnnouncement = item.type === 'announcement';
+  // Announcements the commissioner posted (or flagged a void with) carry their team id;
+  // system ones (season start, welcome) do not.
+  const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;
+  const showPin = isAnnouncement && (canPin || item.pinned);
   return (
-    <Card className="flex items-start gap-2.5">
-      {item.type === 'announcement' ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>}
+    <Card className={`flex items-start gap-2.5 ${item.pinned ? 'ring-1 ring-gold/40' : ''}`}>
+      {isAnnouncement ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          {item.pinned && <span className="text-[10px] text-accent font-semibold">PINNED</span>}
-        </div>
-        <p className="text-sm">{item.message}</p>
+        {(label || showPin) && (
+          <div className="flex items-center justify-between gap-2 min-h-[16px]">
+            <span className="text-[10px] uppercase tracking-wide font-semibold text-text-muted">{label}</span>
+            {showPin &&
+              (canPin && onTogglePin ? (
+                <button
+                  onClick={() => onTogglePin(item)}
+                  className={`shrink-0 p-0.5 -mr-0.5 -mt-0.5 ${item.pinned ? 'text-gold' : 'text-text-muted/50 hover:text-text-muted'}`}
+                  aria-label={item.pinned ? 'Unpin announcement' : 'Pin announcement'}
+                  aria-pressed={!!item.pinned}
+                >
+                  <Pin size={14} fill={item.pinned ? 'currentColor' : 'none'} />
+                </button>
+              ) : (
+                <span className="shrink-0 text-gold" aria-label="Pinned">
+                  <Pin size={14} fill="currentColor" />
+                </span>
+              ))}
+          </div>
+        )}
+        <p className="text-sm">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
         <div className="flex items-center justify-between mt-0.5">
           <p className="text-[11px] text-text-muted">
             {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </p>
           <div className="flex items-center gap-2">
             <Reactions item={item} onReact={onReact} />
-            {item.type === 'announcement' && canDelete && onDelete && (
+            {isAnnouncement && canDelete && onDelete && (
               <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
                 <Trash2 size={13} />
               </button>
@@ -313,6 +382,7 @@ export function ActivityFeed({
   onSendChat,
   onSeenChat,
   onDeleteAnnouncement,
+  onTogglePin,
   onDeleteChat,
 }: {
   league: League;
@@ -334,6 +404,8 @@ export function ActivityFeed({
    * Both omitted (Advanced dev-panel callers, say) simply hides every delete
    * button, same pattern onReact/onSendChat already use. */
   onDeleteAnnouncement?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Commissioner pin toggle; omitted hides the pin controls. */
+  onTogglePin?: (itemId: string, pinned: boolean) => Promise<{ ok: boolean; error?: string }>;
   onDeleteChat?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [tab, setTab] = useState<FeedTab>('all');
@@ -349,6 +421,17 @@ export function ActivityFeed({
   const userTeam = league.teams.find((t) => t.isUser);
   const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
   const canDeleteAnnouncement = (item: ActivityItem) => isCommissioner || (!!userTeam && item.postedByTeamId === userTeam.id);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const togglePin = async (item: ActivityItem) => {
+    if (!onTogglePin) return;
+    if (!item.pinned && pinnedAnnouncementCount(items) >= MAX_PINNED_ANNOUNCEMENTS) {
+      setPinError(`You can pin up to ${MAX_PINNED_ANNOUNCEMENTS} announcements. Unpin one first.`);
+      return;
+    }
+    setPinError(null);
+    const res = await onTogglePin(item.id, !item.pinned);
+    if (!res.ok) setPinError(res.error ?? 'Could not update the pin.');
+  };
   const [chatText, setChatText] = useState('');
   // Which week groups are collapsed on the Moments tab (see chat, Sept 2026: "the
   // weeks should be collapsible"). Keyed by groupMomentsByWeek's own group.key, not
@@ -398,13 +481,19 @@ export function ActivityFeed({
         ))}
       </div>
 
+      {pinError && (tab === 'all' || tab === 'news') && (
+        <p className="text-xs text-loss" role="alert">
+          {pinError}
+        </p>
+      )}
+
       {tab === 'all' && (
         <div className="space-y-2">
           {sorted.slice(0, 8).map((item) =>
             item.type === 'moment' ? (
               <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
             ) : (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
             ),
           )}
         </div>
@@ -452,7 +541,7 @@ export function ActivityFeed({
             <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
             news.slice(0, 8).map((item) => (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
             ))
           )}
         </div>

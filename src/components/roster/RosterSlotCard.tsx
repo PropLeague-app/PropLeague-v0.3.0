@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId, Wager } from '../../types';
@@ -56,6 +56,7 @@ export function RosterSlotCard({
   teamCount,
   multiplier = 1,
   currentWeek,
+  stakeError = null,
   onStakeChange,
   onRemove,
 }: {
@@ -70,7 +71,9 @@ export function RosterSlotCard({
    * the "real $" preview shown under each staked slot. */
   multiplier?: number;
   currentWeek?: WeekId;
-  onStakeChange: (stake: number) => void;
+  /** Why the server refused the last stake edit, if it did. */
+  stakeError?: string | null;
+  onStakeChange: (stake: number) => void | Promise<unknown>;
   onRemove: () => void;
 }) {
   const navigate = useNavigate();
@@ -79,6 +82,13 @@ export function RosterSlotCard({
   // than always rendered inline — keeps a lineup with several flagged slots scannable.
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const fill = positionFillClasses(slot.position);
+  // When the server refuses a stake, snap the field back to the saved amount, but only once the
+  // person has left it (remounting mid-typing would steal focus).
+  const [stakeInputKey, setStakeInputKey] = useState(0);
+  const stakeFocused = useRef(false);
+  useEffect(() => {
+    if (stakeError && !stakeFocused.current) setStakeInputKey((k) => k + 1);
+  }, [stakeError]);
 
   if (!slot.wager) {
     return (
@@ -168,9 +178,18 @@ export function RosterSlotCard({
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-text-muted leading-tight min-w-0">{marketLabel}</p>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div
+          className="flex items-center gap-1.5 shrink-0"
+          onFocus={() => {
+            stakeFocused.current = true;
+          }}
+          onBlur={() => {
+            stakeFocused.current = false;
+          }}
+        >
           <span className="text-text-muted text-xs">$</span>
           <NumberInput
+            key={stakeInputKey}
             min={0}
             decimals={2}
             disabled={locked}
@@ -191,6 +210,8 @@ export function RosterSlotCard({
           {multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}
         </p>
       )}
+
+      {stakeError && <p className="text-loss text-xs mt-1.5">{stakeError}</p>}
 
       {invalid && reasonsOpen && validation!.reasons.length > 0 && (
         <p className="text-loss text-xs mt-1.5">{validation!.reasons.join(' · ')}</p>

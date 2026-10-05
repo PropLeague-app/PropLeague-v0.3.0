@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClipboardList, DollarSign, Gauge, Lock, Settings, Sparkles, TrendingUp, Trophy } from 'lucide-react';
+import { CalendarClock, ClipboardList, Gauge, Lock, Settings, Sparkles, TrendingUp, Trophy } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import type { League, LeagueSettings, LeagueTeam, PlayoffFieldSize, Position } from '../../types';
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../../types';
@@ -10,11 +10,22 @@ import { TeamLogo } from '../common/TeamLogo';
 import { initialsFromLeagueName } from '../common/LeagueLogo';
 import { uploadLeagueLogo } from '../../services/supabaseLogo';
 import { conferencesEligible, defaultConferences } from '../../engine/conferences';
+import {
+  describePendingKeys,
+  effectiveSettings,
+  meaningfulPending,
+  nextWeekLabel,
+  pendingKeys,
+  settingsInfeasibility,
+  touchesFeasibility,
+  type DeferredSettingKey,
+} from '../../engine/settingsRules';
 import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount, structureAvailable } from '../../engine/playoffs';
 import { activeMultipliers, multiplierRangeForSpread } from '../../engine/prizePool';
 import { CorrelationRulesEditor } from './CorrelationRulesEditor';
 import { PayoutSplitEditor } from './PayoutSplitEditor';
-import { CollapsibleSection, SectionHeader, SubSection, NumberField, NullableNumberField, TextField, chipClass } from './SettingsPrimitives';
+import { BettingLimitsGroup } from './BettingLimitsGroup';
+import { CollapsibleSection, SectionHeader, SubSection, NumberField, TextField, chipClass } from './SettingsPrimitives';
 
 const POSITIONS: Position[] = ['QB', 'RB', 'WR', 'TE', 'K'];
 const POSITION_RANGE: Record<Position | 'ML', [number, number]> = {
@@ -35,6 +46,11 @@ function leagueMultiplierRows(league: League): { team: LeagueTeam; multiplier: n
 }
 
 const onOff = (v: boolean) => (v ? 'on' : 'off');
+
+/** Which settings group each gameplay key belongs to, for the "Applies Week N" pills. */
+const ROSTER_KEYS: DeferredSettingKey[] = ['lineupSlots', 'minGamesPerRoster', 'maxDuplicatePicks', 'waiverMode', 'correlationBlockEnabled', 'correlationRules', 'hidePicks'];
+const LIMIT_KEYS: DeferredSettingKey[] = ['weeklyCredits', 'minBetPerSlot', 'maxMLBet', 'maxPropBet', 'minOdds', 'singleBetCapPct', 'wagerPrecision', 'propBetOverride', 'mlBetOverride'];
+const BUYIN_KEYS: DeferredSettingKey[] = ['buyInEnabled', 'buyInAmount', 'poolMultipliers'];
 
 /** Every league-wide setting, grouped by topic into collapsible sections.
  *
@@ -60,12 +76,23 @@ export function LeagueSettingsPanel({
   onIdentityDirtyChange: (dirty: boolean) => void;
 }) {
   const updateSettingsStore = useAppStore((s) => s.updateSettings);
+  const discardPendingStore = useAppStore((s) => s.discardPendingSettings);
   const updateTargetTeamCountStore = useAppStore((s) => s.updateTargetTeamCount);
   const updateLeagueLogoStore = useAppStore((s) => s.updateLeagueLogo);
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [identityDirty, setIdentityDirty] = useState(false);
 
-  const settings = league.settings;
+  // Once a pick exists this week, gameplay edits are scheduled for next week instead of applied
+  // (see engine/settingsRules). The commissioner works against live settings with their scheduled
+  // changes laid over them, so what they typed stays on screen; everyone else sees what is live.
+  const pending = meaningfulPending(league.settings, league.pendingSettings);
+  const scheduledKeys = pendingKeys(pending);
+  const settingsLocked = !!league.settingsLocked;
+  const settings = isCommissioner ? effectiveSettings(league.settings, pending) : league.settings;
+  const nextWeek = nextWeekLabel(league.currentWeek);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  const pillFor = (keys: DeferredSettingKey[]) => (scheduledKeys.some((k) => keys.includes(k)) ? `Applies ${nextWeek}` : undefined);
   const readOnly = !isCommissioner;
   const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
   // manual v0.2.0 §2 #1: once the bracket exists the playoff format is fully locked;
@@ -74,20 +101,40 @@ export function LeagueSettingsPanel({
   const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
   const commissionerTeam = league.teams.find((t) => t.id === league.commissionerTeamId);
 
-  function update(partial: Partial<LeagueSettings>) {
-    if (!isCommissioner) return;
-    updateSettingsStore(league.id, partial);
+  async function update(partial: Partial<LeagueSettings>): Promise<{ ok: boolean; error?: string }> {
+    if (!isCommissioner) return { ok: false };
+    // Catch an unreachable combination before it leaves the device; the server checks again.
+    if (touchesFeasibility(partial)) {
+      const reasons = settingsInfeasibility({ ...settings, ...partial });
+      if (reasons.length > 0) {
+        setSaveError(reasons[0]);
+        return { ok: false, error: reasons[0] };
+      }
+    }
+    setSaveError(null);
+    const res = await updateSettingsStore(league.id, partial);
+    if (!res.ok) setSaveError(res.error ?? 'Could not save that change.');
+    return res;
   }
+
+  async function discardScheduled() {
+    setDiscarding(true);
+    const res = await discardPendingStore(league.id);
+    setDiscarding(false);
+    setSaveError(res.ok ? null : (res.error ?? 'Could not discard the scheduled changes.'));
+  }
+
+  const errorNote = saveError ? (
+    <p className="text-xs text-loss" role="alert">
+      {saveError}
+    </p>
+  ) : null;
 
   const slotSummary = [...POSITIONS, 'ML' as const]
     .filter((p) => settings.lineupSlots[p] > 0)
     .map((p) => `${settings.lineupSlots[p]} ${p}`)
     .join(' · ');
   const enabledMoments = MOMENT_CATEGORIES.filter((cat) => settings.moments[cat].enabled).length;
-  // A minimum bet above an even split of the weekly credits would make a full lineup
-  // impossible, so cap the field there.
-  const maxMinBet = totalSlots > 0 ? Math.floor((settings.weeklyCredits / totalSlots) * 100) / 100 : settings.weeklyCredits;
-
   return (
     <section className="space-y-2">
       <SectionHeader>League Settings</SectionHeader>
@@ -96,18 +143,51 @@ export function LeagueSettingsPanel({
         <p className="text-xs text-text-muted">
           {readOnly ? (
             <>
-              <span className="font-semibold text-text">Commissioner only.</span> You can view every setting below, but only{' '}
-              {commissionerTeam ? commissionerTeam.teamName : 'the commissioner'} can change them. Tap a group to see what is
-              configured, and talk to your commissioner about anything you would like changed.
+              <span className="font-semibold text-text">Commissioner only.</span> Only{' '}
+              {commissionerTeam ? commissionerTeam.teamName : 'the commissioner'} can change these.
             </>
           ) : (
             <>
-              <span className="font-semibold text-text">You are the commissioner.</span> Everyone in the league can view these
-              settings but only you can edit them. Changes apply to future weeks only; settled weeks are never altered.
+              <span className="font-semibold text-text">You are the commissioner.</span> Only you can edit these.
             </>
           )}
         </p>
       </div>
+
+      {settingsLocked && isCommissioner && (
+        <div className="flex items-start gap-2 bg-bg-card border border-border rounded-xl px-3 py-2.5">
+          <CalendarClock size={14} className="shrink-0 mt-0.5 text-accent" />
+          <p className="text-xs text-text-muted">
+            <span className="font-semibold text-text">Picks are in.</span> Gameplay changes start {nextWeek}.
+          </p>
+        </div>
+      )}
+
+      {scheduledKeys.length > 0 && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl px-3 py-2.5 space-y-2">
+          <p className="text-xs text-text">
+            {isCommissioner ? (
+              <>
+                <span className="font-semibold">Scheduled for {nextWeek}:</span> {describePendingKeys(scheduledKeys)}.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">Coming in {nextWeek}:</span> {describePendingKeys(scheduledKeys)}.
+              </>
+            )}
+          </p>
+          {isCommissioner && (
+            <button
+              type="button"
+              disabled={discarding}
+              onClick={() => void discardScheduled()}
+              className="text-xs font-semibold text-accent disabled:opacity-40"
+            >
+              {discarding ? 'Discarding…' : 'Discard scheduled changes'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         <CollapsibleSection
@@ -198,8 +278,10 @@ export function LeagueSettingsPanel({
           title="Roster & Picks"
           icon={<ClipboardList size={16} />}
           readOnly={readOnly}
+          badge={pillFor(ROSTER_KEYS)}
           summary={`${totalSlots} slots: ${slotSummary} · min ${settings.minGamesPerRoster ?? 2} games · duplicates ${settings.maxDuplicatePicks != null ? `capped at ${settings.maxDuplicatePicks}` : 'allowed'}`}
         >
+          {errorNote}
           <SubSection title="Lineup slots" description={`${totalSlots} total. Every slot must be filled with a bet each week.`}>
             {/* manual v0.3.0 §7: column-major fill puts QB/RB/WR down the left column
                 and TE/K/ML down the right, instead of the old row-major pairing
@@ -340,33 +422,122 @@ export function LeagueSettingsPanel({
         </CollapsibleSection>
 
         <CollapsibleSection
-          title="Betting Limits"
+          title="Betting & Buy-In"
           icon={<Gauge size={16} />}
           readOnly={readOnly}
-          summary={`$${settings.weeklyCredits} weekly · ML max $${settings.maxMLBet} · prop ${settings.maxPropBet != null ? `max $${settings.maxPropBet}` : 'no max'}`}
+          badge={pillFor([...LIMIT_KEYS, ...BUYIN_KEYS])}
+          summary={`$${settings.weeklyCredits} weekly · ML max $${settings.maxMLBet} · prop ${settings.maxPropBet != null ? `max $${settings.maxPropBet}` : 'no max'} · buy-in ${settings.buyInEnabled ? `$${settings.buyInAmount.toFixed(2)}` : 'off'}`}
         >
-          <NumberField label="Weekly credit allocation" value={settings.weeklyCredits} onChange={(v) => update({ weeklyCredits: v })} />
-          <NumberField
-            label="Minimum bet per slot"
-            value={settings.minBetPerSlot}
-            min={0}
-            max={maxMinBet}
-            decimals={2}
-            onChange={(v) => update({ minBetPerSlot: v })}
-            hint={`Can't exceed an even split of the weekly credits ($${maxMinBet.toFixed(2)}).`}
-          />
-          <NumberField label="Max moneyline/spread bet" value={settings.maxMLBet} onChange={(v) => update({ maxMLBet: v })} />
-          <NullableNumberField
-            label="Max prop bet (blank = none)"
-            value={settings.maxPropBet}
-            placeholder="No max"
-            onChange={(v) => update({ maxPropBet: v })}
-          />
-          <NumberField
-            label="Max % of weekly credits on one pick"
-            value={settings.singleBetCapPct * 100}
-            onChange={(v) => update({ singleBetCapPct: v / 100 })}
-          />
+          {errorNote}
+          <SubSection title="Betting limits">
+            <BettingLimitsGroup
+              // Re-seed the draft whenever the saved values change (a save, a discard, a refresh).
+              key={JSON.stringify([settings.weeklyCredits, settings.minBetPerSlot, settings.maxMLBet, settings.maxPropBet, settings.singleBetCapPct, settings.lineupSlots])}
+              settings={settings}
+              onSave={update}
+            />
+          </SubSection>
+          <SubSection title="Buy-in & prize pool">
+            <ToggleRow
+              label="Buy-in & prize pool"
+              value={settings.buyInEnabled}
+              onChange={(v) => update({ buyInEnabled: v })}
+              note="All virtual, no real money. Locks at end of regular season or if it hits $0."
+            />
+          </SubSection>
+          {settings.buyInEnabled && (
+            <>
+              <SubSection title="Buy-in">
+                <NumberField label="Buy-in per team" value={settings.buyInAmount} onChange={(v) => update({ buyInAmount: v })} />
+                <p className="text-[11px] text-text-muted">
+                  Starting pool: {league.teams.length} teams × ${settings.buyInAmount.toFixed(2)} = $
+                  {(league.teams.length * settings.buyInAmount).toFixed(2)}
+                </p>
+                <ToggleRow
+                  label="Show real $ at stake on picks"
+                  value={settings.showRealDollarStakes}
+                  onChange={(v) => update({ showRealDollarStakes: v })}
+                />
+              </SubSection>
+              <SubSection title="Payouts" description="How the pool is split among the top finishers. Percentages must add up to 100.">
+                <PayoutSplitEditor
+                  key={`payout-${league.id}`}
+                  splits={settings.payoutSplits}
+                  playoffTeams={settings.playoffTeams}
+                  onSave={(payoutSplits) => update({ payoutSplits })}
+                />
+              </SubSection>
+              <SubSection title="Standing multipliers">
+                <ToggleRow
+                  label="Prize pool impact multipliers"
+                  value={settings.poolMultipliers.enabled}
+                  onChange={(v) => update({ poolMultipliers: { ...settings.poolMultipliers, enabled: v } })}
+                  note="Scales how much each team's wagers move the pool, based on standing. Off = every team wagers at a flat 1.0x. Always off during the playoffs."
+                />
+                {settings.poolMultipliers.enabled && (
+                  <div className="space-y-3 pl-1">
+                    <div>
+                      <label className="text-xs text-text-muted mb-1.5 block">Rank teams by</label>
+                      <div className="flex gap-1.5">
+                        {(
+                          [
+                            ['rank', 'Standings'],
+                            ['record', 'Win-loss'],
+                            ['seasonPL', 'Season P/L'],
+                          ] as const
+                        ).map(([basis, label]) => (
+                          <button
+                            key={basis}
+                            onClick={() => update({ poolMultipliers: { ...settings.poolMultipliers, basis } })}
+                            className={`flex-1 py-1.5 rounded-lg text-xs border ${chipClass(settings.poolMultipliers.basis === basis)}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      {(() => {
+                        const { top, bottom } = multiplierRangeForSpread(settings.poolMultipliers.spread);
+                        return (
+                          <label className="text-xs text-text-muted mb-1.5 block">
+                            Spread: {top.toFixed(2)}x top / {bottom.toFixed(2)}x bottom
+                          </label>
+                        );
+                      })()}
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(settings.poolMultipliers.spread * 100)}
+                        onChange={(e) => update({ poolMultipliers: { ...settings.poolMultipliers, spread: Number(e.target.value) / 100 } })}
+                        className="w-full accent-primary"
+                      />
+                      <p className="text-[11px] text-text-muted mt-1">0 = flat (everyone 1.0x). Hard-capped at 0.5x-1.5x regardless.</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-text-muted mb-1.5">Current multipliers</p>
+                      <div className="space-y-1">
+                        {leagueMultiplierRows(league).map(({ team, multiplier }) => (
+                          <div key={team.id} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
+                            <span className="text-xs flex items-center gap-1.5 min-w-0 truncate">
+                              <TeamLogo team={team} size="sm" /> <span className="truncate">{team.teamName}</span>
+                            </span>
+                            <span className={`text-xs font-semibold shrink-0 ${multiplier >= 1 ? 'text-profit' : 'text-loss'}`}>
+                              {multiplier.toFixed(2)}x
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {league.seasonPhase !== 'regular' && (
+                        <p className="text-[11px] text-text-muted mt-1">Every team is at a flat 1.0x during the playoffs.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </SubSection>
+            </>
+          )}
         </CollapsibleSection>
 
         <CollapsibleSection
@@ -503,117 +674,6 @@ export function LeagueSettingsPanel({
               );
             })()}
           </SubSection>
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          title="Buy-In & Prize Pool"
-          icon={<DollarSign size={16} />}
-          readOnly={readOnly}
-          summary={
-            settings.buyInEnabled
-              ? `$${settings.buyInAmount.toFixed(2)} per team · ${settings.payoutSplits.join('/')} split${settings.poolMultipliers.enabled ? ' · multipliers on' : ''}`
-              : 'Off'
-          }
-        >
-          <ToggleRow
-            label="Buy-in & prize pool"
-            value={settings.buyInEnabled}
-            onChange={(v) => update({ buyInEnabled: v })}
-            note="All virtual, no real money. Locks at end of regular season or if it hits $0."
-          />
-          {settings.buyInEnabled && (
-            <>
-              <SubSection title="Buy-in">
-                <NumberField label="Buy-in per team" value={settings.buyInAmount} onChange={(v) => update({ buyInAmount: v })} />
-                <p className="text-[11px] text-text-muted">
-                  Starting pool: {league.teams.length} teams × ${settings.buyInAmount.toFixed(2)} = $
-                  {(league.teams.length * settings.buyInAmount).toFixed(2)}
-                </p>
-                <ToggleRow
-                  label="Show real $ at stake on picks"
-                  value={settings.showRealDollarStakes}
-                  onChange={(v) => update({ showRealDollarStakes: v })}
-                />
-              </SubSection>
-              <SubSection title="Payouts" description="How the pool is split among the top finishers. Percentages must add up to 100.">
-                <PayoutSplitEditor
-                  key={`payout-${league.id}`}
-                  splits={settings.payoutSplits}
-                  playoffTeams={settings.playoffTeams}
-                  onSave={(payoutSplits) => update({ payoutSplits })}
-                />
-              </SubSection>
-              <SubSection title="Standing multipliers">
-                <ToggleRow
-                  label="Prize pool impact multipliers"
-                  value={settings.poolMultipliers.enabled}
-                  onChange={(v) => update({ poolMultipliers: { ...settings.poolMultipliers, enabled: v } })}
-                  note="Scales how much each team's wagers move the pool, based on standing. Off = every team wagers at a flat 1.0x. Always off during the playoffs."
-                />
-                {settings.poolMultipliers.enabled && (
-                  <div className="space-y-3 pl-1">
-                    <div>
-                      <label className="text-xs text-text-muted mb-1.5 block">Rank teams by</label>
-                      <div className="flex gap-1.5">
-                        {(
-                          [
-                            ['rank', 'Standings'],
-                            ['record', 'Win-loss'],
-                            ['seasonPL', 'Season P/L'],
-                          ] as const
-                        ).map(([basis, label]) => (
-                          <button
-                            key={basis}
-                            onClick={() => update({ poolMultipliers: { ...settings.poolMultipliers, basis } })}
-                            className={`flex-1 py-1.5 rounded-lg text-xs border ${chipClass(settings.poolMultipliers.basis === basis)}`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      {(() => {
-                        const { top, bottom } = multiplierRangeForSpread(settings.poolMultipliers.spread);
-                        return (
-                          <label className="text-xs text-text-muted mb-1.5 block">
-                            Spread: {top.toFixed(2)}x top / {bottom.toFixed(2)}x bottom
-                          </label>
-                        );
-                      })()}
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={Math.round(settings.poolMultipliers.spread * 100)}
-                        onChange={(e) => update({ poolMultipliers: { ...settings.poolMultipliers, spread: Number(e.target.value) / 100 } })}
-                        className="w-full accent-primary"
-                      />
-                      <p className="text-[11px] text-text-muted mt-1">0 = flat (everyone 1.0x). Hard-capped at 0.5x-1.5x regardless.</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-text-muted mb-1.5">Current multipliers</p>
-                      <div className="space-y-1">
-                        {leagueMultiplierRows(league).map(({ team, multiplier }) => (
-                          <div key={team.id} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1.5">
-                            <span className="text-xs flex items-center gap-1.5 min-w-0 truncate">
-                              <TeamLogo team={team} size="sm" /> <span className="truncate">{team.teamName}</span>
-                            </span>
-                            <span className={`text-xs font-semibold shrink-0 ${multiplier >= 1 ? 'text-profit' : 'text-loss'}`}>
-                              {multiplier.toFixed(2)}x
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {league.seasonPhase !== 'regular' && (
-                        <p className="text-[11px] text-text-muted mt-1">Every team is at a flat 1.0x during the playoffs.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </SubSection>
-            </>
-          )}
         </CollapsibleSection>
 
         <CollapsibleSection

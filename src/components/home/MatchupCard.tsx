@@ -4,6 +4,8 @@ import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from 
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { isWagerVisibleToViewer } from '../../engine/stats';
+import { isPerfectWeek } from '../../engine/perfectWeek';
+import { weeklyAtRisk } from '../../engine/plColor';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
 import { resultForGame } from '../../data/seed';
 import { useAppStore } from '../../store/useAppStore';
@@ -212,8 +214,8 @@ export function MatchupCard({
       </div>
 
       <div className={`flex items-center justify-between font-bold ${compact ? 'text-sm' : 'text-xl'}`}>
-        <AnimatedNumber value={scoreA} />
-        <AnimatedNumber value={scoreB} />
+        <AnimatedNumber value={scoreA} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterA, league.settings, isFinal)} />
+        <AnimatedNumber value={scoreB} atRisk={weeklyAtRisk(league.settings)} perfect={isPerfectWeek(rosterB, league.settings, isFinal)} />
       </div>
 
       <div>

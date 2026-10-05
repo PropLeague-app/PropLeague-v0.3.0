@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronDown, ChevronUp, Hourglass, Rocket, RefreshCw } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronUp, Hourglass, Rocket, RefreshCw, Pin } from 'lucide-react';
+import { MAX_PINNED_ANNOUNCEMENTS, pinnedAnnouncementCount } from '../engine/richText';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
@@ -20,6 +21,7 @@ export function LeagueHome() {
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
   const postAnnouncement = useAppStore((s) => s.postAnnouncement);
   const deleteAnnouncement = useAppStore((s) => s.deleteAnnouncement);
+  const setAnnouncementPinned = useAppStore((s) => s.setAnnouncementPinned);
   const reactToActivity = useAppStore((s) => s.reactToActivity);
   const postChatMessage = useAppStore((s) => s.postChatMessage);
   const deleteChatMessage = useAppStore((s) => s.deleteChatMessage);
@@ -32,6 +34,8 @@ export function LeagueHome() {
   const [showAll, setShowAll] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceText, setAnnounceText] = useState('');
+  const [announcePin, setAnnouncePin] = useState(false);
+  const [announceError, setAnnounceError] = useState<string | null>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -249,24 +253,53 @@ export function LeagueHome() {
             )}
           </div>
           {isCommissioner && announceOpen && (
-            <div className="flex gap-2 mb-2">
-              <input
-                value={announceText}
-                onChange={(e) => setAnnounceText(e.target.value)}
-                placeholder="Message the league…"
-                className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              />
+            <div className="mb-2 space-y-1.5">
+              <div className="flex gap-2">
+                <input
+                  value={announceText}
+                  onChange={(e) => setAnnounceText(e.target.value)}
+                  placeholder="Message the league…"
+                  className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  disabled={!announceText.trim()}
+                  onClick={async () => {
+                    const res = await postAnnouncement(league.id, announceText.trim(), announcePin);
+                    if (!res.ok) {
+                      setAnnounceError(res.error ?? 'Could not post the announcement.');
+                      return;
+                    }
+                    setAnnounceText('');
+                    setAnnouncePin(false);
+                    setAnnounceError(null);
+                    setAnnounceOpen(false);
+                  }}
+                  className="bg-primary text-white text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+                >
+                  Post
+                </button>
+              </div>
               <button
-                disabled={!announceText.trim()}
+                type="button"
                 onClick={() => {
-                  postAnnouncement(league.id, announceText.trim());
-                  setAnnounceText('');
-                  setAnnounceOpen(false);
+                  if (!announcePin && pinnedAnnouncementCount(league.activity) >= MAX_PINNED_ANNOUNCEMENTS) {
+                    setAnnounceError(`You can pin up to ${MAX_PINNED_ANNOUNCEMENTS} announcements. Unpin one first.`);
+                    return;
+                  }
+                  setAnnounceError(null);
+                  setAnnouncePin((v) => !v);
                 }}
-                className="bg-primary text-white text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+                aria-pressed={announcePin}
+                className={`flex items-center gap-1.5 text-xs font-medium ${announcePin ? 'text-gold' : 'text-text-muted'}`}
               >
-                Post
+                <Pin size={13} fill={announcePin ? 'currentColor' : 'none'} />
+                {announcePin ? 'Pinned to the top' : 'Pin to the top'}
               </button>
+              {announceError && (
+                <p className="text-xs text-loss" role="alert">
+                  {announceError}
+                </p>
+              )}
             </div>
           )}
           <ActivityFeed
@@ -277,6 +310,7 @@ export function LeagueHome() {
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
             onSendChat={(message) => postChatMessage(league.id, message)}
             onDeleteAnnouncement={(itemId) => deleteAnnouncement(league.id, itemId)}
+            onTogglePin={(itemId, pinned) => setAnnouncementPinned(league.id, itemId, pinned)}
             onDeleteChat={(itemId) => deleteChatMessage(league.id, itemId)}
             onSeenChat={() => markChatSeen(league.id)}
           />

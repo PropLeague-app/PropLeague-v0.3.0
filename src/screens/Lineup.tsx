@@ -14,6 +14,8 @@ import { weekLabel } from '../types';
 export function Lineup() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [pendingClearSlotId, setPendingClearSlotId] = useState<string | null>(null);
+  // Why the server refused a stake edit, per slot; cleared by the next accepted edit.
+  const [stakeErrors, setStakeErrors] = useState<Record<string, string>>({});
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateWagerStake = useAppStore((s) => s.updateWagerStake);
@@ -160,7 +162,16 @@ export function Lineup() {
               teamCount={league.teams.length}
               multiplier={multiplier}
               currentWeek={league.currentWeek}
-              onStakeChange={(stake) => updateWagerStake(league.id, userTeam.id, league.currentWeek, slot.slotId, stake)}
+              stakeError={stakeErrors[slot.slotId] ?? null}
+              onStakeChange={async (stake) => {
+                const res = await updateWagerStake(league.id, userTeam.id, league.currentWeek, slot.slotId, stake);
+                setStakeErrors((prev) => {
+                  const next = { ...prev };
+                  if (res.ok) delete next[slot.slotId];
+                  else next[slot.slotId] = res.error ?? 'Could not update that stake.';
+                  return next;
+                });
+              }}
               onRemove={() => setPendingClearSlotId(slot.slotId)}
             />
           );

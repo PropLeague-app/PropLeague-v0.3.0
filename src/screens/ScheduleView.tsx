@@ -7,6 +7,8 @@ import { Card } from '../components/common/Card';
 import { BackHeader } from '../components/layout/BackHeader';
 import { TeamLogo } from '../components/common/TeamLogo';
 import { MemberSelector } from '../components/common/MemberSelector';
+import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
+import { isTeamWeekPerfect } from '../engine/perfectWeek';
 
 function toWeekId(week: string): WeekId {
   return Number.isNaN(Number(week)) ? (week as WeekId) : Number(week);
@@ -36,6 +38,8 @@ export function ScheduleView() {
   // manual v0.1.1 §6 #10: view any league member's full season schedule, defaulting to
   // the signed-in user's own team.
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  // Past weeks' rosters are what tell us whether a week was perfect (the flame on its score).
+  useEnsureSettledWeekRosters(league);
 
   if (!league || !userTeam) return null;
 
@@ -107,7 +111,9 @@ export function ScheduleView() {
                       {won ? 'W' : tied ? 'T' : 'L'}
                     </p>
                     <p className="text-[11px] text-text-muted">
-                      {formatCents(myScore!)} - {formatCents(oppScore!)}
+                      <span className={isTeamWeekPerfect(league, viewedTeam.id, toWeekId(week)) ? 'pl-fire font-semibold' : ''}>{formatCents(myScore!)}</span>
+                      {' - '}
+                      <span className={opponent && isTeamWeekPerfect(league, opponent.id, toWeekId(week)) ? 'pl-fire font-semibold' : ''}>{formatCents(oppScore!)}</span>
                     </p>
                   </>
                 ) : (

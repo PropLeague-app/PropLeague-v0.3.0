@@ -14,6 +14,9 @@ import { fetchNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_P
 import logoMark from '../assets/logo-mono-muted.png';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
 import { LeagueSettingsPanel } from '../components/settings/LeagueSettingsPanel';
+import { GameExitsCard } from '../components/settings/GameExitsCard';
+import { lossColor, lossIntensity } from '../engine/plColor';
+import { formatCents } from '../engine/oddsMath';
 import { CollapsibleSection, SectionHeader, SubSection, chipClass } from '../components/settings/SettingsPrimitives';
 import {
   ChartColumn,
@@ -133,6 +136,7 @@ export function SettingsHome() {
   const profile = useAppStore((s) => s.profile);
   const setOddsFormat = useAppStore((s) => s.setOddsFormat);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
+  const updateProfile = useAppStore((s) => s.updateProfile);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateUserTeam = useAppStore((s) => s.updateUserTeam);
@@ -222,14 +226,14 @@ export function SettingsHome() {
   const isCommissioner = !!league && !!userTeam && userTeam.id === league.commissionerTeamId;
   const seasonNotStarted = !!league && Object.keys(league.matchupsByWeek).length === 0;
 
-  // Members only see the commissioner's settings read-only, so make sure what they see is
-  // current (see refreshLeagueSettings). Skipped for the commissioner: their own edits
-  // are optimistic and a refetch could race one.
+  // Members only see the commissioner's settings read-only, and the commissioner needs
+  // the current lock / scheduled-changes state, so refetch both when the screen opens
+  // (see refreshLeagueSettings). Runs once on open, before any edit can be in flight.
   const leagueId = league?.id;
   useEffect(() => {
-    if (!leagueId || isCommissioner) return;
+    if (!leagueId) return;
     void refreshLeagueSettings(leagueId);
-  }, [leagueId, isCommissioner, refreshLeagueSettings]);
+  }, [leagueId, refreshLeagueSettings]);
 
   async function handleSaveProfile() {
     const trimmed = usernameDraft.trim();
@@ -492,6 +496,43 @@ export function SettingsHome() {
                   ))}
                 </div>
               </div>
+              {/* Local-only like the two above. Gains are always solid green; this only changes how
+                  losses are tinted (see engine/plColor.ts). */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm">Loss colors</p>
+                  <div className="flex bg-bg-raised rounded-lg overflow-hidden">
+                    {(['classic', 'scaled'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => updateProfile({ plColorScale: mode })}
+                        className={`px-3 py-1.5 text-xs font-semibold capitalize ${
+                          (profile?.plColorScale ?? 'classic') === mode ? 'bg-primary text-white' : 'text-text-muted'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-text-muted">
+                  {(profile?.plColorScale ?? 'classic') === 'scaled'
+                    ? 'Small losses look softer, big ones look red. Gains stay green.'
+                    : 'Every loss is red.'}
+                </p>
+                <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-2 text-xs font-semibold tabular-nums">
+                  <span className="text-profit">{formatCents(20)}</span>
+                  {[-5, -30, -75].map((amount) => (
+                    <span
+                      key={amount}
+                      className="text-loss"
+                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 100)) } : undefined}
+                    >
+                      {formatCents(amount)}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </SubSection>
             <SubSection title="Notifications">
               <ToggleRow label="Lineup reminders" value={notificationPrefs.lineupReminders} onChange={(v) => toggleNotificationPref('lineupReminders', v)} />
@@ -530,6 +571,8 @@ export function SettingsHome() {
             onIdentityDirtyChange={setLeagueIdentityDirty}
           />
         )}
+
+        {league && isCommissioner && !seasonNotStarted && <GameExitsCard leagueId={league.id} week={league.currentWeek} />}
 
         {/* The "Advance Past Week" commissioner button that used to live here is gone --
             season progression (week advance, live-game status, playoff bracket seeding,

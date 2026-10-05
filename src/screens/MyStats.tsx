@@ -9,6 +9,11 @@ import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
 import { EmptyState } from '../components/common/EmptyState';
 import { MemberSelector } from '../components/common/MemberSelector';
+import { usePlStyle } from '../components/common/usePlStyle';
+import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
+import { leagueSeasonAtRisk, seasonAtRisk, teamWeeksPlayed } from '../engine/plColor';
+import { perfectWeeksForTeam } from '../engine/perfectWeek';
+import { weekLabel } from '../types';
 
 function pct(n: number): string {
   return `${n >= 0 ? '+' : ''}${(n * 100).toFixed(1)}%`;
@@ -41,6 +46,9 @@ export function MyStats() {
   const userTeam = league?.teams.find((t) => t.isUser);
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const plStyle = usePlStyle();
+  // Past weeks' rosters are what perfect weeks are judged from.
+  useEnsureSettledWeekRosters(league);
 
   // manual v0.3.0 §5: browse any league member's stats, defaulting to the signed-in
   // user's own team -- same member-selector pattern as Season Schedule. Landing here
@@ -114,7 +122,12 @@ export function MyStats() {
             <p className="text-[10px] text-text-muted">ROI</p>
           </Card>
           <Card className="py-3 px-1.5">
-            <p className={`text-sm font-bold whitespace-nowrap ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(stats.totalPL)}</p>
+            <p
+              className={`text-sm font-bold whitespace-nowrap ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}
+              style={plStyle(stats.totalPL, isLeagueView ? leagueSeasonAtRisk(league) : seasonAtRisk(teamWeeksPlayed(league, viewedTeam!.id), league.settings))}
+            >
+              {formatCents(stats.totalPL)}
+            </p>
             <p className="text-[10px] text-text-muted">Total P/L</p>
           </Card>
           <Card className="py-3 px-1.5">
@@ -161,6 +174,21 @@ export function MyStats() {
             (slot) => stats.byDaySlot[slot] && <StatRow key={slot} label={slot.replace('_', ' ')} rec={stats.byDaySlot[slot]!} />,
           )}
         </Card>
+
+        {!isLeagueView && viewedTeam && (() => {
+          const perfect = perfectWeeksForTeam(league, viewedTeam.id);
+          return (
+            <Card className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-text-muted">Perfect weeks</p>
+                <p className="text-[10px] text-text-muted">
+                  {perfect.length > 0 ? perfect.map((w) => weekLabel(w)).join(', ') : 'A full roster with no lost bets'}
+                </p>
+              </div>
+              <p className={`text-lg font-bold shrink-0 ${perfect.length > 0 ? 'pl-fire-hero' : 'text-text-muted'}`}>{perfect.length}</p>
+            </Card>
+          );
+        })()}
 
         {!isLeagueView && matchupStreak && (
           <Card className="flex items-center justify-between">

@@ -14,6 +14,8 @@ export interface RealLeagueMeta {
    * league whose settings haven't been saved to Supabase yet -- callers fall
    * back to DEFAULT_LEAGUE_SETTINGS the same way the edge functions do. */
   settings: Partial<LeagueSettings> | null;
+  /** Gameplay changes scheduled for the next week (leagues.pending_settings, migration 0027). */
+  pendingSettings: Partial<LeagueSettings> | null;
   /** Null until the commissioner presses "Start Season" (see chat,
    * 0013_season_start_week.sql / start_season RPC). */
   seasonStartWeek: string | null;
@@ -162,7 +164,7 @@ export async function rejoinRealLeague(params: {
 export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<RealLeagueMeta>> {
   const { data, error } = await supabase
     .from('leagues')
-    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings, season_start_week')
+    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings, pending_settings, season_start_week')
     .eq('id', leagueId)
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? 'League not found.' };
@@ -176,18 +178,53 @@ export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<R
     isPublic: data.is_public,
     seasonStartWeek: data.season_start_week,
     settings: data.settings ?? null,
+    pendingSettings: (data as { pending_settings?: Partial<LeagueSettings> | null }).pending_settings ?? null,
   };
 }
 
-/** Persists a league's full settings object to Supabase -- the write-side of
- * Step "persist league settings" (see chat). Called right after a league is
- * created (CreateLeague.tsx) and on every commissioner Settings save
- * (useAppStore's updateSettings), so settle-week and every other device
- * always see the real configuration instead of guessing defaults. */
-export async function updateLeagueSettingsRemote(leagueId: string, settings: LeagueSettings): Promise<ServiceResult<object>> {
-  const { error } = await supabase.from('leagues').update({ settings }).eq('id', leagueId);
+/** What update_league_settings / discard_pending_settings return (migration 0027). */
+export interface SettingsRpcState {
+  /** A pick already exists this week, so gameplay edits were scheduled instead of applied. */
+  locked: boolean;
+  week: string;
+  settings: Partial<LeagueSettings>;
+  pending: Partial<LeagueSettings> | null;
+}
+
+function parseSettingsState(data: unknown): SettingsRpcState {
+  const d = (data ?? {}) as { locked?: boolean; week?: string; settings?: Partial<LeagueSettings>; pending_settings?: Partial<LeagueSettings> | null };
+  return { locked: !!d.locked, week: String(d.week ?? ''), settings: d.settings ?? {}, pending: d.pending_settings ?? null };
+}
+
+/** Saves league settings through update_league_settings (migration 0027). Pass only the keys
+ * that changed. The server decides what applies now and what waits for rollover, rejects a
+ * combination that can never produce a legal roster (the error text names what to change), and
+ * is the only path allowed to write leagues.settings. Also used right after a league is created
+ * (CreateLeague.tsx) with the full settings object, when nothing is locked yet. */
+export async function updateLeagueSettingsRemote(
+  leagueId: string,
+  patch: Partial<LeagueSettings>,
+): Promise<{ ok: true; state: SettingsRpcState } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('update_league_settings', { p_league_id: leagueId, p_patch: patch });
   if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  return { ok: true, state: parseSettingsState(data) };
+}
+
+/** "Discard scheduled changes": drops everything waiting for next week. */
+export async function discardPendingSettingsRemote(
+  leagueId: string,
+): Promise<{ ok: true; state: SettingsRpcState } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('discard_pending_settings', { p_league_id: leagueId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, state: parseSettingsState(data) };
+}
+
+/** True once any pick (human or bot) exists in the league's current week. Null if the
+ * check failed, in which case callers keep whatever they had. */
+export async function fetchSettingsLocked(leagueId: string): Promise<boolean | null> {
+  const { data, error } = await supabase.rpc('league_settings_locked', { p_league_id: leagueId });
+  if (error || typeof data !== 'boolean') return null;
+  return data;
 }
 
 /** Was missing entirely (see chat): useAppStore's leaveLeague only ever flipped

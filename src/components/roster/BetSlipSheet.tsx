@@ -4,6 +4,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
+import { rosterKey } from '../../engine/rosterSlots';
+import { lastSlotPrefill, maxStakeNow, stakeError, type StakeContext } from '../../engine/stakeRules';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { NumberInput } from '../common/NumberInput';
 
@@ -46,12 +48,24 @@ export function BetSlipSheet({
   const placeWager = useAppStore((s) => s.placeWager);
   const league = useAppStore((s) => s.leagues[target.leagueId]);
   const isML = target.slotPosition === 'ML';
-  const maxForSlot = isML ? (settings.mlBetOverride?.max ?? settings.maxMLBet) : (settings.propBetOverride?.max ?? settings.maxPropBet);
-  const capAmount = settings.weeklyCredits * settings.singleBetCapPct;
-  const effectiveMax = Math.min(maxForSlot ?? Infinity, capAmount, Math.max(0, remainingBudget));
   const minOdds = isML ? settings.mlBetOverride?.minOdds ?? null : settings.propBetOverride?.minOdds ?? settings.minOdds;
 
-  const [stake, setStake] = useState(() => Math.max(settings.minBetPerSlot, Math.min(effectiveMax, 10)));
+  // Where this roster stands, not counting the slot being filled. A new pick must leave the minimum
+  // bet for every other empty slot (so a full legal roster stays reachable); swapping or editing a
+  // pick that is already in the slot skips that reserve. The server enforces the same rules.
+  const slotsNow = league?.rostersByTeamWeek[rosterKey(target.teamId, target.week)]?.slots;
+  const otherSlots = slotsNow?.filter((sl) => sl.slotId !== target.slotId);
+  const stakeCtx: StakeContext = {
+    settings,
+    isMLSlot: isML,
+    otherStakes: otherSlots ? otherSlots.reduce((sum, sl) => sum + (sl.wager?.stake ?? 0), 0) : settings.weeklyCredits - remainingBudget,
+    emptyOtherSlots: otherSlots ? otherSlots.filter((sl) => !sl.wager).length : 0,
+    replacing: !!slotsNow?.find((sl) => sl.slotId === target.slotId)?.wager,
+  };
+  const effectiveMax = maxStakeNow(stakeCtx);
+
+  // Last open slot: the only sensible stake is exactly what is left, so start there.
+  const [stake, setStake] = useState(() => lastSlotPrefill(stakeCtx) ?? Math.max(settings.minBetPerSlot, Math.min(effectiveMax, 10)));
   const [claimError, setClaimError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -69,10 +83,8 @@ export function BetSlipSheet({
   const preClaimReason = preClaimTeamId && league ? claimBlockReason(league, preClaimTeamId) : null;
 
   const reasons: string[] = [];
-  if (stake < settings.minBetPerSlot) reasons.push(`Minimum bet is $${settings.minBetPerSlot.toFixed(2)}`);
-  if (maxForSlot != null && stake > maxForSlot) reasons.push(`Maximum bet is $${maxForSlot.toFixed(2)}`);
-  if (stake > capAmount) reasons.push(`Exceeds ${Math.round(settings.singleBetCapPct * 100)}% cap ($${capAmount.toFixed(2)})`);
-  if (stake > remainingBudget + 0.001) reasons.push(`Only $${remainingBudget.toFixed(2)} remaining this week`);
+  const stakeProblem = stakeError(stakeCtx, stake);
+  if (stakeProblem) reasons.push(stakeProblem);
   if (minOdds != null && target.outcome.price < minOdds) reasons.push(`Below minimum odds of ${minOdds}`);
   if (preClaimReason) reasons.push(preClaimReason);
   if (claimError) reasons.push(claimError);

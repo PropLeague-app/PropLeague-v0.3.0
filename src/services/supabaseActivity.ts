@@ -3,10 +3,18 @@ import type { ActivityItem, MomentCategory, SlotPosition, WeekId } from '../type
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
-export async function postAnnouncementRemote(leagueId: string, message: string): Promise<ServiceResult<{ itemId: string }>> {
-  const { data, error } = await supabase.rpc('post_announcement', { p_league_id: leagueId, p_message: message });
+export async function postAnnouncementRemote(leagueId: string, message: string, pinned = false): Promise<ServiceResult<{ itemId: string }>> {
+  const { data, error } = await supabase.rpc('post_announcement', { p_league_id: leagueId, p_message: message, p_pinned: pinned });
   if (error || !data) return { ok: false, error: error?.message ?? 'Could not post announcement.' };
   return { ok: true, itemId: data as string };
+}
+
+/** Commissioner-only pin toggle (0028). The server enforces the 3-pin limit and
+ * returns its own readable message when it is hit. */
+export async function setAnnouncementPinnedRemote(itemId: string, pinned: boolean): Promise<ServiceResult> {
+  const { error } = await supabase.rpc('set_announcement_pinned', { p_item_id: itemId, p_pinned: pinned });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /** manual v0.3.0 §6: one reaction per person -- react_to_activity (replacing the
@@ -77,13 +85,18 @@ function parseWeekId(raw: string): WeekId {
  * is just the aggregate emoji->count map, with no way to tell which of those
  * counts is "me". */
 export async function fetchLeagueActivity(leagueId: string, viewerTeamId?: string): Promise<ServiceResult<{ activity: ActivityItem[] }>> {
-  const { data, error } = await supabase
-    .from('activity_items')
-    .select('id, ts, type, message, pinned, reactions, moment_category, moment_display_name, moment_week, moment_team_id, moment_extra, moment_position, posted_by_team_id')
-    .eq('league_id', leagueId)
-    .order('ts', { ascending: false })
-    .limit(40);
-  if (error || !data) return { ok: false, error: error?.message ?? 'Could not load activity.' };
+  const columns = 'id, ts, type, message, pinned, reactions, moment_category, moment_display_name, moment_week, moment_team_id, moment_extra, moment_position, posted_by_team_id';
+  const [recent, pinnedRes] = await Promise.all([
+    supabase.from('activity_items').select(columns).eq('league_id', leagueId).order('ts', { ascending: false }).limit(40),
+    // Pinned items must survive the 40-item window, or an old pinned notice would
+    // quietly drop out of the feed once enough newer items piled up.
+    supabase.from('activity_items').select(columns).eq('league_id', leagueId).eq('pinned', true).order('ts', { ascending: false }).limit(10),
+  ]);
+  const { data: recentData, error } = recent;
+  if (error || !recentData) return { ok: false, error: error?.message ?? 'Could not load activity.' };
+  const seen = new Set((recentData as ActivityRow[]).map((r) => r.id));
+  const extraPinned = ((pinnedRes.data ?? []) as ActivityRow[]).filter((r) => !seen.has(r.id));
+  const data = [...(recentData as ActivityRow[]), ...extraPinned];
 
   let myReactionByItemId: Record<string, string> = {};
   if (viewerTeamId) {

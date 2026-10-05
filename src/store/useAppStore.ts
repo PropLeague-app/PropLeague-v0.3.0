@@ -17,6 +17,8 @@ import {
   fetchMyLeagueMemberships,
   fetchLeagueMeta,
   updateLeagueSettingsRemote,
+  discardPendingSettingsRemote,
+  fetchSettingsLocked,
   updateTeamIdentityRemote,
   updateLeagueIdentityRemote,
   updateTeamConferenceRemote,
@@ -26,7 +28,7 @@ import {
 } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
 import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
-import { postAnnouncementRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity, deleteAnnouncementRemote } from '../services/supabaseActivity';
+import { postAnnouncementRemote, setAnnouncementPinnedRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity, deleteAnnouncementRemote } from '../services/supabaseActivity';
 import { postChatMessageRemote, fetchLeagueChat, deleteChatMessageRemote } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
@@ -34,6 +36,7 @@ import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { gamesForWeek } from '../data/seed';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
+import { effectiveSettings, meaningfulPending, splitPendingSettings } from '../engine/settingsRules';
 
 interface PlaceWagerParams {
   leagueId: string;
@@ -108,13 +111,14 @@ interface AppState {
   startSeason: (leagueId: string) => Promise<{ ok: boolean; error?: string }>;
   updateTargetTeamCount: (leagueId: string, count: number) => void;
   setCurrentLeague: (leagueId: string) => void;
-  updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => void;
+  updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => Promise<{ ok: boolean; error?: string }>;
+  discardPendingSettings: (leagueId: string) => Promise<{ ok: boolean; error?: string }>;
   refreshLeagueSettings: (leagueId: string) => Promise<void>;
   transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => Promise<{ ok: boolean; reason?: string }>;
   leaveLeague: (leagueId: string) => Promise<{ ok: boolean; reason?: string }>;
 
   placeWager: (params: PlaceWagerParams) => Promise<{ ok: boolean; claimedByTeamId?: string; error?: string }>;
-  updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<void>;
+  updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<{ ok: boolean; error?: string }>;
   clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<{ ok: boolean; error?: string }>;
   submitLineup: (leagueId: string, teamId: string, week: WeekId) => Promise<boolean>;
   loadWeekRosters: (leagueId: string, week: WeekId) => Promise<void>;
@@ -128,7 +132,8 @@ interface AppState {
   factoryReset: () => void;
   setGameOverride: (leagueId: string, gameId: string, status: 'live' | 'final') => void;
   simulateDay: (leagueId: string, daySlot: string) => void;
-  postAnnouncement: (leagueId: string, message: string) => Promise<void>;
+  postAnnouncement: (leagueId: string, message: string, pinned?: boolean) => Promise<{ ok: boolean; error?: string }>;
+  setAnnouncementPinned: (leagueId: string, itemId: string, pinned: boolean) => Promise<{ ok: boolean; error?: string }>;
   deleteAnnouncement: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markMatchupResultSeen: (matchupId: string) => void;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
@@ -358,23 +363,68 @@ export const useAppStore = create<AppState>()(
 
       setCurrentLeague: (leagueId) => set({ currentLeagueId: leagueId }),
 
-      updateSettings: (leagueId, partial) => {
+      // Saves go through the update_league_settings RPC (migration 0027), which is the
+      // only path allowed to write leagues.settings. The screen updates optimistically,
+      // using the same rule the server applies: once any pick exists this week, gameplay
+      // settings are scheduled for next week (`pendingSettings`) instead of applied, and
+      // everything else applies now. If the server refuses (an unreachable combination,
+      // not the commissioner, network), the previous state is put back and the reason is
+      // returned so the screen can show it. On success the server's answer wins.
+      updateSettings: async (leagueId, partial) => {
+        const before = get().leagues[leagueId];
+        if (!before) return { ok: false, error: 'League not found.' };
+        const working = { ...effectiveSettings(before.settings, before.pendingSettings), ...partial };
+        const split = splitPendingSettings(before.settings, working, !!before.settingsLocked);
         set((state) =>
           updateLeague(state, leagueId, (league) => {
-            const updated = leagueService.updateLeagueSettings(league, partial);
+            const updated = leagueService.updateLeagueSettings(league, split.settings);
             // `settings.leagueName` and the top-level `league.name` (what headers/invite
             // screens actually render) are kept in sync here so editing the League name
             // field in Settings is visibly effective everywhere, not just in settings.
-            return partial.leagueName != null ? { ...updated, name: partial.leagueName } : updated;
+            const named = partial.leagueName != null ? { ...updated, name: partial.leagueName } : updated;
+            return { ...named, pendingSettings: split.pending };
           }),
         );
-        // Was local-only until now (see chat) -- every commissioner Settings save is the
-        // only place league settings change post-creation, so this is the one spot that
-        // needs to push them to Supabase for settle-week's automatic season progression
-        // (and every other member's device) to ever see the real values. Fire-and-forget:
-        // the local state above is already updated optimistically.
-        const updatedLeague = get().leagues[leagueId];
-        if (updatedLeague) void updateLeagueSettingsRemote(leagueId, updatedLeague.settings);
+
+        const res = await updateLeagueSettingsRemote(leagueId, partial);
+        if (!res.ok) {
+          set((state) =>
+            updateLeague(state, leagueId, (league) => ({
+              ...league,
+              settings: before.settings,
+              pendingSettings: before.pendingSettings ?? null,
+              name: before.name,
+              prizePool: before.prizePool,
+            })),
+          );
+          return { ok: false, error: res.error };
+        }
+        set((state) =>
+          updateLeague(state, leagueId, (league) => {
+            const settings = { ...league.settings, ...res.state.settings } as LeagueSettings;
+            return {
+              ...league,
+              settings,
+              pendingSettings: meaningfulPending(settings, res.state.pending),
+              settingsLocked: res.state.locked,
+            };
+          }),
+        );
+        return { ok: true };
+      },
+
+      discardPendingSettings: async (leagueId) => {
+        const res = await discardPendingSettingsRemote(leagueId);
+        if (!res.ok) return { ok: false, error: res.error };
+        set((state) =>
+          updateLeague(state, leagueId, (league) => ({
+            ...league,
+            settings: { ...league.settings, ...res.state.settings } as LeagueSettings,
+            pendingSettings: null,
+            settingsLocked: res.state.locked,
+          })),
+        );
+        return { ok: true };
       },
 
       // Re-pulls the server-authoritative league settings/identity for ONE league, so a
@@ -388,24 +438,34 @@ export const useAppStore = create<AppState>()(
       // fetch is ignored (keeps whatever is cached), and an unchanged result returns
       // the same league object so nothing re-renders.
       refreshLeagueSettings: async (leagueId) => {
-        const meta = await fetchLeagueMeta(leagueId);
+        const [meta, locked] = await Promise.all([fetchLeagueMeta(leagueId), fetchSettingsLocked(leagueId)]);
         if (!meta.ok) return;
+        // The name and visibility used to be saved only inside the settings blob, never in
+        // their own columns, so prefer the blob's copy when present (it is what the
+        // commissioner actually typed); the RPC now keeps both in step.
+        const blobName = typeof meta.settings?.leagueName === 'string' ? meta.settings.leagueName.trim() : '';
+        const name = blobName || meta.name;
+        const isPublic = typeof meta.settings?.isPublic === 'boolean' ? meta.settings.isPublic : meta.isPublic;
         const settings: LeagueSettings = {
           ...DEFAULT_LEAGUE_SETTINGS,
           ...meta.settings,
-          leagueName: meta.name,
-          isPublic: meta.isPublic,
+          leagueName: name,
+          isPublic,
         };
+        const pendingSettings = meaningfulPending(settings, meta.pendingSettings);
         set((state) =>
           updateLeague(state, leagueId, (league) => {
             const commissionerTeamId = meta.commissionerTeamId ?? league.commissionerTeamId;
+            const settingsLocked = locked ?? league.settingsLocked ?? false;
             const unchanged =
               JSON.stringify(league.settings) === JSON.stringify(settings) &&
-              league.name === meta.name &&
+              JSON.stringify(league.pendingSettings ?? null) === JSON.stringify(pendingSettings) &&
+              (league.settingsLocked ?? false) === settingsLocked &&
+              league.name === name &&
               league.targetTeamCount === meta.targetTeamCount &&
               league.commissionerTeamId === commissionerTeamId;
             if (unchanged) return league;
-            return { ...league, name: meta.name, targetTeamCount: meta.targetTeamCount, commissionerTeamId, settings };
+            return { ...league, name, targetTeamCount: meta.targetTeamCount, commissionerTeamId, settings, pendingSettings, settingsLocked };
           }),
         );
       },
@@ -535,7 +595,9 @@ export const useAppStore = create<AppState>()(
 
       updateWagerStake: async (leagueId, teamId, week, slotId, stake) => {
         const result = await updateWagerStakeRemote(teamId, week, slotId, stake);
-        if (!result.ok) return;
+        // Propagated so the lineup can show why a stake was refused (the server now enforces the
+        // stake rules); local state only changes once the server accepts.
+        if (!result.ok) return { ok: false, error: result.error };
         set((state) => {
           const league = state.leagues[leagueId];
           if (!league) return {};
@@ -553,6 +615,7 @@ export const useAppStore = create<AppState>()(
             },
           };
         });
+        return { ok: true };
       },
 
       clearSlot: async (leagueId, teamId, week, slotId) => {
@@ -895,19 +958,34 @@ export const useAppStore = create<AppState>()(
           }),
         ),
 
-      postAnnouncement: async (leagueId, message) => {
+      postAnnouncement: async (leagueId, message, pinned = false) => {
         const userTeam = get().leagues[leagueId]?.teams.find((t) => t.isUser);
-        const result = await postAnnouncementRemote(leagueId, message);
-        if (!result.ok) return;
+        const result = await postAnnouncementRemote(leagueId, message, pinned);
+        if (!result.ok) return { ok: false, error: result.error };
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             activity: [
-              { id: result.itemId, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: true, postedByTeamId: userTeam?.id },
+              { id: result.itemId, ts: new Date().toISOString(), type: 'announcement' as const, message, pinned: pinned || undefined, postedByTeamId: userTeam?.id },
               ...league.activity,
             ].slice(0, 40),
           })),
         );
+        return { ok: true };
+      },
+
+      // Commissioner pin toggle. Server-checked (commissioner only, max 3 pinned);
+      // local state only changes once the server agrees.
+      setAnnouncementPinned: async (leagueId, itemId, pinned) => {
+        const result = await setAnnouncementPinnedRemote(itemId, pinned);
+        if (!result.ok) return { ok: false, error: result.error };
+        set((state) =>
+          updateLeague(state, leagueId, (league) => ({
+            ...league,
+            activity: league.activity.map((item) => (item.id === itemId ? { ...item, pinned: pinned || undefined } : item)),
+          })),
+        );
+        return { ok: true };
       },
 
       // manual v0.3.0 §6: one reaction per person -- tapping the emoji you already
@@ -1016,7 +1094,7 @@ export const useAppStore = create<AppState>()(
 
         const builtLeagues: Record<string, League> = {};
         for (const { leagueId, teamId } of membershipsResult.memberships) {
-          const [metaResult, teamsResult] = await Promise.all([fetchLeagueMeta(leagueId), fetchLeagueTeams(leagueId)]);
+          const [metaResult, teamsResult, lockedResult] = await Promise.all([fetchLeagueMeta(leagueId), fetchLeagueTeams(leagueId), fetchSettingsLocked(leagueId)]);
           if (!metaResult.ok || !teamsResult.ok) continue; // skip a league we couldn't load rather than fail the whole hydration
           const league = leagueService.buildLeagueFromRealTeams({
             id: metaResult.id,
@@ -1031,6 +1109,8 @@ export const useAppStore = create<AppState>()(
           });
           builtLeagues[league.id] = {
             ...league,
+            pendingSettings: meaningfulPending(league.settings, metaResult.pendingSettings),
+            settingsLocked: lockedResult ?? false,
             teams: league.teams.map((t) => (t.id === teamId ? { ...t, isUser: true } : t)),
           };
         }

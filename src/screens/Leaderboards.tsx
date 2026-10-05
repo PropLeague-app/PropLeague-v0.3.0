@@ -9,6 +9,8 @@ import { TeamLogo } from '../components/common/TeamLogo';
 import { PositionBadge } from '../components/common/PositionBadge';
 import { MARKET_LABELS, MARKET_SHORT_LABELS } from '../data/propsGenerator';
 import type { LeagueTeam } from '../types';
+import { seasonAtRisk, teamWeeksPlayed } from '../engine/plColor';
+import { usePlStyle } from '../components/common/usePlStyle';
 
 function TeamName({ team }: { team: LeagueTeam | undefined }) {
   return (
@@ -24,6 +26,7 @@ export function Leaderboards() {
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
+  const plStyle = usePlStyle();
 
   const userTeam = league?.teams.find((t) => t.isUser);
 
@@ -72,7 +75,12 @@ export function Leaderboards() {
               <span>
                 {i + 1}. <TeamName team={teamById(e.teamId)} />
               </span>
-              <span className={`ml-auto shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(e.value)}</span>
+              <span
+                className={`ml-auto shrink-0 whitespace-nowrap ${e.value >= 0 ? 'text-profit' : 'text-loss'}`}
+                style={plStyle(e.value, seasonAtRisk(teamWeeksPlayed(league, e.teamId), league.settings))}
+              >
+                {formatCents(e.value)}
+              </span>
             </div>
           ))}
         </Card>
