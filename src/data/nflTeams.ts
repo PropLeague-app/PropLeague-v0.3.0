@@ -14,7 +14,7 @@ export const NFL_TEAMS: NFLTeam[] = [
   // AFC South
   { id: 'HOU', city: 'Houston', name: 'Texans', abbrev: 'HOU', conference: 'AFC', division: 'South', primaryColor: '#03202F', secondaryColor: '#A71930' },
   { id: 'IND', city: 'Indianapolis', name: 'Colts', abbrev: 'IND', conference: 'AFC', division: 'South', primaryColor: '#002C5F', secondaryColor: '#A2AAAD' },
-  { id: 'JAX', city: 'Jacksonville', name: 'Jaguars', abbrev: 'JAX', conference: 'AFC', division: 'South', primaryColor: '#101820', secondaryColor: '#D7A22A' },
+  { id: 'JAX', city: 'Jacksonville', name: 'Jaguars', abbrev: 'JAX', conference: 'AFC', division: 'South', primaryColor: '#006778', secondaryColor: '#D7A22A' },
   { id: 'TEN', city: 'Tennessee', name: 'Titans', abbrev: 'TEN', conference: 'AFC', division: 'South', primaryColor: '#0C2340', secondaryColor: '#4B92DB' },
   // AFC West
   { id: 'DEN', city: 'Denver', name: 'Broncos', abbrev: 'DEN', conference: 'AFC', division: 'West', primaryColor: '#FB4F14', secondaryColor: '#002244' },
