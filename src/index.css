@@ -468,3 +468,15 @@ body {
     animation: none;
   }
 }
+
+/* Boot loader: the color logo is revealed left to right over the grayed one. */
+@keyframes boot-fill {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.boot-fill {
+  animation: boot-fill 1.1s cubic-bezier(0.25, 0.8, 0.35, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-fill { animation: none; }
+}

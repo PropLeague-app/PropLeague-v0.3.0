@@ -33,6 +33,7 @@ import { BetHistory } from './screens/BetHistory';
 import { PrizePool } from './screens/PrizePool';
 import { MyStats } from './screens/MyStats';
 import { Leaderboards } from './screens/Leaderboards';
+import { BootLoader } from './components/common/BootLoader';
 
 /** manual v0.2.0 §6 #15: the Welcome splash only ever appears when no profile exists
  * (the Factory Reset case) — a profile'd user who's between leagues (e.g. just left
@@ -79,7 +80,7 @@ function RootRedirect() {
   // Auth gates come first: don't decide anything league-related until we know
   // whether there's a real session, and whether it's finished onboarding.
   if (authLoading) {
-    return <div className="min-h-screen bg-bg flex items-center justify-center text-text-muted text-sm">Loading…</div>;
+    return <BootLoader />;
   }
   if (!session) return <Navigate to="/welcome" replace />;
   if (authProfile && !authProfile.onboarded) return <Navigate to="/profile-setup" replace />;
@@ -90,7 +91,7 @@ function RootRedirect() {
   // a chance to check Supabase — otherwise a returning user with a real
   // membership would get bounced to Create League before we'd even looked.
   if (!leaguesHydrated) {
-    return <div className="min-h-screen bg-bg flex items-center justify-center text-text-muted text-sm">Loading…</div>;
+    return <BootLoader />;
   }
 
   if (!targetLeague) return <Navigate to="/create-league" replace />;
