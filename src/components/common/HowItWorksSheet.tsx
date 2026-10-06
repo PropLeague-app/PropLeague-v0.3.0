@@ -55,13 +55,13 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'What PropLeague is',
       body: [
-        'Fantasy football built on real prop bets. Instead of drafting players, you build a weekly lineup of bets and play one opponent each week. The higher profit wins the matchup.',
+        'Fantasy football built on real prop bets. Instead of drafting players, you build a weekly lineup of bets and play one opponent each week. The higher profit wins the matchup. PropLeague is free and played with virtual credits only. No real money can be deposited, withdrawn or cashed out.',
       ],
     },
     {
       title: 'Weekly credits',
       body: [
-        `You get ${money(credits)} each week${generic ? ' by default (your commissioner can change it)' : ''} to spread across your slots. Nothing carries over. Spend all of it: credits you leave unspent count as a loss.`,
+        `You get ${money(credits)} each week${generic ? ' by default (your commissioner can change it)' : ''} to spread across your slots. Nothing carries over. Spend all of it: credits you leave unspent count as a loss. Credits are virtual and have no cash value.`,
       ],
     },
     {
@@ -151,7 +151,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
 
   if (!settings || settings.buyInEnabled) {
     const body = [
-      'If buy-ins are on, every team chips in to a shared prize pool. Each week the pool moves by the league\'s combined real-dollar profit or loss on bets that were actually placed, scaled by how much of your weekly budget you used. Penalties for unspent credits or an empty lineup hurt a team\'s score and standings, but no bet was placed, so they never move the pool. It locks at the end of the regular season and pays the top finishers.',
+      'If buy-ins are on, every team adds a virtual buy-in to a shared prize pool. Each week the pool moves by the league\'s combined virtual profit or loss on bets that were actually placed, scaled by how much of your weekly budget you used. Penalties for unspent credits or an empty lineup hurt a team\'s score and standings, but no bet was placed, so they never move the pool. It locks at the end of the regular season and is split among the top finishers. The prize pool is always virtual: no real money is ever deposited, held or paid out, and nothing can be cashed out.',
     ];
     if (settings?.poolMultipliers.enabled) {
       body.push('Standing multipliers are on here: a team ranked higher moves the pool a bit more and a lower one a bit less. Total exposure never changes, only whose picks count more.');
