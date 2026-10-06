@@ -84,6 +84,12 @@ export interface PushMessage {
   body: string;
   /** Optional line between the title and body (the league name, so the title can be about the event). */
   subtitle?: string;
+  /** Groups notifications in the lock screen stack (we use the league id, so each league stacks on its own). */
+  threadId?: string;
+  /** A newer push with the same id replaces the older one on the device instead of piling up (max 64 bytes). */
+  collapseId?: string;
+  /** 'time-sensitive' breaks through Focus modes; it only takes effect once the app has the Time Sensitive Notifications capability, and is a harmless no-op before that. */
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive';
   /** Arbitrary extra fields merged into the APNs payload alongside `aps`, for the client to route on tap (e.g. { screen: 'matchup', matchupId }). */
   data?: Record<string, unknown>;
 }
@@ -111,9 +117,15 @@ export async function sendApnsPush(deviceToken: string, message: PushMessage): P
       'apns-push-type': 'alert',
       'apns-priority': '10',
       'content-type': 'application/json',
+      ...(message.collapseId ? { 'apns-collapse-id': message.collapseId.slice(0, 64) } : {}),
     },
     body: JSON.stringify({
-      aps: { alert: { title: message.title, subtitle: message.subtitle, body: message.body }, sound: 'default' },
+      aps: {
+        alert: { title: message.title, subtitle: message.subtitle, body: message.body },
+        sound: 'default',
+        ...(message.threadId ? { 'thread-id': message.threadId } : {}),
+        ...(message.interruptionLevel ? { 'interruption-level': message.interruptionLevel } : {}),
+      },
       ...message.data,
     }),
   });
@@ -183,4 +195,70 @@ export async function claimNotification(supabase: any, key: string): Promise<boo
     throw new Error(`claimNotification(${key}): ${error.message}`);
   }
   return !!data && data.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Live Activities (lock screen + Dynamic Island). Same APNs host and JWT as above, different push
+// type: 'liveactivity' with the topic "<bundle id>.push-type.liveactivity". Three events:
+//   start  : sent to a device's push-to-start token (iOS 17.2+), starts the activity with no app open
+//   update : sent to one activity's own push token, replaces its content state
+//   end    : like update, and the activity goes away (after dismissalDate, up to 4 hours later)
+// `contentState` and `attributes` must match the Codable keys of PropLeagueActivityAttributes in
+// ios/App/PropLeagueLiveActivity exactly, or the device silently ignores the push.
+// ---------------------------------------------------------------------------
+
+export interface LiveActivityPush {
+  event: 'start' | 'update' | 'end';
+  contentState: Record<string, unknown>;
+  /** start only: the activity's fixed attributes. */
+  attributes?: Record<string, unknown>;
+  /** Unix seconds after which the system marks the content stale (the lineup countdown uses kickoff). */
+  staleDate?: number;
+  /** end only: unix seconds when the ended activity leaves the lock screen. */
+  dismissalDate?: number;
+  /** start only, and only when you want it: the banner the user sees as it appears. */
+  alert?: { title: string; body: string };
+  /** 10 for start and end and score changes, 5 for quiet refreshes (Apple budgets priority 10). */
+  priority?: 5 | 10;
+}
+
+export async function sendLiveActivityPush(token: string, push: LiveActivityPush): Promise<{ ok: true } | { ok: false; failure: PushFailure }> {
+  if (!APNS_BUNDLE_ID) throw new Error('APNS_BUNDLE_ID secret is not set');
+  const jwt = await getAuthJwt();
+
+  const aps: Record<string, unknown> = {
+    timestamp: Math.floor(Date.now() / 1000),
+    event: push.event,
+    'content-state': push.contentState,
+  };
+  if (push.staleDate != null) aps['stale-date'] = push.staleDate;
+  if (push.event === 'end' && push.dismissalDate != null) aps['dismissal-date'] = push.dismissalDate;
+  if (push.event === 'start') {
+    aps['attributes-type'] = 'PropLeagueActivityAttributes';
+    aps.attributes = push.attributes ?? {};
+    if (push.alert) aps.alert = { title: push.alert.title, body: push.alert.body, sound: 'default' };
+  }
+
+  const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
+    method: 'POST',
+    headers: {
+      authorization: `bearer ${jwt}`,
+      'apns-topic': `${APNS_BUNDLE_ID}.push-type.liveactivity`,
+      'apns-push-type': 'liveactivity',
+      'apns-priority': String(push.priority ?? 10),
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ aps }),
+  });
+
+  if (res.status === 200) return { ok: true };
+
+  let reason = `http-${res.status}`;
+  try {
+    const body = await res.json();
+    if (body?.reason) reason = body.reason;
+  } catch {
+    // non-JSON error body, keep the http-<status> fallback
+  }
+  return { ok: false, failure: { token, status: res.status, reason, shouldDeleteToken: PERMANENT_FAILURE_REASONS.has(reason) || reason === 'ExpiredToken' } };
 }

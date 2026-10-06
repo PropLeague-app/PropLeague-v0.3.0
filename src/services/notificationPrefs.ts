@@ -16,6 +16,8 @@ export interface NotificationPrefs {
   slateUpdates: SlateUpdates;
   wagerSettled: boolean;
   weekResults: boolean;
+  /** Lock screen and Dynamic Island live updates (iOS 16.2+). Missing means on. */
+  liveActivities: boolean;
 }
 
 // Mirrors the server-side default in send-roster-reminders/settle-week's
@@ -26,6 +28,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   slateUpdates: 'needs_work',
   wagerSettled: true,
   weekResults: true,
+  liveActivities: true,
 };
 
 export async function fetchNotificationPrefs(profileId: string): Promise<NotificationPrefs> {

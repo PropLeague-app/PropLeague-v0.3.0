@@ -37,6 +37,7 @@ import {
   CalendarCheck,
   CircleCheck,
   Moon,
+  Radio,
   Repeat,
   Smartphone,
   Sun,
@@ -225,7 +226,7 @@ export function SettingsHome() {
     };
   }, [authProfileId]);
 
-  function toggleNotificationPref(key: 'lineupReminders' | 'wagerSettled' | 'weekResults', value: boolean) {
+  function toggleNotificationPref(key: 'lineupReminders' | 'wagerSettled' | 'weekResults' | 'liveActivities', value: boolean) {
     setNotificationPrefs((prev) => ({ ...prev, [key]: value })); // optimistic -- reverted below if the save fails
     if (!authProfileId) return;
     void updateNotificationPrefs(authProfileId, { [key]: value }).then((result) => {
@@ -618,6 +619,15 @@ export function SettingsHome() {
                 value={notificationPrefs.weekResults}
                 onChange={(v) => toggleNotificationPref('weekResults', v)}
               />
+              <ToggleRow
+                icon={<Radio size={15} />}
+                label="Live scores on lock screen"
+                value={notificationPrefs.liveActivities}
+                onChange={(v) => toggleNotificationPref('liveActivities', v)}
+              />
+              <p className="text-[11px] text-text-muted">
+                Your matchup score and lineup countdown on the lock screen and Dynamic Island. iPhone with iOS 16.2 or later.
+              </p>
             </div>
           </div>
         </section>

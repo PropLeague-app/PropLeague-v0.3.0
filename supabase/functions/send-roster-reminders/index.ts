@@ -65,10 +65,11 @@ function remindersEnabled(rawPrefs: unknown): boolean {
 // Same shape/defaults as settle-week's SettingsSlice, only the fields this
 // function needs (see that file's header on why these are duplicated).
 const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, ML: 1 };
-function settingsSliceFrom(raw: unknown): { totalSlots: number; weeklyCredits: number; minGames: number } {
+function settingsSliceFrom(raw: unknown): { totalSlots: number; weeklyCredits: number; minGames: number; lineupSlots: Record<string, number> } {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const slots = r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_LINEUP_SLOTS;
   return {
+    lineupSlots: slots,
     totalSlots: Object.values(slots).reduce((a, b) => a + b, 0),
     weeklyCredits: typeof r.weeklyCredits === 'number' ? r.weeklyCredits : 100,
     minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 2, // baseline of 2 always applies
@@ -81,7 +82,7 @@ const fmtMoney = (n: number) => {
   return `${n < 0 ? '-' : '+'}$${body}`;
 };
 
-interface WagerLite { id: string; game_id: string | null; stake: number | null; status: string; settled_profit: number | null }
+interface WagerLite { id: string; slot_id: string | null; game_id: string | null; stake: number | null; status: string; settled_profit: number | null }
 interface TeamLite { id: string; membership_id: string; team_name: string | null; abbrev: string | null }
 
 Deno.serve(async (req) => {
@@ -99,7 +100,7 @@ Deno.serve(async (req) => {
   for (const league of leagues ?? []) {
     const leagueId = league.id as string;
     const weekStr = String(league.current_week);
-    const { totalSlots, weeklyCredits, minGames } = settingsSliceFrom(league.settings);
+    const { totalSlots, weeklyCredits, minGames, lineupSlots } = settingsSliceFrom(league.settings);
 
     const { data: games, error: gamesErr } = await supabase.from('real_games').select('id, day_slot, kickoff').eq('week', weekStr);
     if (gamesErr) {
@@ -148,7 +149,7 @@ Deno.serve(async (req) => {
 
     const { data: rosterRows } = await supabase
       .from('weekly_rosters')
-      .select('team_id, wagers(id, game_id, stake, status, settled_profit)')
+      .select('team_id, wagers(id, slot_id, game_id, stake, status, settled_profit)')
       .eq('week', weekStr)
       .in('team_id', allTeams.map((t) => t.id));
     const wagersByTeam = new Map<string, WagerLite[]>(
@@ -214,7 +215,18 @@ Deno.serve(async (req) => {
         // Short on purpose: a lock screen shows about four lines. The title carries the event
         // ("Monday Night kicks off in 75 min"), the subtitle the league, and the body the team's
         // state, most important first: picks in, unspent credits, the matchup, then the one risk.
+        // Which positions are still empty ("QB, 2 WR"), from each filled wager's slot id ("WR-1").
+        const filled: Record<string, number> = {};
+        for (const w of wagers) {
+          const pos = String(w.slot_id ?? '').split('-')[0];
+          if (pos) filled[pos] = (filled[pos] ?? 0) + 1;
+        }
+        const emptyNames = Object.entries(lineupSlots)
+          .map(([pos, count]) => ({ pos, open: Math.max(0, count - (filled[pos] ?? 0)) }))
+          .filter((e) => e.open > 0)
+          .map((e) => (e.open > 1 ? `${e.open} ${e.pos}` : e.pos));
         const parts = [`${team.abbrev ?? team.team_name ?? 'You'}: ${picksIn}/${totalSlots} picks in.`];
+        if (emptyNames.length > 0 && emptyNames.length <= 4) parts.push(`Empty: ${emptyNames.join(', ')}.`);
         if (!creditsAllocated) parts.push(`$${Math.max(0, weeklyCredits - allocated).toFixed(2).replace(/\.00$/, '')} unspent.`);
         if (mu && hasScore) {
           const opp = teamById.get(mu.oppId);
@@ -238,6 +250,12 @@ Deno.serve(async (req) => {
           subtitle: leagueName,
           body: parts.join(' '),
           data: { screen: 'lineup', leagueId, week: weekStr },
+          // Each league stacks on its own, a later reminder for the same slate replaces an earlier
+          // one, and the "your lineup is not done" reminders can break through Focus once the app
+          // has the Time Sensitive capability.
+          threadId: leagueId,
+          collapseId: `roster-${leagueId.slice(0, 8)}-${daySlot}-${team.id.slice(0, 8)}`,
+          interruptionLevel: needsWork ? ('time-sensitive' as const) : ('active' as const),
         };
 
         if (dry) {

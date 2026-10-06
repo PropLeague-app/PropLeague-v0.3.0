@@ -8,6 +8,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+
+        // Live Activities (iOS 16.2+): watch for activities and their tokens from launch on. This is
+        // what lets a server-started activity register itself when iOS wakes the app in the background.
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.startObserving()
+        }
         return true
     }
 

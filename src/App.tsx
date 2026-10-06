@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
+import { startLiveActivities, stopLiveActivities } from './services/liveActivities';
 import { applyThemeMode } from './services/theme';
 import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
@@ -124,6 +125,13 @@ function App() {
   const pushProfile = useAuthStore((s) => s.profile);
   useEffect(() => {
     if (pushSession && pushProfile?.onboarded) void registerForPushNotifications(pushProfile.id);
+  }, [pushSession, pushProfile?.onboarded, pushProfile?.id]);
+
+  // Lock screen / Dynamic Island live updates (iOS 16.2+; no-op elsewhere). Same gating and
+  // placement as push registration. Signing out ends anything still showing on the device.
+  useEffect(() => {
+    if (pushSession && pushProfile?.onboarded) void startLiveActivities();
+    else if (!pushSession) void stopLiveActivities();
   }, [pushSession, pushProfile?.onboarded, pushProfile?.id]);
 
   // Local appearance setting (see chat, Sept 2026 -- light mode) -- lives here
