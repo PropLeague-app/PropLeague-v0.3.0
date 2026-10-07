@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Triangle } from 'lucide-react';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from '../../types';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
-import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
+import { displayWeeklyScore, expectedScoreDistribution, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { isWagerVisibleToViewer, rosterHasHiddenPicks, weekAllGamesStarted } from '../../engine/stats';
 import { isPerfectWeek } from '../../engine/perfectWeek';
 import { weekScaleRef } from '../../engine/plColor';
@@ -121,19 +121,22 @@ export function MatchupCard({
         gameStarted: decided.isDecided(s.wager.gameId),
       });
   };
-  const scoreA = matchup.teamAScore ?? (rosterA ? expectedWeeklyScore(rosterA, league.settings, decided, buildSlotHider(teamA)) : 0);
-  const scoreB = matchup.teamBScore ?? (rosterB ? expectedWeeklyScore(rosterB, league.settings, decided, buildSlotHider(teamB)) : 0);
   // matchup.teamAScore now updates live all week as picks settle (see chat --
   // settle-week writes scores progressively but only sets winnerId/isTie once
   // the whole week is actually complete), so "has a score" no longer means
   // "is final" the way it used to. Decided is winnerId/isTie being set, full stop.
   const isFinal = matchup.winnerId != null || matchup.isTie;
+  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
+  // The unspent-credits penalty only counts once nothing more can be filled (last kickoff, or any
+  // week already past). Before that the live score is settled P/L from $0.
+  const penaltyLive = weekLocked || isFinal || matchup.week < league.currentWeek;
+  const scoreA = displayWeeklyScore({ serverScore: matchup.teamAScore, roster: rosterA ?? buildEmptyRoster(teamA.id, matchup.week, league.settings.lineupSlots), settings: league.settings, decided, isSlotHidden: buildSlotHider(teamA), penaltyLive, isFinal });
+  const scoreB = displayWeeklyScore({ serverScore: matchup.teamBScore, roster: rosterB ?? buildEmptyRoster(teamB.id, matchup.week, league.settings.lineupSlots), settings: league.settings, decided, isSlotHidden: buildSlotHider(teamB), penaltyLive, isFinal });
 
   // hide-picks: an opponent with a still-hidden pick has no safe score preview, win probability or pick
   // count (the unspent-credits penalty and the model both depend on the hidden stakes), so the score
   // reads "$-", the odds even out and only the settled record shows, until the picks go live. A score the
   // server already wrote (graded picks only) is safe.
-  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
   const hideCtx = {
     hidePicks: league.settings.hidePicks,
     hideEmptySlots: league.settings.hideEmptySlots,
@@ -155,8 +158,8 @@ export function MatchupCard({
   // a roster shape to model against, hence the buildEmptyRoster fallback here --
   // unlike scoreA/scoreB above, expectedScoreDistribution never treats an empty
   // roster as a foregone loss, so this is safe to call on one right away.
-  const distA = expectedScoreDistribution(rosterA ?? buildEmptyRoster(teamA.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
-  const distB = expectedScoreDistribution(rosterB ?? buildEmptyRoster(teamB.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
+  const distA = expectedScoreDistribution(rosterA ?? buildEmptyRoster(teamA.id, matchup.week, league.settings.lineupSlots), league.settings, decided, penaltyLive);
+  const distB = expectedScoreDistribution(rosterB ?? buildEmptyRoster(teamB.id, matchup.week, league.settings.lineupSlots), league.settings, decided, penaltyLive);
   const prob = probHidden ? 0.5 : matchupWinProbability(distA, distB);
   const give = probHidden ? 0 : matchupGive(distA, distB, league.settings);
 

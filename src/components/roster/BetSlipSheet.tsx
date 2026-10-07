@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import type { LeagueSettings, MarketKey, OddsOutcome, PrizePool, SlotPosition, WeekId } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { profitForStake, formatCents } from '../../engine/oddsMath';
@@ -9,6 +10,7 @@ import { lastSlotPrefill, maxStakeNow, stakeError, type StakeContext } from '../
 import { activeMarketRules, marketBlockReason, marketMaxStake } from '../../engine/marketRules';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { NumberInput } from '../common/NumberInput';
+import { BudgetBar } from '../common/BudgetBar';
 
 export interface BetSlipTarget {
   leagueId: string;
@@ -129,10 +131,12 @@ export function BetSlipSheet({
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-bg-raised border-t border-border rounded-t-2xl p-4 space-y-4"
-        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+        className="w-full max-w-md bg-bg-raised border-t border-border rounded-t-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Bankroll as it would stand with this stake, so the sheet shows what the pick leaves open. */}
+        <BudgetBar attached allocated={stakeCtx.otherStakes} pending={Math.max(0, stake || 0)} total={settings.weeklyCredits} />
+        <div className="p-4 space-y-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
         <div className="flex justify-between items-start">
           <div>
             <p className="font-bold">{target.label}</p>
@@ -141,7 +145,7 @@ export function BetSlipSheet({
               {target.outcome.point != null ? ` ${target.outcome.point}` : ''} · <OddsDisplay odds={target.outcome.price} />
             </p>
           </div>
-          <button onClick={onClose} className="text-text-muted text-sm">Close</button>
+          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 -mt-1 p-1"><X size={20} /></button>
         </div>
 
         <div>
@@ -179,6 +183,7 @@ export function BetSlipSheet({
         >
           {submitting ? 'Adding…' : 'Add to Roster'}
         </button>
+        </div>
       </div>
     </div>
   );

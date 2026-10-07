@@ -90,7 +90,7 @@ function Team({
   plRef?: number;
 }) {
   const tone = useTone();
-  const scoreColor = side.scoreHidden ? C.muted : side.perfect ? C.goldText : tone(side.score, plRef);
+  const scoreColor = side.scoreHidden ? C.muted : side.perfect ? C.goldText : Math.round(side.score * 100) === 0 ? C.text : tone(side.score, plRef);
   // A soft gold glow that fades out on every side before the column's edge (no visible box).
   const wash = side.perfect
     ? 'radial-gradient(ellipse closest-side at 50% 52%, rgba(var(--pl-gold, 244, 190, 70), calc(var(--pl-wash-a, 0.2) * 1.5)) 0%, rgba(var(--pl-gold, 244, 190, 70), calc(var(--pl-wash-a, 0.2) * 0.6)) 55%, rgba(var(--pl-gold, 244, 190, 70), 0) 100%)'

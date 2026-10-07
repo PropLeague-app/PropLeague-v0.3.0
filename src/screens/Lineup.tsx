@@ -128,7 +128,7 @@ export function Lineup() {
             {hasIssues ? '!' : <Info size={13} />}
           </button>
         </div>
-        <div className="mt-3">
+        <div className="mt-2">
           <BudgetBar allocated={validation.totalAllocated} total={league.settings.weeklyCredits} />
         </div>
         {infoOpen && (
@@ -212,8 +212,7 @@ export function Lineup() {
             ))}
           </div>
         )}
-        <div className="flex items-center justify-between text-xs text-text-muted px-1">
-          <span>Remaining: ${Math.max(0, validation.remaining).toFixed(2)}</span>
+        <div className="flex items-center justify-end text-xs text-text-muted px-1">
           <span>{validation.distinctGames} game(s) used</span>
         </div>
         <button

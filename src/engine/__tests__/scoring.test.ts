@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeIncompleteLineupPenalty, computeWeeklyScore, expectedScoreDistribution, matchupWinProbability } from '../scoring';
+import { computeIncompleteLineupPenalty, computeWeeklyScore, displayWeeklyScore, expectedScoreDistribution, matchupWinProbability } from '../scoring';
 import { buildEmptyRoster } from '../rosterSlots';
 import { DEFAULT_LEAGUE_SETTINGS } from '../../types';
 import type { Wager } from '../../types';
@@ -99,5 +99,36 @@ describe('expectedScoreDistribution + matchupWinProbability', () => {
     const distReal = expectedScoreDistribution(realFavorite, DEFAULT_LEAGUE_SETTINGS);
     expect(Math.abs(distTiny.mean)).toBeLessThan(Math.abs(distReal.mean));
     expect(distTiny.variance).toBeLessThan(distReal.variance);
+  });
+});
+
+describe('displayWeeklyScore (penalty only after the last kickoff)', () => {
+  const base = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+  const settledWin = wagerSlot(base, 0, { stake: 10, status: 'won', settledProfit: 9 });
+
+  it('an empty lineup reads $0 before lock and the full penalty after', () => {
+    const args = { serverScore: null, roster: base, settings: DEFAULT_LEAGUE_SETTINGS, isFinal: false };
+    expect(displayWeeklyScore({ ...args, penaltyLive: false })).toBe(0);
+    expect(displayWeeklyScore({ ...args, penaltyLive: true })).toBe(-100);
+  });
+
+  it('settled P/L shows from $0 before lock, then the unspent credits come off', () => {
+    const args = { serverScore: null, roster: settledWin, settings: DEFAULT_LEAGUE_SETTINGS, isFinal: false };
+    expect(displayWeeklyScore({ ...args, penaltyLive: false })).toBe(9);
+    expect(displayWeeklyScore({ ...args, penaltyLive: true })).toBe(9 - 90);
+  });
+
+  it('a mid-week server score gets the penalty added once locked, a final one does not', () => {
+    const args = { serverScore: 9, roster: settledWin, settings: DEFAULT_LEAGUE_SETTINGS };
+    expect(displayWeeklyScore({ ...args, penaltyLive: false, isFinal: false })).toBe(9);
+    expect(displayWeeklyScore({ ...args, penaltyLive: true, isFinal: false })).toBe(-81);
+    expect(displayWeeklyScore({ ...args, penaltyLive: true, isFinal: true })).toBe(9);
+  });
+
+  it('win probability folds the penalty in only once locked', () => {
+    const a = expectedScoreDistribution(settledWin, DEFAULT_LEAGUE_SETTINGS, undefined, true);
+    expect(a.mean).toBe(9 - 90);
+    expect(a.variance).toBeLessThan(expectedScoreDistribution(settledWin, DEFAULT_LEAGUE_SETTINGS).variance);
+    expect(expectedScoreDistribution(settledWin, DEFAULT_LEAGUE_SETTINGS).mean).toBe(9);
   });
 });

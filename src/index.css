@@ -482,3 +482,17 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .boot-fill { animation: none; }
 }
+
+/* Hazard-stripe fill for a stake still being decided (BudgetBar `pending`). The tile is one stripe
+   period wide (6px along the 135deg gradient = 8.485px across), so the slide loops without a seam. */
+@keyframes stripe-slide {
+  from { background-position: 0 0; }
+  to { background-position: 8.485px 0; }
+}
+.stripe-live {
+  background-size: 8.485px 8.485px;
+  animation: stripe-slide 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stripe-live { animation: none; }
+}

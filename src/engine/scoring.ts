@@ -66,6 +66,9 @@ export function expectedWeeklyScore(
   // predicate collectTeamBets/BetHistory already use, so a pick's score-line
   // visibility and its roster-card visibility can never drift apart.
   isSlotHidden?: (slot: RosterSlotState) => boolean,
+  // The unspent-credits penalty is only a real loss once nothing more can be filled (the week's
+  // last kickoff). Before that the live score is just settled P/L from $0, so callers pass false.
+  includeIncompletePenalty = true,
 ): number {
   const pen = rosterPenalties(roster, settings);
   const expected = roster.slots.reduce((sum, s) => {
@@ -81,7 +84,30 @@ export function expectedWeeklyScore(
     const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
     return sum + p * profit - (1 - p) * s.wager.stake;
   }, 0);
-  return expected + computeIncompleteLineupPenalty(roster, settings) - pen.fee;
+  return expected + (includeIncompletePenalty ? computeIncompleteLineupPenalty(roster, settings) : 0) - pen.fee;
+}
+
+/**
+ * The $ score the matchup screens show. Before the week's last kickoff it is settled P/L from $0
+ * (no unspent-credits penalty yet, since slots can still be filled). Once the week locks the
+ * penalty folds in. A server score is graded picks only until the week finalizes, so it gets the
+ * penalty added here; a final score already carries it.
+ */
+export function displayWeeklyScore(params: {
+  serverScore: number | null | undefined;
+  roster: WeeklyRoster | undefined;
+  settings: LeagueSettings;
+  decided?: DecidedGameLookup;
+  isSlotHidden?: (slot: RosterSlotState) => boolean;
+  penaltyLive: boolean;
+  isFinal: boolean;
+}): number {
+  const { serverScore, roster, settings, decided, isSlotHidden, penaltyLive, isFinal } = params;
+  if (serverScore != null) {
+    if (isFinal || !penaltyLive || !roster) return serverScore;
+    return serverScore + computeIncompleteLineupPenalty(roster, settings);
+  }
+  return roster ? expectedWeeklyScore(roster, settings, decided, isSlotHidden, penaltyLive) : 0;
 }
 
 /** Standard normal CDF via the Abramowitz & Stegun erf approximation (max error
@@ -126,7 +152,14 @@ export interface ScoreDistribution {
  * deliberately NOT what's shown anywhere as the team's actual $ score (that
  * stays expectedWeeklyScore, unchanged).
  */
-export function expectedScoreDistribution(roster: WeeklyRoster, settings: LeagueSettings, decided?: DecidedGameLookup): ScoreDistribution {
+export function expectedScoreDistribution(
+  roster: WeeklyRoster,
+  settings: LeagueSettings,
+  decided?: DecidedGameLookup,
+  // Once the week's last game has kicked off, an unfilled lineup is a certain loss rather than a
+  // coin flip still to come: the penalty joins the mean and the phantom bet's variance drops out.
+  penaltyLive = false,
+): ScoreDistribution {
   let mean = 0;
   let variance = 0;
   let allocated = 0;
@@ -153,6 +186,11 @@ export function expectedScoreDistribution(roster: WeeklyRoster, settings: League
     const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
     mean += p * profit - (1 - p) * s.wager.stake;
     variance += p * (1 - p) * (profit + s.wager.stake) ** 2;
+  }
+
+  if (penaltyLive) {
+    mean += computeIncompleteLineupPenalty(roster, settings);
+    return { mean, variance };
   }
 
   if (emptySlots > 0) {

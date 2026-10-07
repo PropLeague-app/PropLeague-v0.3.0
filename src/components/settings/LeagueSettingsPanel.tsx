@@ -1,17 +1,28 @@
 import { useState } from 'react';
 import {
+  Activity,
+  Banknote,
   CalendarClock,
   ClipboardList,
+  Crown,
+  Dices,
+  Flame,
   Gauge,
+  HeartCrack,
   Lock,
+  Pencil,
+  RotateCcw,
   ShieldAlert,
   Settings,
+  Skull,
+  Snowflake,
   Sparkles,
   TrendingUp,
   Trophy,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import type { League, LeagueSettings, LeagueTeam, PlayoffFieldSize, Position } from '../../types';
+import type { League, LeagueSettings, LeagueTeam, MomentCategory, PlayoffFieldSize, Position } from '../../types';
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../../types';
 import { Toggle, ToggleRow } from '../common/Toggle';
 import { NameInput } from '../common/NameInput';
@@ -94,6 +105,17 @@ function MoneyStepper({ label, value, min, max, step = 1, onChange }: { label: s
  * Replaces the old Basic/Advanced split, which mixed unrelated things together and, for
  * non-commissioners, sat inside a `pointer-events-none` wrapper that also swallowed the
  * Advanced expander tap, so members could never open it. */
+const MOMENT_ICONS: Record<MomentCategory, LucideIcon> = {
+  biggestWinner: Crown,
+  biggestLoser: Skull,
+  worstBeat: HeartCrack,
+  boldestBet: Dices,
+  bestBet: Banknote,
+  hottestBettor: Flame,
+  coldestBettor: Snowflake,
+  biggestSwing: Activity,
+};
+
 export function LeagueSettingsPanel({
   league,
   isCommissioner,
@@ -719,38 +741,48 @@ export function LeagueSettingsPanel({
             value={settings.perfectWeekAnnouncements}
             onChange={(v) => update({ perfectWeekAnnouncements: v })}
           />
-          <div className="space-y-2">
+          {/* One slim row per award: icon, the award's own name (tap to rename), what it measures, switch. */}
+          <div className="rounded-lg bg-bg-raised divide-y divide-border/50 overflow-hidden">
             {MOMENT_CATEGORIES.map((cat) => {
               const config = settings.moments[cat];
+              const Icon = MOMENT_ICONS[cat];
+              const renamed = config.displayName !== DEFAULT_MOMENT_DISPLAY_NAMES[cat];
               return (
-                <div key={cat} className="bg-bg-raised rounded-lg p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-text-muted flex-1">{MOMENT_CATEGORY_LABELS[cat]}</p>
-                    <Toggle
-                      value={config.enabled}
-                      onChange={(v) => update({ moments: { ...settings.moments, [cat]: { ...config, enabled: v } } })}
-                    />
+                <div key={cat} className="flex items-center gap-2.5 px-2.5 py-1.5">
+                  <Icon size={14} className={`shrink-0 ${config.enabled ? 'text-primary' : 'text-text-muted/50'}`} />
+                  <div className="min-w-0 flex-1">
+                    {config.enabled ? (
+                      <div className="relative">
+                        <NameInput
+                          value={config.displayName}
+                          fallback={DEFAULT_MOMENT_DISPLAY_NAMES[cat]}
+                          onChange={(v) => update({ moments: { ...settings.moments, [cat]: { ...config, displayName: v } } })}
+                          className="w-full bg-transparent text-[13px] font-semibold leading-tight outline-none border-b border-transparent focus:border-primary pr-5"
+                        />
+                        <Pencil size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-text-muted/60 pointer-events-none" />
+                      </div>
+                    ) : (
+                      <p className="text-[13px] font-semibold leading-tight text-text-muted truncate">{config.displayName}</p>
+                    )}
+                    <p className="text-[10px] text-text-muted truncate">{MOMENT_CATEGORY_LABELS[cat]}</p>
                   </div>
-                  {config.enabled && (
-                    <div className="flex items-center gap-2">
-                      <NameInput
-                        value={config.displayName}
-                        fallback={DEFAULT_MOMENT_DISPLAY_NAMES[cat]}
-                        onChange={(v) => update({ moments: { ...settings.moments, [cat]: { ...config, displayName: v } } })}
-                        className="flex-1 bg-bg-card border border-border rounded-lg px-2.5 py-1.5 text-sm"
-                      />
-                      <button
-                        onClick={() =>
-                          update({
-                            moments: { ...settings.moments, [cat]: { ...config, displayName: DEFAULT_MOMENT_DISPLAY_NAMES[cat] } },
-                          })
-                        }
-                        className="text-[10px] text-text-muted shrink-0 px-1"
-                      >
-                        Reset
-                      </button>
-                    </div>
+                  {config.enabled && renamed && (
+                    <button
+                      aria-label="Reset name"
+                      onClick={() =>
+                        update({
+                          moments: { ...settings.moments, [cat]: { ...config, displayName: DEFAULT_MOMENT_DISPLAY_NAMES[cat] } },
+                        })
+                      }
+                      className="text-text-muted p-1 shrink-0"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
                   )}
+                  <Toggle
+                    value={config.enabled}
+                    onChange={(v) => update({ moments: { ...settings.moments, [cat]: { ...config, enabled: v } } })}
+                  />
                 </div>
               );
             })}

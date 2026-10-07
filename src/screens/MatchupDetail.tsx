@@ -5,7 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { rosterKey, buildEmptyRoster } from '../engine/rosterSlots';
 import { getGame } from '../services/oddsService';
 import { resultForGame } from '../data/seed';
-import { expectedWeeklyScore, type DecidedGameLookup } from '../engine/scoring';
+import { displayWeeklyScore, type DecidedGameLookup } from '../engine/scoring';
 import { PositionBadge } from '../components/common/PositionBadge';
 import { StatusPill } from '../components/common/StatusPill';
 import { WagerProfitPill } from '../components/common/WagerProfitPill';
@@ -136,17 +136,20 @@ export function MatchupDetail() {
         gameStarted: decided.isDecided(s.wager.gameId),
       });
   };
-  const scoreA = matchup.teamAScore ?? expectedWeeklyScore(rosterA, league.settings, decided, buildSlotHider(teamA));
-  const scoreB = matchup.teamBScore ?? expectedWeeklyScore(rosterB, league.settings, decided, buildSlotHider(teamB));
   // matchup.teamAScore now updates live all week as picks settle (settle-week writes
   // scores progressively but only sets winnerId/isTie once the whole week is actually
   // complete -- see chat), so "has a score" no longer means "is final". Same fix as
   // MatchupCard.tsx.
   const isFinal = matchup.winnerId != null || matchup.isTie;
+  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
+  // The unspent-credits penalty only counts once nothing more can be filled (last kickoff, or any
+  // week already past). Before that the live score is settled P/L from $0.
+  const penaltyLive = weekLocked || isFinal || matchup.week < league.currentWeek;
+  const scoreA = displayWeeklyScore({ serverScore: matchup.teamAScore, roster: rosterA, settings: league.settings, decided, isSlotHidden: buildSlotHider(teamA), penaltyLive, isFinal });
+  const scoreB = displayWeeklyScore({ serverScore: matchup.teamBScore, roster: rosterB, settings: league.settings, decided, isSlotHidden: buildSlotHider(teamB), penaltyLive, isFinal });
   // An opponent with a still-hidden pick has no safe score preview or pick count: the unspent-credits
   // penalty and the pick tally both depend on the hidden stakes. The score reads "$-" and only the
   // settled record shows until the picks go live. A score the server already wrote (graded picks only) is safe to show.
-  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
   const hideCtx = {
     hidePicks,
     hideEmptySlots: league.settings.hideEmptySlots,
@@ -408,7 +411,7 @@ function TeamHeader({
             <p className="text-sm font-bold text-text-muted">$–</p>
           ) : (
             <p
-              className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : score >= 0 ? 'text-profit' : 'text-loss'}`}
+              className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : Math.round(score * 100) > 0 ? 'text-profit' : Math.round(score * 100) < 0 ? 'text-loss' : 'text-text'}`}
               style={perfect ? undefined : plStyle(score, scaleRef)}
             >
               {formatCents(score)}
