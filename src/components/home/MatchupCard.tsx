@@ -3,7 +3,7 @@ import { Triangle } from 'lucide-react';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from '../../types';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { expectedScoreDistribution, expectedWeeklyScore, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
-import { isWagerVisibleToViewer } from '../../engine/stats';
+import { isWagerVisibleToViewer, rosterHasHiddenPicks, weekAllGamesStarted } from '../../engine/stats';
 import { isPerfectWeek } from '../../engine/perfectWeek';
 import { weekScaleRef } from '../../engine/plColor';
 import { resolveGame, gameHasStarted } from '../../services/oddsService';
@@ -57,11 +57,15 @@ export function pickProgress(roster: WeeklyRoster | undefined, totalSlots: numbe
  * are empty... those should be removed"). The settled W-L-P record is the
  * "pure record" and always shows; active/left are the "how many unsettled"
  * piece and only show up when there's actually something left to report. */
-export function formatProgressLine(progress: { active: number; won: number; lost: number; pushed: number; open: number }): string {
+export function formatProgressLine(
+  progress: { active: number; won: number; lost: number; pushed: number; open: number },
+  /** An opponent with hidden picks: active and left counts would reveal how many they placed. */
+  hideCounts = false,
+): string {
   const segments: string[] = [];
-  if (progress.active > 0) segments.push(`${progress.active} active`);
+  if (!hideCounts && progress.active > 0) segments.push(`${progress.active} active`);
   segments.push(`${progress.won}-${progress.lost}-${progress.pushed} settled`);
-  if (progress.open > 0) segments.push(`${progress.open} left`);
+  if (!hideCounts && progress.open > 0) segments.push(`${progress.open} left`);
   return segments.join(' · ');
 }
 
@@ -125,6 +129,25 @@ export function MatchupCard({
   // "is final" the way it used to. Decided is winnerId/isTie being set, full stop.
   const isFinal = matchup.winnerId != null || matchup.isTie;
 
+  // hide-picks: an opponent with a still-hidden pick has no safe score preview, win probability or pick
+  // count (the unspent-credits penalty and the model both depend on the hidden stakes), so the score
+  // reads "$-", the odds even out and only the settled record shows, until the picks go live. A score the
+  // server already wrote (graded picks only) is safe.
+  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
+  const hideCtx = {
+    hidePicks: league.settings.hidePicks,
+    hideEmptySlots: league.settings.hideEmptySlots,
+    week: matchup.week,
+    currentWeek: league.currentWeek,
+    weekLocked,
+    isGameStarted: decided.isDecided,
+  };
+  const hiddenA = rosterHasHiddenPicks(rosterA, { ...hideCtx, isOwnTeam: teamA.isUser });
+  const hiddenB = rosterHasHiddenPicks(rosterB, { ...hideCtx, isOwnTeam: teamB.isUser });
+  const scoreHiddenA = hiddenA && matchup.teamAScore == null;
+  const scoreHiddenB = hiddenB && matchup.teamBScore == null;
+  const probHidden = (hiddenA || hiddenB) && !isFinal;
+
   // Win probability is its own model now, not just a curve on the two $ scores
   // above (see chat: Hunter's 3-part spec) -- it needs each side's full roster
   // (odds/stakes per slot, and how many slots are still empty), not just the
@@ -134,8 +157,8 @@ export function MatchupCard({
   // roster as a foregone loss, so this is safe to call on one right away.
   const distA = expectedScoreDistribution(rosterA ?? buildEmptyRoster(teamA.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
   const distB = expectedScoreDistribution(rosterB ?? buildEmptyRoster(teamB.id, matchup.week, league.settings.lineupSlots), league.settings, decided);
-  const prob = matchupWinProbability(distA, distB);
-  const give = matchupGive(distA, distB, league.settings);
+  const prob = probHidden ? 0.5 : matchupWinProbability(distA, distB);
+  const give = probHidden ? 0 : matchupGive(distA, distB, league.settings);
 
   const totalSlots = Object.values(league.settings.lineupSlots).reduce((a, b) => a + b, 0);
   // 2px at give=0 (matches the old flat divider's width) up to 16px at give=1
@@ -152,7 +175,7 @@ export function MatchupCard({
   // -- rather than comparing scoreA/scoreB directly, so the new triangle can
   // never contradict the text sitting right next to it. null/undefined (tie,
   // or prob exactly 0.5) means no one gets the triangle.
-  const scaleRef = weekScaleRef(league, matchup.week, [scoreA, scoreB]);
+  const scaleRef = weekScaleRef(league, matchup.week, [scoreHiddenA ? 0 : scoreA, scoreHiddenB ? 0 : scoreB]);
   const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
   const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
   const leaderId = isFinal ? matchup.winnerId : prob === 0.5 ? null : prob > 0.5 ? teamA.id : teamB.id;
@@ -220,8 +243,8 @@ export function MatchupCard({
       </div>
 
       <div className={`flex items-center justify-between font-bold ${compact ? 'text-sm' : 'text-xl'}`}>
-        <AnimatedNumber value={scoreA} scaleRef={scaleRef} perfect={perfectA} />
-        <AnimatedNumber value={scoreB} scaleRef={scaleRef} perfect={perfectB} />
+        {scoreHiddenA ? <HiddenScore /> : <AnimatedNumber value={scoreA} scaleRef={scaleRef} perfect={perfectA} />}
+        {scoreHiddenB ? <HiddenScore /> : <AnimatedNumber value={scoreB} scaleRef={scaleRef} perfect={perfectB} />}
       </div>
 
       <div>
@@ -272,19 +295,24 @@ export function MatchupCard({
           />
         </div>
         <div className="flex items-center justify-between text-[11px] text-text-muted mt-1">
-          <span>{Math.round(prob * 100)}%</span>
-          <span>{isFinal ? 'Final' : prob === 0.5 ? 'Even' : `${prob > 0.5 ? teamA.abbrev : teamB.abbrev} leads`}</span>
-          <span>{Math.round((1 - prob) * 100)}%</span>
+          <span>{probHidden ? '–%' : `${Math.round(prob * 100)}%`}</span>
+          <span>{isFinal ? 'Final' : probHidden ? '–' : prob === 0.5 ? 'Even' : `${prob > 0.5 ? teamA.abbrev : teamB.abbrev} leads`}</span>
+          <span>{probHidden ? '–%' : `${Math.round((1 - prob) * 100)}%`}</span>
         </div>
         {!compact && (
           <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
-            <span>{formatProgressLine(progressA)}</span>
-            <span className="text-right">{formatProgressLine(progressB)}</span>
+            <span>{formatProgressLine(progressA, hiddenA)}</span>
+            <span className="text-right">{formatProgressLine(progressB, hiddenB)}</span>
           </div>
         )}
       </div>
     </Card>
   );
+}
+
+/** Stands in for an opponent's score while their picks are hidden: same size and weight as the number. */
+function HiddenScore() {
+  return <span className="text-text-muted">$–</span>;
 }
 
 function TeamBlock({

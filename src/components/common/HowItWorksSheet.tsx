@@ -79,7 +79,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Locks',
       body: [
-        'A slot locks when its game kicks off, and the server enforces it. Change picks freely until then. If Hide Picks is on, other teams cannot see your lineup until kickoff.',
+        'A slot locks when its game kicks off, and the server enforces it. Change picks freely until then. If Hide Picks is on, other teams cannot see your lineup until kickoff, and (unless your commissioner turns that off) your empty slots read Hidden too until the last game of the week starts.',
       ],
     },
     {

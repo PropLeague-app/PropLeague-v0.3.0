@@ -1,10 +1,10 @@
 import logo from '../../assets/logo-color.png';
 
 /** The brief screen shown while auth and leagues load. The logo starts grayed out and fills in
- * left to right. The fill is timed rather than tied to real progress (loading has no measurable
- * percentage), so it eases toward full and simply holds if loading takes longer. Both loading
- * states in RootRedirect render this same component in the same spot, so React keeps one
- * instance and the animation does not restart between them. */
+ * left to right, holds at full color for about a second, then restarts from empty if loading is
+ * still going. The fill is timed rather than tied to real progress (loading has no measurable
+ * percentage). Both loading states in RootRedirect render this same component in the same spot, so
+ * React keeps one instance and the animation does not restart between them. */
 export function BootLoader() {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center" role="status" aria-label="Loading">

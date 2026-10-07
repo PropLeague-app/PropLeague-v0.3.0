@@ -97,8 +97,10 @@ export function findClaimingTeam(league: League, week: WeekId, pick: PickIdentit
 /** Human-readable block reason for a pick at capacity (manual v0.1.1 §3 #7) — "Claimed
  * by [team]" when the cap is the old exclusive behavior (1), or a generic limit
  * message once more than one team can legitimately hold the same leg. */
-export function claimBlockReason(league: League, claimingTeamId: string): string {
+export function claimBlockReason(league: League, claimingTeamId: string, hidden = false): string {
   const cap = league.settings.maxDuplicatePicks;
+  // Hide Picks on and the game not started: naming the holder would reveal their pick.
+  if (cap === 1 && hidden) return 'Already taken';
   if (cap === 1) {
     const team = league.teams.find((t) => t.id === claimingTeamId);
     return `Claimed by ${team?.teamName ?? 'another team'}`;

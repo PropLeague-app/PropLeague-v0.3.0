@@ -1,4 +1,5 @@
 import type { LogoIdentity } from '../../types';
+import { emojiFontPx, EMOJI_BASE_PX } from './emojiScale';
 
 const SIZE_CLASSES = {
   xs: 'w-4 h-4 text-[6px]',
@@ -7,22 +8,15 @@ const SIZE_CLASSES = {
   lg: 'w-12 h-12 text-sm',
 } as const;
 
-// manual v0.2.0 §4 #8 sized these to ~80-85% of the circle's diameter (up from an
-// under-sized ~45-55%), but that read as slightly crowding the circle edge — manual
-// v0.2.1 §5 #5 dials it back ~5-10% to ~75% at every size variant, and adds a subtle
-// drop-shadow (applied where these classes are used, not here) so the glyph stays
-// readable against light and dark logoColor backgrounds alike.
-const EMOJI_SIZE_CLASSES = {
-  xs: 'text-[12px] leading-none',
-  sm: 'text-[18px] leading-none',
-  md: 'text-[27px] leading-none',
-  lg: 'text-[36px] leading-none',
-} as const;
+// Circle diameters (px) matching SIZE_CLASSES above. The emoji font size is derived from these with
+// one shared rule (see emojiScale.ts) instead of a hand-picked number per size, which is why a
+// 12px emoji could touch the rim of a 16px circle while a 36px one sat comfortably in a 48px circle.
+const DIAMETER_PX = { xs: 16, sm: 24, md: 36, lg: 48 } as const;
+const BORDER_PX = 1; // the hairline border on every badge
 
-/** Small dark drop-shadow (not a box-shadow, which would just box the whole glyph's
- * bounding square) — reads as a soft outline around the emoji's actual silhouette, so
- * it stays legible on both the lightest and darkest colors in the logo palette. */
-const EMOJI_SHADOW_STYLE = { filter: 'drop-shadow(0 1px 1.5px rgba(0,0,0,0.45))' } as const;
+// The emoji gets a small dark drop-shadow (a filter, not a box-shadow, which would box the whole
+// glyph's bounding square) so it stays legible on both the lightest and darkest logo colors. It is
+// applied inline in IdentityBadge, where it is scaled to match the emoji.
 
 export type LogoSize = keyof typeof SIZE_CLASSES;
 
@@ -40,9 +34,23 @@ export function IdentityBadge({ identity, initials, size = 'md' }: { identity: L
     return <img src={identity.logoDataUrl} alt="" className={cls} />;
   }
   if (identity.logoMode === 'emoji' && identity.logoEmoji) {
+    const target = emojiFontPx(DIAMETER_PX[size], BORDER_PX);
+    const shadowUnit = EMOJI_BASE_PX / target;
     return (
-      <div className={`${cls} ${EMOJI_SIZE_CLASSES[size]}`} style={{ backgroundColor: identity.logoColor }}>
-        <span style={EMOJI_SHADOW_STYLE}>{identity.logoEmoji}</span>
+      <div className={`${cls} leading-none`} style={{ backgroundColor: identity.logoColor }}>
+        <span
+          style={{
+            display: 'block',
+            flex: 'none',
+            fontSize: EMOJI_BASE_PX,
+            lineHeight: 1,
+            transform: `scale(${target / EMOJI_BASE_PX})`,
+            // The shadow is drawn before the transform scales it, so size it up to come out the same.
+            filter: `drop-shadow(0 ${shadowUnit}px ${1.5 * shadowUnit}px rgba(0,0,0,0.45))`,
+          }}
+        >
+          {identity.logoEmoji}
+        </span>
       </div>
     );
   }

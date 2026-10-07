@@ -1,8 +1,8 @@
-import type { OddsMarket, OddsOutcome, LeagueTeam, PlayerPropGroup } from '../../types';
+import type { OddsMarket, OddsOutcome, PlayerPropGroup } from '../../types';
 import { nflTeamById } from '../../data/nflTeams';
 import { MARKET_LABELS } from '../../data/propsGenerator';
 import { TeamMark } from '../common/TeamMark';
-import { MarketRow } from './MarketRow';
+import { MarketRow, type ClaimStatus } from './MarketRow';
 
 function isOverUnderMarket(market: OddsMarket): boolean {
   return market.outcomes.length === 2 && market.outcomes.some((o) => o.name === 'Over');
@@ -31,7 +31,7 @@ export function PlayerPropsCard({
   altLinesEnabled?: boolean;
   onSelect: (market: OddsMarket, outcome: OddsOutcome) => void;
   checkBlocked?: (market: OddsMarket, outcome: OddsOutcome) => string | null;
-  checkClaimStatus?: (market: OddsMarket, outcome: OddsOutcome) => { holderTeams: LeagueTeam[]; cap: number } | null;
+  checkClaimStatus?: (market: OddsMarket, outcome: OddsOutcome) => ClaimStatus | null;
 }) {
   const team = nflTeamById(group.teamId);
   const overUnderMarkets = group.markets.filter(isOverUnderMarket);

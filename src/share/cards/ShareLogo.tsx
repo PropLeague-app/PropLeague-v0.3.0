@@ -1,5 +1,6 @@
 import type { LogoIdentity } from '../../types';
 import { C } from '../palette';
+import { emojiFontPx } from '../../components/common/emojiScale';
 
 /** A team or league logo drawn with inline styles only (the share canvas does not use Tailwind). */
 export function ShareLogo({ identity, initials, size }: { identity: LogoIdentity | null; initials: string; size: number }) {
@@ -22,7 +23,7 @@ export function ShareLogo({ identity, initials, size }: { identity: LogoIdentity
   }
   if (identity?.logoMode === 'emoji' && identity.logoEmoji) {
     return (
-      <div style={{ ...base, backgroundColor: identity.logoColor, fontSize: size * 0.55, lineHeight: 1 }}>
+      <div style={{ ...base, backgroundColor: identity.logoColor, fontSize: emojiFontPx(size, 2), lineHeight: 1 }}>
         <span>{identity.logoEmoji}</span>
       </div>
     );

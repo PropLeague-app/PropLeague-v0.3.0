@@ -10,7 +10,7 @@ import { uploadTeamLogo } from '../services/supabaseLogo';
 import { abbrevFromName } from '../data/simulatedTeamNames';
 import { HowItWorksSheet } from '../components/common/HowItWorksSheet';
 import { ConfirmSheet } from '../components/common/ConfirmSheet';
-import { fetchNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs, type SlateUpdates } from '../services/notificationPrefs';
+import { fetchNotificationPrefs, getCachedNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs, type SlateUpdates } from '../services/notificationPrefs';
 import logoMark from '../assets/logo-mono-muted.png';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
 import { LeagueSettingsPanel } from '../components/settings/LeagueSettingsPanel';
@@ -214,12 +214,18 @@ export function SettingsHome() {
   // stubs with no backend behind them at all. Starts from the same
   // every-on default the server-side senders use, then syncs to whatever's
   // actually saved once authProfileId is known.
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
+  // Starts from the last prefs this device saw, so a toggle that is off never flashes on. With nothing
+  // cached yet (first visit) the block stays invisible until the real values arrive.
+  const cachedPrefs = getCachedNotificationPrefs(authProfileId);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(cachedPrefs ?? DEFAULT_NOTIFICATION_PREFS);
+  const [prefsLoaded, setPrefsLoaded] = useState(cachedPrefs != null);
   useEffect(() => {
     if (!authProfileId) return;
     let cancelled = false;
     void fetchNotificationPrefs(authProfileId).then((prefs) => {
-      if (!cancelled) setNotificationPrefs(prefs);
+      if (cancelled) return;
+      setNotificationPrefs(prefs);
+      setPrefsLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -579,7 +585,7 @@ export function SettingsHome() {
                 ))}
               </div>
             </div>
-            <div className="pt-3 border-t border-border space-y-2.5">
+            <div className={`pt-3 border-t border-border space-y-2.5 transition-opacity duration-150 ${prefsLoaded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
               <GroupTitle icon={<Bell size={14} />} title="Notifications" />
               <ToggleRow
                 icon={<BellRing size={15} />}

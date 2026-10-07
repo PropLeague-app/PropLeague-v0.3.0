@@ -4,6 +4,7 @@ import { nflTeamById } from '../../data/nflTeams';
 import { getGameMarkets, findTeamOutcome } from '../../services/oddsService';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { TeamMark } from '../common/TeamMark';
+import { ClaimBanner, type ClaimStatus } from './MarketRow';
 
 function formatSpreadPoint(point: number | undefined): string {
   if (point == null) return '—';
@@ -14,11 +15,14 @@ function LineCell({
   point,
   price,
   blocked,
+  claim,
   onSelect,
 }: {
   point: string;
   price: number | undefined;
   blocked?: string | null;
+  /** Claim banner under the box (duplicate limit progress). */
+  claim?: ClaimStatus | null;
   onSelect?: () => void;
 }) {
   if (price == null) {
@@ -31,19 +35,22 @@ function LineCell({
   // in the box.
   const hasPoint = point !== '';
   return (
-    <button
-      onClick={onSelect}
-      disabled={!onSelect}
-      className={`w-16 shrink-0 min-h-11 flex flex-col items-center justify-center py-1.5 rounded-lg border ${
-        blocked ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
-      } disabled:opacity-60`}
-    >
-      {hasPoint && <span className={`text-xs font-semibold ${blocked ? 'line-through text-loss' : ''}`}>{point}</span>}
-      <OddsDisplay
-        odds={price}
-        className={`${hasPoint ? 'text-[11px]' : 'text-xs font-medium'} ${blocked ? 'text-loss' : 'text-primary'}`}
-      />
-    </button>
+    <div className="w-16 shrink-0 flex flex-col">
+      <button
+        onClick={onSelect}
+        disabled={!onSelect}
+        className={`w-full min-h-11 flex flex-col items-center justify-center py-1.5 border ${claim ? 'rounded-t-lg' : 'rounded-lg'} ${
+          blocked ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
+        } disabled:opacity-60`}
+      >
+        {hasPoint && <span className={`text-xs font-semibold ${blocked ? 'line-through text-loss' : ''}`}>{point}</span>}
+        <OddsDisplay
+          odds={price}
+          className={`${hasPoint ? 'text-[11px]' : 'text-xs font-medium'} ${blocked ? 'text-loss' : 'text-primary'}`}
+        />
+      </button>
+      {claim && <ClaimBanner status={claim} wide={false} />}
+    </div>
   );
 }
 
@@ -65,12 +72,14 @@ export function GameLinesTable({
   onSelectMoneyline,
   showTotal = false,
   checkBlocked,
+  checkClaimStatus,
 }: {
   game: NFLGame;
   onSelectSpread?: (outcome: OddsOutcome) => void;
   onSelectMoneyline?: (outcome: OddsOutcome) => void;
   showTotal?: boolean;
   checkBlocked?: (marketKey: 'spreads' | 'h2h', outcome: OddsOutcome) => string | null;
+  checkClaimStatus?: (marketKey: 'spreads' | 'h2h', outcome: OddsOutcome) => ClaimStatus | null;
 }) {
   const [tappedReason, setTappedReason] = useState<string | null>(null);
   const { h2h, spreads, totals } = getGameMarkets(game);
@@ -105,8 +114,8 @@ export function GameLinesTable({
       </div>
 
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-1.5 min-w-0">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 flex items-center gap-1.5 min-w-0 self-center">
             <TeamMark team={away} size="sm" />
             <span className="text-xs font-medium leading-tight">
               {away.city} {away.name}
@@ -116,6 +125,7 @@ export function GameLinesTable({
             point={formatSpreadPoint(awaySpread?.point)}
             price={awaySpread?.price}
             blocked={awaySpread ? checkBlocked?.('spreads', awaySpread) : null}
+            claim={awaySpread ? (checkClaimStatus?.('spreads', awaySpread) ?? null) : null}
             onSelect={() => select('spreads', awaySpread, onSelectSpread)}
           />
           {showTotal && <LineCell point={overTotal?.point != null ? `O ${overTotal.point}` : ''} price={overTotal?.price} />}
@@ -123,12 +133,13 @@ export function GameLinesTable({
             point=""
             price={awayMl?.price}
             blocked={awayMl ? checkBlocked?.('h2h', awayMl) : null}
+            claim={awayMl ? (checkClaimStatus?.('h2h', awayMl) ?? null) : null}
             onSelect={() => select('h2h', awayMl, onSelectMoneyline)}
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-1.5 min-w-0">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 flex items-center gap-1.5 min-w-0 self-center">
             <TeamMark team={home} size="sm" />
             <span className="text-xs font-medium leading-tight">
               {home.city} {home.name}
@@ -138,6 +149,7 @@ export function GameLinesTable({
             point={formatSpreadPoint(homeSpread?.point)}
             price={homeSpread?.price}
             blocked={homeSpread ? checkBlocked?.('spreads', homeSpread) : null}
+            claim={homeSpread ? (checkClaimStatus?.('spreads', homeSpread) ?? null) : null}
             onSelect={() => select('spreads', homeSpread, onSelectSpread)}
           />
           {showTotal && <LineCell point={underTotal?.point != null ? `U ${underTotal.point}` : ''} price={underTotal?.price} />}
@@ -145,6 +157,7 @@ export function GameLinesTable({
             point=""
             price={homeMl?.price}
             blocked={homeMl ? checkBlocked?.('h2h', homeMl) : null}
+            claim={homeMl ? (checkClaimStatus?.('h2h', homeMl) ?? null) : null}
             onSelect={() => select('h2h', homeMl, onSelectMoneyline)}
           />
         </div>

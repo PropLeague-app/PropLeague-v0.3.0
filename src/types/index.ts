@@ -332,6 +332,9 @@ export interface LeagueSettings {
   singleBetCapPct: number; // e.g. 0.8 = 80%
   wagerPrecision: number; // e.g. 0.01
   hidePicks: boolean;
+  /** With hidePicks on: an opponent's empty slots also read "Hidden" until the week's last game kicks off,
+   * so nobody can tell which slots a team has filled. Missing means on. */
+  hideEmptySlots: boolean;
   allowLiveBets: boolean; // stub, non-functional in v0.01
   // Duplicate-pick system (manual v0.1.1 §5) — three independent controls, all
   // default OFF, replacing the old single "allowDuplicatePicks" toggle.
@@ -418,6 +421,7 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   // their persisted value (see store/migrations.ts) — this default only applies to
   // leagues created from here forward.
   hidePicks: false,
+  hideEmptySlots: true,
   allowLiveBets: false,
   maxDuplicatePicks: null,
   waiverMode: 'waiver_order',

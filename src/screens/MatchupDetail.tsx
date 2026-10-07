@@ -15,7 +15,7 @@ import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader'
 import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenerator';
 import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
-import { isWagerVisibleToViewer } from '../engine/stats';
+import { isWagerVisibleToViewer, rosterHasHiddenPicks, emptySlotsHidden, weekAllGamesStarted } from '../engine/stats';
 import { isPerfectWeek } from '../engine/perfectWeek';
 import { FireAura } from '../components/common/FireAura';
 import { weekScaleRef } from '../engine/plColor';
@@ -143,7 +143,30 @@ export function MatchupDetail() {
   // complete -- see chat), so "has a score" no longer means "is final". Same fix as
   // MatchupCard.tsx.
   const isFinal = matchup.winnerId != null || matchup.isTie;
-  const scaleRef = weekScaleRef(league, matchup.week, [scoreA, scoreB]);
+  // An opponent with a still-hidden pick has no safe score preview or pick count: the unspent-credits
+  // penalty and the pick tally both depend on the hidden stakes. The score reads "$-" and only the
+  // settled record shows until the picks go live. A score the server already wrote (graded picks only) is safe to show.
+  const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
+  const hideCtx = {
+    hidePicks,
+    hideEmptySlots: league.settings.hideEmptySlots,
+    week: matchup.week,
+    currentWeek: league.currentWeek,
+    weekLocked,
+    isGameStarted: decided.isDecided,
+  };
+  // An opponent's empty slots read "Hidden" too (unless the league opted out), so a filled slot cannot
+  // be told from an empty one by elimination.
+  const hideEmptyFor = (team: LeagueTeam) =>
+    !team.isUser &&
+    emptySlotsHidden({ hidePicks, hideEmptySlots: league.settings.hideEmptySlots, week: matchup.week, currentWeek: league.currentWeek, weekLocked });
+  const hideEmptyA = hideEmptyFor(teamA);
+  const hideEmptyB = hideEmptyFor(teamB);
+  const hiddenA = rosterHasHiddenPicks(rosterA, { ...hideCtx, isOwnTeam: teamA.isUser });
+  const hiddenB = rosterHasHiddenPicks(rosterB, { ...hideCtx, isOwnTeam: teamB.isUser });
+  const scoreHiddenA = hiddenA && matchup.teamAScore == null;
+  const scoreHiddenB = hiddenB && matchup.teamBScore == null;
+  const scaleRef = weekScaleRef(league, matchup.week, [scoreHiddenA ? 0 : scoreA, scoreHiddenB ? 0 : scoreB]);
   const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
   const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
 
@@ -170,9 +193,9 @@ export function MatchupDetail() {
 
   // Share: what this screen shows, as one fixed-size picture. A pick the viewer cannot see yet
   // (hide-picks, before kickoff) is "Hidden" here too, exactly as on screen.
-  const shareCell = (slot: RosterSlotState, isUser: boolean): MatchupCell => {
+  const shareCell = (slot: RosterSlotState, isUser: boolean, hideEmpty: boolean): MatchupCell => {
     const w = slot.wager;
-    if (!w) return { kind: 'empty' };
+    if (!w) return { kind: hideEmpty ? 'hidden' : 'empty' };
     const g = realGamesById[w.gameId] ?? getGame(w.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
     const started = !!g && g.status !== 'upcoming';
     if (!isUser && hidePicks && !started) return { kind: 'hidden' };
@@ -184,12 +207,20 @@ export function MatchupDetail() {
       profit: w.settledProfit ?? null,
     };
   };
-  const shareSide = (team: LeagueTeam, score: number, progress: ReturnType<typeof pickProgress>, perfect: boolean): MatchupSide => ({
+  const shareSide = (
+    team: LeagueTeam,
+    score: number,
+    progress: ReturnType<typeof pickProgress>,
+    perfect: boolean,
+    hidden: boolean,
+    scoreHidden: boolean,
+  ): MatchupSide => ({
     name: team.teamName,
     initials: team.abbrev,
     identity: team,
     score,
-    progress: formatProgressLine(progress),
+    scoreHidden,
+    progress: formatProgressLine(progress, hidden),
     perfect,
   });
   const shareCard = (
@@ -197,14 +228,14 @@ export function MatchupDetail() {
       leagueName={league.name}
       weekText={weekLabel(matchup.week)}
       statusText={isFinal ? 'Final' : anyPickLive ? 'Live' : 'Upcoming'}
-      a={shareSide(teamA, scoreA, progressA, perfectA)}
-      b={shareSide(teamB, scoreB, progressB, perfectB)}
+      a={shareSide(teamA, scoreA, progressA, perfectA, hiddenA, scoreHiddenA)}
+      b={shareSide(teamB, scoreB, progressB, perfectB, hiddenB, scoreHiddenB)}
       winner={isFinal ? (matchup.isTie ? 'tie' : matchup.winnerId === teamA.id ? 'a' : 'b') : null}
       plRef={scaleRef}
       rows={rosterA.slots.map((slotA, idx) => ({
         position: slotA.position,
-        a: shareCell(slotA, teamA.isUser),
-        b: shareCell(rosterB.slots[idx], teamB.isUser),
+        a: shareCell(slotA, teamA.isUser, hideEmptyA),
+        b: shareCell(rosterB.slots[idx], teamB.isUser, hideEmptyB),
       }))}
     />
   );
@@ -233,7 +264,7 @@ export function MatchupDetail() {
       )}
       <div className={`p-4 space-y-4 ${perfectA || perfectB ? 'pl-slip pl-slip-fade' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''}`}>
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} />
+          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} hidden={hiddenA} scoreHidden={scoreHiddenA} />
           <div className="flex flex-col items-center gap-1">
             {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
@@ -244,7 +275,7 @@ export function MatchupDetail() {
               {weekLabel(matchup.week)}
             </span>
           </div>
-          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} reverse />
+          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} hidden={hiddenB} scoreHidden={scoreHiddenB} reverse />
         </div>
 
         <div className="space-y-1.5">
@@ -257,6 +288,7 @@ export function MatchupDetail() {
                   league={league}
                   isUser={teamA.isUser}
                   hidePicks={hidePicks}
+                  hideEmpty={hideEmptyA}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
                   advanced={advanced}
@@ -269,6 +301,7 @@ export function MatchupDetail() {
                   league={league}
                   isUser={teamB.isUser}
                   hidePicks={hidePicks}
+                  hideEmpty={hideEmptyB}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
                   advanced={advanced}
@@ -338,9 +371,15 @@ function TeamHeader({
   reverse,
   scaleRef,
   perfect = false,
+  hidden = false,
+  scoreHidden = false,
 }: {
   team: League['teams'][number];
   score: number;
+  /** Opponent with a still-hidden pick: pick counts are withheld. */
+  hidden?: boolean;
+  /** No safe score to show yet. */
+  scoreHidden?: boolean;
   progress: { active: number; won: number; lost: number; pushed: number; open: number };
   reverse?: boolean;
   scaleRef: number;
@@ -365,16 +404,20 @@ function TeamHeader({
           <TeamLogo team={team} size="sm" />
         </FireAura>
         <div className="min-w-0">
-          <p
-            className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : score >= 0 ? 'text-profit' : 'text-loss'}`}
-            style={perfect ? undefined : plStyle(score, scaleRef)}
-          >
-            {formatCents(score)}
-          </p>
+          {scoreHidden ? (
+            <p className="text-sm font-bold text-text-muted">$–</p>
+          ) : (
+            <p
+              className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : score >= 0 ? 'text-profit' : 'text-loss'}`}
+              style={perfect ? undefined : plStyle(score, scaleRef)}
+            >
+              {formatCents(score)}
+            </p>
+          )}
           {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
               2026) -- now living where the old bare "Live"/"Final" text used to sit,
               since that moved up next to the Week pill above. */}
-          <p className={`text-[9px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>{formatProgressLine(progress)}</p>
+          <p className={`text-[9px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>{formatProgressLine(progress, hidden)}</p>
           {perfect && <p className="text-[8px] font-bold uppercase tracking-wider pl-gold-text mt-0.5">Perfect week</p>}
         </div>
       </div>
@@ -387,6 +430,7 @@ function SlotMini({
   league,
   isUser,
   hidePicks,
+  hideEmpty,
   realGamesById,
   realPlayerStats,
   advanced,
@@ -396,12 +440,21 @@ function SlotMini({
   league: League;
   isUser: boolean;
   hidePicks: boolean;
+  /** An opponent's empty slot reads Hidden (see emptySlotsHidden). */
+  hideEmpty: boolean;
   realGamesById: Record<string, ReturnType<typeof getGame>>;
   realPlayerStats?: Record<string, RealPlayerStatLine>;
   advanced: boolean;
   reverse?: boolean;
 }) {
   if (!slot.wager) {
+    if (hideEmpty) {
+      return (
+        <div className={`bg-bg-card border border-border rounded-lg p-2 text-[11px] text-text-muted flex items-center justify-center gap-1 ${reverse ? 'flex-row-reverse' : ''}`}>
+          <Lock size={12} /> Hidden
+        </div>
+      );
+    }
     return <div className="bg-bg-card border border-border rounded-lg p-2 text-[11px] text-text-muted flex items-center justify-center">Empty</div>;
   }
   // Real wagers carry a real Odds-API event id that the local simulated dataset

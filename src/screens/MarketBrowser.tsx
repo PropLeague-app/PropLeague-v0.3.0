@@ -10,6 +10,7 @@ import { useOddsFreshness, oddsFreshnessMessage } from '../hooks/useOddsFreshnes
 import { nflTeamById } from '../data/nflTeams';
 import { MARKETS_BY_POSITION, MARKET_LABELS } from '../data/propsGenerator';
 import { PlayerPropsCard } from '../components/roster/PlayerPropsCard';
+import type { ClaimStatus } from '../components/roster/MarketRow';
 import { GameLinesTable } from '../components/roster/GameLinesTable';
 import { TeamMark } from '../components/common/TeamMark';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
@@ -133,7 +134,8 @@ export function MarketBrowser() {
         currentUserTeam.id,
       );
       if (!claimingTeamId) return null;
-      return claimBlockReason(currentLeague, claimingTeamId);
+      // Every game listed here is still upcoming, so Hide Picks means the holder stays secret.
+      return claimBlockReason(currentLeague, claimingTeamId, currentLeague.settings.hidePicks);
     };
   }
 
@@ -141,7 +143,7 @@ export function MarketBrowser() {
    * duplicates are limited but not yet exhausted — shown in addition to (and before)
    * the red/strikethrough full state MarketRow already renders once the cap is hit. */
   function checkClaimStatusFor(gameId: string, marketKey: MarketKey, playerId: string | undefined) {
-    return (outcome: OddsOutcome): { holderTeams: LeagueTeam[]; cap: number } | null => {
+    return (outcome: OddsOutcome): ClaimStatus | null => {
       const cap = currentLeague.settings.maxDuplicatePicks;
       if (cap == null) return null;
       const holders = claimHolders(
@@ -151,8 +153,9 @@ export function MarketBrowser() {
         currentUserTeam.id,
       );
       if (holders.length === 0) return null;
-      const holderTeams = holders.map((id) => currentLeague.teams.find((t) => t.id === id)).filter((t): t is LeagueTeam => !!t);
-      return { holderTeams, cap };
+      const hidden = currentLeague.settings.hidePicks;
+      const holderTeams = hidden ? [] : holders.map((id) => currentLeague.teams.find((t) => t.id === id)).filter((t): t is LeagueTeam => !!t);
+      return { holderCount: holders.length, holderTeams, cap, hidden };
     };
   }
 
@@ -241,6 +244,7 @@ export function MarketBrowser() {
                   <GameLinesTable
                     game={game}
                     checkBlocked={(marketKey, outcome) => checkBlockedFor(game.id, marketKey, undefined)(outcome)}
+                    checkClaimStatus={(marketKey, outcome) => checkClaimStatusFor(game.id, marketKey, undefined)(outcome)}
                     onSelectSpread={
                       propTypeOptions.includes('spreads')
                         ? (outcome) =>

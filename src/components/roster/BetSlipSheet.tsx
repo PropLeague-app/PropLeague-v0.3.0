@@ -84,7 +84,7 @@ export function BetSlipSheet({
         target.teamId,
       )
     : null;
-  const preClaimReason = preClaimTeamId && league ? claimBlockReason(league, preClaimTeamId) : null;
+  const preClaimReason = preClaimTeamId && league ? claimBlockReason(league, preClaimTeamId, league.settings.hidePicks) : null;
 
   const reasons: string[] = [];
   if (marketBlocked) reasons.push(marketBlocked);
@@ -118,7 +118,7 @@ export function BetSlipSheet({
     if (!result.ok) {
       setClaimError(
         result.claimedByTeamId && league
-          ? claimBlockReason(league, result.claimedByTeamId)
+          ? claimBlockReason(league, result.claimedByTeamId, league.settings.hidePicks)
           : (result.error ?? 'This pick is no longer available.'),
       );
       return;

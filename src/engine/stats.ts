@@ -25,6 +25,61 @@ export function isWagerVisibleToViewer(params: {
   return params.gameStarted;
 }
 
+/** True when a team's roster for the viewer still holds a pick the viewer may not see (hide-picks,
+ * current week, game not started). Anything derived from the whole roster (expected score, unspent
+ * credits penalty, pick counts, win probability) would leak those picks, so screens show
+ * "Hidden" for that team instead. */
+export function rosterHasHiddenPicks(
+  roster: WeeklyRoster | undefined,
+  params: {
+    isOwnTeam: boolean;
+    hidePicks: boolean;
+    /** The league's "hide empty slots too" option (missing means on). */
+    hideEmptySlots?: boolean;
+    /** The roster's week, needed when the team has no roster row yet. */
+    week: WeekId;
+    currentWeek: WeekId;
+    /** Every game of the week has kicked off, so an empty slot can no longer be filled. */
+    weekLocked?: boolean;
+    isGameStarted: (gameId: string) => boolean;
+  },
+): boolean {
+  if (params.isOwnTeam || !params.hidePicks) return false;
+  const emptyHidden = emptySlotsHidden({ hidePicks: params.hidePicks, hideEmptySlots: params.hideEmptySlots, week: params.week, currentWeek: params.currentWeek, weekLocked: !!params.weekLocked });
+  if (!roster) return emptyHidden;
+  return roster.slots.some((s) =>
+    s.wager
+      ? !isWagerVisibleToViewer({
+          isOwnTeam: false,
+          hidePicks: params.hidePicks,
+          wagerWeek: roster.week,
+          currentWeek: params.currentWeek,
+          wagerStatus: s.wager.status,
+          gameStarted: params.isGameStarted(s.wager.gameId),
+        })
+      : emptyHidden,
+  );
+}
+
+/** With Hide Picks on, "Empty" would show an opponent's filled slots by elimination. So (unless the
+ * league turned the option off) their empty slots read "Hidden" too, until the week's last game has
+ * kicked off and nothing can be filled any more. Only ever applies to the current week. */
+export function emptySlotsHidden(params: {
+  hidePicks: boolean;
+  hideEmptySlots?: boolean;
+  week: WeekId;
+  currentWeek: WeekId;
+  weekLocked: boolean;
+}): boolean {
+  return params.hidePicks && params.hideEmptySlots !== false && params.week === params.currentWeek && !params.weekLocked;
+}
+
+/** True once every known game of the week has kicked off (false when none are loaded yet). */
+export function weekAllGamesStarted(games: Array<{ week: WeekId; status: string }>, week: WeekId): boolean {
+  const weekGames = games.filter((g) => g.week === week);
+  return weekGames.length > 0 && weekGames.every((g) => g.status !== 'upcoming');
+}
+
 /** Injected rather than imported so stats.ts stays pure/unit-testable like the rest of
  * src/engine — `isGameStarted` mirrors the `getGame(...).status !== 'upcoming'` check
  * every other hide-picks call site (MatchupDetail, SlotMini) already uses. */

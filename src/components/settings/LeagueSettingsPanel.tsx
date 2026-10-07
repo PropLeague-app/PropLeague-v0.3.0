@@ -402,6 +402,14 @@ export function LeagueSettingsPanel({
               value={settings.hidePicks}
               onChange={(v) => update({ hidePicks: v })}
             />
+            {settings.hidePicks && (
+              <ToggleRow
+                label="Hide empty slots too"
+                note="Opponent slots read Hidden until the week's last kickoff, so nobody can tell which slots a team has filled."
+                value={settings.hideEmptySlots !== false}
+                onChange={(v) => update({ hideEmptySlots: v })}
+              />
+            )}
           </SubSection>
         </CollapsibleSection>
 
