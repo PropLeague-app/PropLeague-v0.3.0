@@ -138,6 +138,8 @@ export function generateAutoLineup(
   settings: AutoLineupSettings,
   games: NFLGame[],
   isPickTaken: (gameId: string, marketKey: MarketKey, playerId: string | undefined, side: string, point: number | undefined) => boolean = () => false,
+  /** True when a pick on this market and side would break a commissioner slot cap, given the picks already in the lineup. */
+  breaksSlotCap: (marketKey: MarketKey, side: string, picksSoFar: Array<{ marketKey: string; side: string }>) => boolean = () => false,
 ): { slots: RosterSlotState[] } {
   const rng = createRng(`${teamId}-${week}-autolineup`);
   const slots = buildEmptySlots(settings.lineupSlots);
@@ -188,6 +190,7 @@ export function generateAutoLineup(
       const market = pick(rng, group.markets);
       const outcome = pick(rng, market.outcomes);
       if (isPickTaken(game.id, market.key, group.playerId, outcome.name, outcome.point)) continue;
+      if (breaksSlotCap(market.key, outcome.name, wagers.filter((w): w is Wager => !!w).map((w) => ({ marketKey: w.marketKey, side: w.side })))) continue;
       usedPlayerIds.add(group.playerId);
       wagers[idx] = makeWager(slot.slotId, game.id, market.key, outcome.name, outcome.price, stake, outcome.point, group.playerId, group.playerName);
       break;

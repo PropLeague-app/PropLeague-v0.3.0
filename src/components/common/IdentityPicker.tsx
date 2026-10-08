@@ -163,7 +163,7 @@ export function IdentityPicker({
                   key={cat.id}
                   onClick={() => setEmojiCategory(cat.id)}
                   className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                    emojiCategory === cat.id ? 'border-primary text-primary bg-primary/10' : 'border-border text-text-muted'
+                    emojiCategory === cat.id ? 'sel-pill' : 'border-border text-text-muted'
                   }`}
                 >
                   {cat.label}

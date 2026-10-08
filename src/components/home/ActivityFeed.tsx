@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin } from 'lucide-react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin, Plus } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { Card } from '../common/Card';
@@ -11,9 +11,12 @@ import { OddsDisplay } from '../common/OddsDisplay';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { FireAura } from '../common/FireAura';
 import { parsePerfectWeek, type PerfectWeekPost } from '../../engine/perfectAnnouncement';
-import { useAppStore } from '../../store/useAppStore';
 import { teamAccent } from '../../engine/teamColors';
 import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from '../../engine/richText';
+import { useResolvedTheme } from '../../hooks/useResolvedTheme';
+import { AnchoredPopover } from '../common/AnchoredPopover';
+import { ReactionPicker } from './ReactionPicker';
+import { CHIP_LOGOS, CHIP_ROW_GAP, QUICK_REACTIONS, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
   announcement: <Megaphone size={16} />,
@@ -22,37 +25,163 @@ const ICONS: Record<ActivityItem['type'], ReactNode> = {
   moment: <Sparkles size={16} />,
 };
 
-const QUICK_REACTIONS = ['🔥', '😂', '💀', '👏'];
+/** The league's teams, so a reaction chip can show who reacted. Provided by ActivityFeed. */
+const ReactionTeamsContext = createContext<League['teams']>([]);
+
+type ReactionPopup = { kind: 'picker' | 'all'; rect: DOMRect } | { kind: 'who'; rect: DOMRect; emoji: string };
+
+/** One or two overlapping team logos (then "+n"), the "who" on a reaction chip. */
+function ReactorLogos({ group, teamById }: { group: ReactionGroup; teamById: Map<string, League['teams'][number]> }) {
+  if (group.teamIds.length === 0) return <span className="text-[10px] font-semibold text-text-muted tabular-nums">{group.count}</span>;
+  const shown = group.teamIds.slice(0, CHIP_LOGOS).map((id) => teamById.get(id)).filter((t): t is League['teams'][number] => !!t);
+  const extra = group.teamIds.length - CHIP_LOGOS;
+  return (
+    <span className="inline-flex items-center">
+      {shown.map((team, i) => (
+        <span key={team.id} className={`rounded-full ring-1 ring-bg-raised ${i > 0 ? '-ml-1.5' : ''}`}>
+          <TeamLogo team={team} size="xs" />
+        </span>
+      ))}
+      {extra > 0 && <span className="ml-0.5 text-[9px] font-semibold text-text-muted">+{extra}</span>}
+    </span>
+  );
+}
+
+/** A reaction with the teams that picked it, as a list (the "who reacted" bubble and the overview). */
+function ReactorList({ group, teamById }: { group: ReactionGroup; teamById: Map<string, League['teams'][number]> }) {
+  const teams = group.teamIds.map((id) => teamById.get(id)).filter((t): t is League['teams'][number] => !!t);
+  if (teams.length === 0) return <p className="text-[11px] text-text-muted">{group.count} reaction{group.count === 1 ? '' : 's'}</p>;
+  return (
+    <ul className="space-y-1">
+      {teams.map((team) => (
+        <li key={team.id} className="flex items-center gap-1.5 min-w-0">
+          <TeamLogo team={team} size="xs" />
+          <span className="text-xs font-medium truncate">{team.teamName}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 // manual v0.3.0 §6: one reaction per person, switchable -- item.myReaction (set
 // by fetchLeagueActivity/reactToActivity, see chat) is the caller's own current
-// pick, if any. Its aggregate pill (in the count row) and its quick-reaction
-// button both get a ring so it's clear which one is "yours" and tapping any
-// other emoji will move it rather than add a second one.
+// pick, if any. Its chip and its quick-reaction button both get a ring so it's clear
+// which one is "yours" and tapping any other emoji will move it rather than add a
+// second one.
+//
+// Layout: the reactions people have left sit to the left of the quick buttons, each as
+// the emoji plus the logos of the teams that chose it (tap for the full team list). When
+// there are more kinds than fit in that space, the ones that don't fit collapse into one
+// overlapping stack; tapping it opens an overview of every reaction. "+" opens a picker
+// with more emojis than the quick four.
 function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: string, emoji: string) => void }) {
+  const teams = useContext(ReactionTeamsContext);
+  const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
+  const groups = useMemo(() => reactionGroups(item.reactors, item.reactions), [item.reactors, item.reactions]);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = useState(Infinity);
+  const [popup, setPopup] = useState<ReactionPopup | null>(null);
+
+  useLayoutEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    // Minus the 2px of padding each side, which is room for the rings (they would be clipped by overflow-hidden).
+    const measure = () => setAvailable(el.clientWidth - 4);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onReact]);
+
   if (!onReact) return null;
+  const { shown, overflow } = fitChips(groups, available);
+  const closePopup = () => setPopup(null);
+  const whoGroup = popup?.kind === 'who' ? groups.find((g) => g.emoji === popup.emoji) : undefined;
+  const ring = (emoji: string) => (emoji === item.myReaction ? 'ring-1 ring-primary' : '');
+
   return (
-    <div className="flex items-center gap-1">
-      {item.reactions &&
-        Object.entries(item.reactions)
-          .filter(([, count]) => count > 0)
-          .map(([emoji, count]) => (
-            <span
-              key={emoji}
-              className={`text-[11px] bg-bg-raised rounded-full px-1.5 py-0.5 ${emoji === item.myReaction ? 'ring-1 ring-primary' : ''}`}
-            >
-              {emoji} {count}
-            </span>
-          ))}
+    <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
+      <div ref={areaRef} className="flex flex-1 min-w-0 items-center justify-end overflow-hidden p-0.5 -my-0.5" style={{ gap: CHIP_ROW_GAP }}>
+        {shown.map((group) => (
+          <button
+            key={group.emoji}
+            type="button"
+            onClick={(e) => setPopup({ kind: 'who', rect: e.currentTarget.getBoundingClientRect(), emoji: group.emoji })}
+            aria-label={`${group.emoji} reactions`}
+            className={`shrink-0 inline-flex items-center gap-[3px] bg-bg-raised rounded-full pl-1.5 pr-1 py-0.5 ${ring(group.emoji)}`}
+          >
+            <span className="text-[12px] leading-4">{group.emoji}</span>
+            <ReactorLogos group={group} teamById={teamById} />
+          </button>
+        ))}
+        {overflow.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => setPopup({ kind: 'all', rect: e.currentTarget.getBoundingClientRect() })}
+            aria-label="All reactions"
+            className={`shrink-0 inline-flex items-center bg-bg-raised rounded-full pl-1.5 pr-1.5 py-0.5 ${overflow.some((g) => g.emoji === item.myReaction) ? 'ring-1 ring-primary' : ''}`}
+          >
+            {overflow.slice(0, 3).map((g, i) => (
+              <span key={g.emoji} className={`text-[12px] leading-4 ${i > 0 ? '-ml-1' : ''}`}>
+                {g.emoji}
+              </span>
+            ))}
+            <span className="ml-1 text-[10px] font-semibold text-text-muted tabular-nums">+{overflow.length}</span>
+          </button>
+        )}
+      </div>
       {QUICK_REACTIONS.map((emoji) => (
         <button
           key={emoji}
           onClick={() => onReact(item.id, emoji)}
-          className={`text-xs ${emoji === item.myReaction ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
+          className={`shrink-0 text-xs ${emoji === item.myReaction ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
         >
           {emoji}
         </button>
       ))}
+      <button
+        type="button"
+        onClick={(e) => setPopup({ kind: 'picker', rect: e.currentTarget.getBoundingClientRect() })}
+        aria-label="More reactions"
+        aria-haspopup="dialog"
+        className="shrink-0 w-4 h-4 rounded-full border border-border text-text-muted flex items-center justify-center active:bg-bg-raised"
+      >
+        <Plus size={10} strokeWidth={2.5} />
+      </button>
+
+      {popup?.kind === 'picker' && (
+        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={352} maxHeight={400}>
+          <ReactionPicker
+            current={item.myReaction}
+            onPick={(emoji) => {
+              onReact(item.id, emoji);
+              closePopup();
+            }}
+          />
+        </AnchoredPopover>
+      )}
+      {popup?.kind === 'who' && whoGroup && (
+        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={200} align="start">
+          <p className="text-sm font-semibold mb-1.5">
+            {whoGroup.emoji} <span className="text-[11px] font-medium text-text-muted">{whoGroup.count}</span>
+          </p>
+          <ReactorList group={whoGroup} teamById={teamById} />
+        </AnchoredPopover>
+      )}
+      {popup?.kind === 'all' && (
+        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={236}>
+          <div className="space-y-2.5">
+            {groups.map((group) => (
+              <div key={group.emoji}>
+                <p className="text-sm font-semibold mb-1">
+                  {group.emoji} <span className="text-[11px] font-medium text-text-muted">{group.count}</span>
+                </p>
+                <ReactorList group={group} teamById={teamById} />
+              </div>
+            ))}
+          </div>
+        </AnchoredPopover>
+      )}
     </div>
   );
 }
@@ -60,7 +189,7 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
 /** Renders announcement text with the tiny **highlight** / *italic* markup (see
  * engine/richText). Plain messages come through unchanged. */
 function RichText({ text }: { text: string }) {
-  const mode = useAppStore((s) => s.profile?.themeMode) ?? 'dark';
+  const mode = useResolvedTheme();
   return (
     <>
       {parseRichText(text).map((seg, i) => {
@@ -136,10 +265,10 @@ function PerfectWeekCard({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-[9px] text-text-muted">
+        <p className="shrink-0 text-[9px] text-text-muted">
           {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
           <Reactions item={item} onReact={onReact} />
           {canDelete && onDelete && (
             <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
@@ -208,10 +337,10 @@ function NewsCard({
         )}
         <p className="text-sm">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
         <div className="flex items-center justify-between mt-0.5">
-          <p className="text-[11px] text-text-muted">
+          <p className="shrink-0 text-[11px] text-text-muted">
             {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
             <Reactions item={item} onReact={onReact} />
             {isAnnouncement && canDelete && onDelete && (
               <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
@@ -369,7 +498,7 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
       )}
 
       <div className="flex items-center justify-between pt-0.5">
-        <p className="text-[9px] text-text-muted">
+        <p className="shrink-0 text-[9px] text-text-muted">
           {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
         </p>
         <Reactions item={item} onReact={onReact} />
@@ -517,6 +646,7 @@ export function ActivityFeed({
   const news = sorted.filter((i) => i.type !== 'moment');
 
   return (
+    <ReactionTeamsContext.Provider value={league.teams}>
     <div className="space-y-3">
       {/* No overflow-hidden on the wrapper: the unread badge sits on the chat
           pill's top-right corner and would be clipped by it, so the first and
@@ -668,5 +798,6 @@ export function ActivityFeed({
         />
       )}
     </div>
+    </ReactionTeamsContext.Provider>
   );
 }

@@ -7,11 +7,13 @@ import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
 import { rosterKey } from '../../engine/rosterSlots';
 import { stakeError, type StakeContext } from '../../engine/stakeRules';
-import { activeMarketRules, marketBlockReason, marketMaxStake } from '../../engine/marketRules';
+import { activeMarketRules, marketBlockReason, marketMaxStake, marketSlotCapReason } from '../../engine/marketRules';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { MARKET_LABELS } from '../../data/propsGenerator';
 import { BudgetBar } from '../common/BudgetBar';
 import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../common/buttonStyles';
+import { NumericKeypad } from '../common/NumericKeypad';
+import { applyStakeKey, type KeypadKey } from '../../engine/stakeInput';
 
 export interface BetSlipTarget {
   leagueId: string;
@@ -60,7 +62,14 @@ export function BetSlipSheet({
   const slotsNow = league?.rostersByTeamWeek[rosterKey(target.teamId, target.week)]?.slots;
   const otherSlots = slotsNow?.filter((sl) => sl.slotId !== target.slotId);
   const marketRules = activeMarketRules(settings);
-  const marketBlocked = marketBlockReason(marketRules, target.marketKey, target.outcome.name);
+  const marketBlocked =
+    marketBlockReason(marketRules, target.marketKey, target.outcome.name) ??
+    marketSlotCapReason(
+      marketRules,
+      target.marketKey,
+      target.outcome.name,
+      (otherSlots ?? []).flatMap((sl) => (sl.wager ? [{ marketKey: sl.wager.marketKey, side: sl.wager.side }] : [])),
+    );
   const stakeCtx: StakeContext = {
     settings,
     isMLSlot: isML,
@@ -103,11 +112,8 @@ export function BetSlipSheet({
   const valid = reasons.length === 0 && stake > 0;
   const potentialProfit = profitForStake(stake, target.outcome.price);
 
-  function onStakeInput(raw: string) {
-    let next = raw.replace(/[^0-9.]/g, '');
-    const dot = next.indexOf('.');
-    if (dot !== -1) next = next.slice(0, dot + 1) + next.slice(dot + 1).replace(/\./g, '').slice(0, 2);
-    setStakeText(next.replace(/^0+(?=\d)/, ''));
+  function onKey(key: KeypadKey) {
+    setStakeText((t) => applyStakeKey(t, key));
   }
   function quickAdd(amount: number) {
     const next = Math.round((stake + amount) * 100) / 100;
@@ -184,18 +190,18 @@ export function BetSlipSheet({
                 +${n}
               </button>
             ))}
-            <label className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2">
+            <div
+              aria-label="Stake"
+              className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2"
+            >
               <span className="text-text-muted">$</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="0"
-                value={stakeText}
-                onChange={(e) => onStakeInput(e.target.value)}
-                className="w-full min-w-0 bg-transparent outline-none text-lg font-semibold text-right placeholder:text-text-muted/50"
-              />
-            </label>
+              <span className={`w-full min-w-0 truncate text-lg font-semibold text-right tabular-nums ${hasStake || stakeText ? '' : 'text-text-muted/50'}`}>
+                {stakeText || '0'}
+              </span>
+            </div>
           </div>
+
+          <NumericKeypad onKey={onKey} onEnter={() => void confirm()} onEscape={onClose} />
 
           {settings.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
             <div className="flex justify-between text-xs text-text-muted px-1">

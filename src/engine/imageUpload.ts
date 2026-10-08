@@ -45,14 +45,3 @@ export function processLogoFile(file: File): Promise<string> {
   });
 }
 
-/** Rough total size of everything this app has written to localStorage — used to
- * warn before a save would blow past the ~5MB browser quota. */
-export function estimateLocalStorageBytes(): number {
-  let total = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    total += (localStorage.getItem(key)?.length ?? 0) + key.length;
-  }
-  return total;
-}

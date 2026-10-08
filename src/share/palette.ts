@@ -27,6 +27,8 @@ export const C = {
   loss: 'var(--color-loss, #f55c5c)',
   warning: 'var(--color-warning, #f5a45c)',
   gold: 'var(--color-gold, #f4c542)',
+  /** The soft corner glow behind every card, tuned per theme in index.css. */
+  glow: 'var(--pl-share-glow, color-mix(in srgb, var(--color-primary, #4c8df5) 22%, transparent))',
   /** Gold that stays readable as text in light mode (perfect weeks, podium). */
   goldText: 'var(--pl-gold-text, #f4c542)',
 } as const;

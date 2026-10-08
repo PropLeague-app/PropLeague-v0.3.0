@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import type { Matchup, PlayoffBracket, PrizePool, TeamStanding, WagerStatus, WeekId } from '../types';
+import type { Matchup, PlayoffBracket, PrizePool, TeamStanding, WeekId } from '../types';
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -41,28 +41,6 @@ export async function upsertStandingRemote(standing: TeamStanding): Promise<Serv
     p_weekly_scores: standing.weeklyScores,
     p_total_wagered: standing.totalWagered,
   });
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
-}
-
-/** No-ops for a still-pending wager — nothing to report yet. Bot-team wagers are
- * silently skipped by the caller before this is ever invoked (see useAppStore's
- * advanceWeek): they never went through place_wager, so there's no real row to
- * settle — that's an accepted Step 4 scope boundary, not a bug here. */
-export async function settleWagerRemote(wagerId: string, status: WagerStatus, settledProfit: number | null): Promise<ServiceResult> {
-  if (status === 'pending') return { ok: true };
-  const { error } = await supabase.rpc('settle_wager', { p_wager_id: wagerId, p_status: status, p_settled_profit: settledProfit });
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
-}
-
-export async function updateLeagueWeekRemote(
-  leagueId: string,
-  currentWeek: string,
-  seasonPhase: string,
-  bracket: PlayoffBracket | null,
-): Promise<ServiceResult> {
-  const { error } = await supabase.from('leagues').update({ current_week: currentWeek, season_phase: seasonPhase, bracket }).eq('id', leagueId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }

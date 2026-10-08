@@ -416,6 +416,7 @@ export function LeagueSettingsPanel({
                   onChange={(rules) => update({ marketRules: rules })}
                   minStake={settings.minBetPerSlot}
                   maxStakeAllowed={settings.weeklyCredits * settings.singleBetCapPct}
+                  lineupSlots={settings.lineupSlots}
                 />
               </div>
             )}

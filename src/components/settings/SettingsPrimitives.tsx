@@ -21,7 +21,7 @@ export function SectionHeader({ children }: { children: ReactNode }) {
 
 /** Selected/unselected styling shared by every chip-style option button on this page. */
 export function chipClass(selected: boolean): string {
-  return selected ? 'border-primary text-primary bg-primary/10' : 'border-border';
+  return selected ? 'sel-pill' : 'border-border';
 }
 
 /** Accordion card: a bold title row (optional icon tile, one-line summary of the

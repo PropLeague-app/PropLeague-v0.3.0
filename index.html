@@ -1,21 +1,47 @@
 <!DOCTYPE html>
-<!-- data-theme defaults to 'dark' as the static pre-hydration value (matches the
-     app's original and default look) -- App.tsx's effect overwrites this to 'light'
-     once the persisted profile has rehydrated and themeMode is actually 'light', so
-     a light-mode user sees one brief dark flash on cold launch rather than the
-     reverse (a dark-mode user, the overwhelming majority, never sees any flash at
-     all). class="dark" used to sit here from the initial project scaffold but drove
-     nothing -- no dark: Tailwind variant is used anywhere in this app; the whole
-     theme runs on the CSS variables in index.css instead (see chat, Sept 2026). -->
+<!-- data-theme defaults to 'dark' (Midnight, the app's original look) and the inline script in
+     <head> switches it to the user's saved theme before the first paint; App.tsx keeps it in
+     sync afterwards. No dark: Tailwind variant is used anywhere in this app; the whole theme runs
+     on the CSS variables in index.css instead. -->
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>PropLeague</title>
+    <!-- Runs before anything paints: the theme the user last chose lives in the persisted store (the
+         same JSON App.tsx reads), so the very first frame already has the right colors instead of
+         showing the dark default until the app bundle has loaded. Mirrors resolveTheme() in
+         services/theme.ts ('auto' follows the phone: gray Dark or light). Any failure keeps the default. -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('propleague-storage');
+          var mode = raw && JSON.parse(raw).state.profile.themeMode;
+          if (mode === 'auto') {
+            mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'graphite' : 'light';
+          }
+          if (mode === 'dark' || mode === 'graphite' || mode === 'light') {
+            document.documentElement.setAttribute('data-theme', mode);
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Painted as soon as the HTML and CSS are in, before the app bundle (about 1 MB) has been
+           parsed. Same markup as components/common/BootLoader.tsx, which takes over from it (React
+           replaces everything inside #root on its first render). -->
+      <div class="min-h-screen bg-bg flex items-center justify-center" role="status" aria-label="Loading">
+        <div class="relative w-12 h-12">
+          <img src="/src/assets/logo-color.png" alt="" class="absolute inset-0 w-full h-full object-contain opacity-20 grayscale" draggable="false" />
+          <img src="/src/assets/logo-color.png" alt="" class="absolute inset-0 w-full h-full object-contain boot-fill" draggable="false" />
+        </div>
+      </div>
+    </div>
+    <!-- When the splash above started animating, so BootLoader can pick the fill up in the same phase. -->
+    <script>window.__plBoot = performance.now();</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

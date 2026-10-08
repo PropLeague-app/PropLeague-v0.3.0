@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId, Wager } from '../../types';
@@ -10,7 +10,6 @@ import { MARKET_LABELS } from '../../data/propsGenerator';
 import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { currentOddsForWager } from '../../services/oddsService';
-import { NumberInput } from '../common/NumberInput';
 
 function gameInfo(game: NFLGame): string {
   const home = nflTeamById(game.homeTeamId).abbrev;
@@ -57,7 +56,8 @@ export function RosterSlotCard({
   multiplier = 1,
   currentWeek,
   stakeError = null,
-  onStakeChange,
+  onEditStake,
+  editingStake = false,
   onRemove,
 }: {
   slot: RosterSlotState;
@@ -73,7 +73,10 @@ export function RosterSlotCard({
   currentWeek?: WeekId;
   /** Why the server refused the last stake edit, if it did. */
   stakeError?: string | null;
-  onStakeChange: (stake: number) => void | Promise<unknown>;
+  /** Opens the stake keypad for this slot. */
+  onEditStake: () => void;
+  /** This slot's keypad is open right now. */
+  editingStake?: boolean;
   onRemove: () => void;
 }) {
   const navigate = useNavigate();
@@ -82,14 +85,6 @@ export function RosterSlotCard({
   // than always rendered inline — keeps a lineup with several flagged slots scannable.
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const fill = positionFillClasses(slot.position);
-  // When the server refuses a stake, snap the field back to the saved amount, but only once the
-  // person has left it (remounting mid-typing would steal focus).
-  const [stakeInputKey, setStakeInputKey] = useState(0);
-  const stakeFocused = useRef(false);
-  useEffect(() => {
-    if (stakeError && !stakeFocused.current) setStakeInputKey((k) => k + 1);
-  }, [stakeError]);
-
   if (!slot.wager) {
     return (
       <div
@@ -178,32 +173,21 @@ export function RosterSlotCard({
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-text-muted leading-tight min-w-0">{marketLabel}</p>
-        <div
-          className="flex items-center gap-1.5 shrink-0"
-          onFocus={() => {
-            stakeFocused.current = true;
-          }}
-          onBlur={() => {
-            stakeFocused.current = false;
-          }}
-        >
-          {/* Same look as the stake box on the bet slip: bordered card-colored box, $ prefix, right-aligned semibold number. */}
-          <label className="flex items-center gap-1 bg-bg-card border border-border rounded-md px-1.5 py-0.5">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Same look as the stake box on the bet slip: bordered card-colored box, $ prefix, right-aligned semibold number.
+              Tapping it opens the in-app keypad (StakeEditSheet), never the OS keyboard. */}
+          <button
+            type="button"
+            disabled={locked}
+            onClick={onEditStake}
+            aria-label="Edit stake"
+            className={`flex items-center gap-1 bg-bg-card border rounded-md px-1.5 py-0.5 disabled:opacity-60 ${
+              editingStake ? 'border-primary' : 'border-border'
+            }`}
+          >
             <span className="text-text-muted text-[13px] leading-4">$</span>
-            {/* The app forces inputs to 16px (index.css, stops iOS zooming on focus), which beats any text size
-                class. So the input stays 16px and is scaled to 13/16 (13px on screen, same as the profit) inside a box of the shrunk size. */}
-            <span className="relative block w-[48px] h-4">
-              <NumberInput
-                key={stakeInputKey}
-                min={0}
-                decimals={2}
-                disabled={locked}
-                value={wager.stake}
-                onChange={onStakeChange}
-                className="absolute right-0 top-1/2 -translate-y-1/2 origin-right scale-[0.8125] w-[59px] h-4 p-0 leading-4 bg-transparent outline-none font-semibold text-right disabled:opacity-60"
-              />
-            </span>
-          </label>
+            <span className="block w-[48px] h-4 text-[13px] leading-4 font-semibold text-right tabular-nums">{wager.stake.toFixed(2)}</span>
+          </button>
           <span className="text-text-muted text-xs">→</span>
           <span className="w-14 shrink-0 text-right text-[13px] leading-4 font-semibold text-profit">{formatCents(potentialProfit)}</span>
         </div>

@@ -40,10 +40,6 @@ export const DEFERRED_SETTING_KEYS = [
 
 export type DeferredSettingKey = (typeof DEFERRED_SETTING_KEYS)[number];
 
-export function isDeferredKey(key: string): key is DeferredSettingKey {
-  return (DEFERRED_SETTING_KEYS as readonly string[]).includes(key);
-}
-
 export function totalSlotsOf(lineupSlots: Record<string, number>): number {
   return Object.values(lineupSlots).reduce((a, b) => a + b, 0);
 }

@@ -1,22 +1,50 @@
 // Commissioner market rules for the bot lineup generator. Bots skip any pick the league has blocked
-// (the server rejects it anyway, so skipping here keeps the slot from being left empty). Per-pick
-// stake caps are not applied to bots.
+// (the server rejects it anyway, so skipping here keeps the slot from being left empty) and any pick that
+// would use more slots than a slot cap allows (the server exempts bots from that check, so the generator
+// has to hold the line itself). Per-pick stake caps are not applied to bots.
 export interface MarketRuleRow {
   market: string;
   side: string | null;
   maxStake: number | null;
+  maxSlots?: number | null;
 }
 
-export function blockedMarketRules(rawSettings: unknown): MarketRuleRow[] {
+function activeRows(rawSettings: unknown): Array<Partial<MarketRuleRow>> {
   if (!rawSettings || typeof rawSettings !== 'object') return [];
   const s = rawSettings as { marketRulesEnabled?: unknown; marketRules?: unknown };
   if (s.marketRulesEnabled !== true || !Array.isArray(s.marketRules)) return [];
-  return (s.marketRules as Array<Partial<MarketRuleRow>>)
-    // Moneyline, spread and total cannot be ruled on, so a leftover rule on one of them is ignored.
-    .filter((r) => typeof r?.market === 'string' && !['h2h', 'spreads', 'totals'].includes(r.market) && r.maxStake == null)
+  // Moneyline, spread and total cannot be ruled on, so a leftover rule on one of them is ignored.
+  return (s.marketRules as Array<Partial<MarketRuleRow>>).filter(
+    (r) => typeof r?.market === 'string' && !['h2h', 'spreads', 'totals'].includes(r.market),
+  );
+}
+
+export function blockedMarketRules(rawSettings: unknown): MarketRuleRow[] {
+  return activeRows(rawSettings)
+    .filter((r) => r.maxStake == null && r.maxSlots == null)
     .map((r) => ({ market: r.market as string, side: typeof r.side === 'string' ? r.side : null, maxStake: null }));
+}
+
+export function slotCapRules(rawSettings: unknown): MarketRuleRow[] {
+  return activeRows(rawSettings)
+    .filter((r) => typeof r.maxSlots === 'number' && r.maxSlots >= 1)
+    .map((r) => ({
+      market: r.market as string,
+      side: typeof r.side === 'string' ? r.side : null,
+      maxStake: typeof r.maxStake === 'number' ? r.maxStake : null,
+      maxSlots: r.maxSlots as number,
+    }));
 }
 
 export function isMarketBlocked(rules: MarketRuleRow[], market: string, side: string): boolean {
   return rules.some((r) => r.market === market && (r.side == null || r.side.toLowerCase() === side.toLowerCase()));
+}
+
+/** True when adding a pick on this market and side would break a slot cap, given the picks already in the lineup. */
+export function breaksSlotCap(rules: MarketRuleRow[], market: string, side: string, picksSoFar: Array<{ marketKey: string; side: string }>): boolean {
+  return rules.some((r) => {
+    if (r.market !== market || (r.side != null && r.side.toLowerCase() !== side.toLowerCase())) return false;
+    const used = picksSoFar.filter((p) => p.marketKey === r.market && (r.side == null || r.side.toLowerCase() === p.side.toLowerCase())).length;
+    return used >= (r.maxSlots as number);
+  });
 }

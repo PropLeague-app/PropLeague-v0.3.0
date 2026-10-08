@@ -258,8 +258,11 @@ export interface MarketRule {
   id: string;
   market: MarketKey;
   side: 'Over' | 'Under' | null;
-  /** null = blocked entirely; a number = the most that can be staked on one pick. */
+  /** A number = the most that can be staked on one pick. null with no `maxSlots` = blocked entirely. */
   maxStake: number | null;
+  /** A number = the most lineup slots that may hold a pick on this market (and side). Absent or null =
+   * no slot cap. A rule with a stake cap, a slot cap, or both is a "limit"; with neither it is a block. */
+  maxSlots?: number | null;
 }
 
 // --- Weekly Moments v2 (manual v0.03 §4) -----------------------------------
@@ -389,12 +392,6 @@ export interface LeagueSettings {
   moments: MomentSettings;
   propBetOverride: BetLimitOverride | null;
   mlBetOverride: BetLimitOverride | null;
-  /** Dev-panel-only (manual v0.03 §5 #10): when jumping ahead multiple weeks via
-   * "Simulate to Week N", auto-fill the user's own lineup for skipped weeks the same
-   * way simulated members already are, instead of scoring them as missed. Only applies
-   * to that multi-week dev jump — a single Advance Week click during normal play still
-   * penalizes a missed lineup as usual. */
-  autoFillUserLineupsWhenSimulating: boolean;
 }
 
 export const DEFAULT_LINEUP_SLOTS: Record<Position | 'ML', number> = {
@@ -452,7 +449,6 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   moments: DEFAULT_MOMENT_SETTINGS,
   propBetOverride: null,
   mlBetOverride: null,
-  autoFillUserLineupsWhenSimulating: true,
 };
 
 // --- League / teams / rosters ---------------------------------------------
@@ -605,6 +601,9 @@ export interface ActivityItem {
   message: string;
   pinned?: boolean;
   reactions?: Record<string, number>; // emoji -> total count across the league
+  /** Who reacted with what: emoji -> ids of the teams that picked it, earliest first. Powers the team logos
+   * on the reaction chips and the who-reacted popups. */
+  reactors?: Record<string, string[]>;
   /** The caller's own current reaction on this item, if any (manual v0.3.0 §6:
    * one reaction per person, selecting a different emoji switches it) -- kept
    * separate from the aggregate `reactions` counts above since that map has no
@@ -700,7 +699,11 @@ export interface League {
 // --- Profile ---------------------------------------------------------------
 
 export type OddsFormat = 'american' | 'decimal';
-export type ThemeMode = 'dark' | 'light';
+/** 'dark' is the app's original navy look, shown in Settings as "Midnight" (the key is kept so existing
+ * saved profiles need no migration); 'graphite' is the neutral gray/near-black dark theme, shown as "Dark". 'auto' follows the phone's light/dark setting. */
+export type ThemeMode = 'dark' | 'light' | 'graphite' | 'auto';
+/** What actually gets painted: 'auto' resolves to light or graphite from the phone's own appearance setting. */
+export type ResolvedTheme = Exclude<ThemeMode, 'auto'>;
 /** Matchup screen's cell density (see chat, Sept 2026 -- the pill/slot visual
  * cleanup): 'simple' is the heavily-reduced-clutter default (name + a single
  * abbreviated line + a one-letter result badge, sized to fit a whole roster on

@@ -1,8 +1,41 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '../useAppStore';
+import * as leagueService from '../../services/leagueService';
+import type { LeagueTeam } from '../../types';
+
+// The store talks to Supabase for anything that persists (settings, commissioner, leaving,
+// team/league identity). These tests are about what the store does with the result, so the
+// network layer is stubbed to succeed and the fixture leagues are built locally.
+vi.mock('../../services/supabaseLeague', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/supabaseLeague')>();
+  const ok = async () => ({ ok: true as const });
+  return {
+    ...actual,
+    // Echo "nothing changed server-side": the optimistic local edit stands, nothing is pending.
+    updateLeagueSettingsRemote: vi.fn(async () => ({
+      ok: true as const,
+      state: { locked: false, week: '1', settings: {}, pending: null },
+    })),
+    updateLeagueCommissionerRemote: vi.fn(ok),
+    leaveRealLeague: vi.fn(ok),
+    updateTeamIdentityRemote: vi.fn(ok),
+    updateLeagueIdentityRemote: vi.fn(ok),
+    updateTeamConferenceRemote: vi.fn(ok),
+  };
+});
+
+let nextLeague = 0;
+
+/** Builds a fresh, unstarted league the way the Create League screen does (service builds it,
+ * the store adds it and makes it current) and returns its id. */
+function createLeague(params: Omit<leagueService.CreateLeagueParams, 'id' | 'inviteCode' | 'userTeamId'>): string {
+  const id = `league-${++nextLeague}`;
+  const league = leagueService.createLeague({ ...params, id, inviteCode: `CODE${nextLeague}`, userTeamId: 'user' });
+  useAppStore.getState().addLeague(league);
+  return id;
+}
 
 function createTestLeague() {
-  const { createLeague } = useAppStore.getState();
   return createLeague({
     name: 'Test League',
     teamCount: 10,
@@ -32,7 +65,6 @@ describe('updateTargetTeamCount', () => {
   // itself — these two use an 8/16-team starting field so there's still a real
   // capacity ceiling to shrink past.
   it('auto-corrects an invalid playoff field size after shrinking below the new full capacity', () => {
-    const { createLeague } = useAppStore.getState();
     const leagueId = createLeague({
       name: 'Big Field League',
       teamCount: 10,
@@ -48,7 +80,6 @@ describe('updateTargetTeamCount', () => {
   });
 
   it('falls back elimination type to single when the corrected field size cannot support double-elim', () => {
-    const { createLeague } = useAppStore.getState();
     const leagueId = createLeague({
       name: 'Big Field League',
       teamCount: 10,
@@ -65,7 +96,6 @@ describe('updateTargetTeamCount', () => {
   });
 
   it('keeps double-elim when the corrected field size still supports it', () => {
-    const { createLeague } = useAppStore.getState();
     const leagueId = createLeague({
       name: 'Big Field League',
       teamCount: 20,
@@ -81,12 +111,29 @@ describe('updateTargetTeamCount', () => {
     expect(settings.eliminationType).toBe('double');
   });
 
-  it('ignores the resize once the league has been filled with more than one team', () => {
+  // The gate is "has a schedule been generated", not team count: real invite-code joins can
+  // leave a multi-team league that has not started yet, and that must still be resizable.
+  it('still resizes a multi-team league until the season has a schedule', () => {
     const leagueId = createTestLeague();
     useAppStore.setState((s) => ({
       leagues: {
         ...s.leagues,
-        [leagueId]: { ...s.leagues[leagueId], teams: [...s.leagues[leagueId].teams, { ...s.leagues[leagueId].teams[0], id: 'sim-1' }] },
+        [leagueId]: { ...s.leagues[leagueId], teams: [...s.leagues[leagueId].teams, { ...s.leagues[leagueId].teams[0], id: 'joined-1' }] },
+      },
+    }));
+    useAppStore.getState().updateTargetTeamCount(leagueId, 8);
+    expect(useAppStore.getState().leagues[leagueId].targetTeamCount).toBe(8);
+  });
+
+  it('ignores the resize once the season has been scheduled', () => {
+    const leagueId = createTestLeague();
+    useAppStore.setState((s) => ({
+      leagues: {
+        ...s.leagues,
+        [leagueId]: {
+          ...s.leagues[leagueId],
+          matchupsByWeek: { '1': [{ id: 'm1', week: 1, teamAId: 'user', teamBId: 'sim-1' } as never] },
+        },
       },
     }));
     useAppStore.getState().updateTargetTeamCount(leagueId, 8);
@@ -102,25 +149,25 @@ describe('updateTargetTeamCount', () => {
   });
 });
 
-// manual v0.2.0 §6 #12: leaving converts the user's team to a simulated one rather
-// than deleting it, and is blocked while the user still holds the commissioner role.
-//
-// transferCommissioner/leaveLeague now hit Supabase for real (see chat: both were
-// 100% local-only before, which is the bug this whole fix is for), so these fixture
-// leagues -- built with the pure-local leagueService.createLeague, with no matching
-// row in the real `leagues` table -- can no longer exercise the happy path against
-// the actual network calls the way they could when both actions were synchronous
-// and local-only. Left `await`-correct and un-skipped so they document the intended
-// behavior and are ready to go once the supabase client is mocked here (there's no
-// test runner wired into this repo at all yet -- no vitest dependency, no script,
-// and __tests__ is excluded from the tsc build -- so nothing currently executes
-// this file either way); the earlier version of these tests only ever passed
-// because the local-only implementation never touched the network in the first
-// place, not because it was correct against a real backend.
+// manual v0.2.0 §6 #12: leaving is blocked while the user still holds the commissioner
+// role. Both actions persist through Supabase (stubbed above), and a successful leave drops
+// the league from local state entirely.
 describe('leaveLeague / transferCommissioner', () => {
+  /** A league with a second team to hand the commissioner role to. */
   function filledTestLeague() {
     const leagueId = createTestLeague();
-    useAppStore.getState().fillWithSimulatedTeams(leagueId, 10);
+    const other: LeagueTeam = {
+      ...useAppStore.getState().leagues[leagueId].teams[0],
+      id: 'sim-1',
+      ownerName: 'Bot',
+      teamName: 'Bot Team',
+      abbrev: 'BT',
+      isUser: false,
+      isSimulated: true,
+    };
+    useAppStore.setState((st) => ({
+      leagues: { ...st.leagues, [leagueId]: { ...st.leagues[leagueId], teams: [...st.leagues[leagueId].teams, other] } },
+    }));
     return leagueId;
   }
 
@@ -149,17 +196,11 @@ describe('leaveLeague / transferCommissioner', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('converts the departing team to simulated, keeping its identity/history intact', async () => {
+  it('drops the league from local state once the leave succeeds', async () => {
     const leagueId = filledTestLeague();
     await useAppStore.getState().transferCommissioner(leagueId, 'sim-1');
     await useAppStore.getState().leaveLeague(leagueId);
-    const league = useAppStore.getState().leagues[leagueId];
-    // leaveLeague now drops the league from local state entirely on success
-    // (it's no longer "mine" at all, not just simulated -- see chat), so this
-    // fixture would need to re-add it post-leave to inspect the departed
-    // team's shape; left as a placeholder rather than asserting on state this
-    // action deliberately no longer keeps.
-    expect(league).toBeUndefined();
+    expect(useAppStore.getState().leagues[leagueId]).toBeUndefined();
   });
 
   it('clears currentLeagueId when leaving the currently-active league', async () => {
@@ -183,7 +224,6 @@ describe('leaveLeague / transferCommissioner', () => {
 describe('setCurrentLeague (switching)', () => {
   it('swaps which league is active without touching either league\'s data', () => {
     const leagueAId = createTestLeague();
-    const { createLeague } = useAppStore.getState();
     const leagueBId = createLeague({
       name: 'Second League',
       teamCount: 6,
@@ -192,7 +232,7 @@ describe('setCurrentLeague (switching)', () => {
       userTeamAbbrev: 'MO',
       userLogoColor: '#4C8DF5',
     });
-    expect(useAppStore.getState().currentLeagueId).toBe(leagueBId); // createLeague auto-switches to the new one
+    expect(useAppStore.getState().currentLeagueId).toBe(leagueBId); // adding a league makes it the current one
 
     useAppStore.getState().setCurrentLeague(leagueAId);
     expect(useAppStore.getState().currentLeagueId).toBe(leagueAId);
@@ -209,10 +249,10 @@ describe('setCurrentLeague (switching)', () => {
 // editor (e.g. league name, a toggle). Each store action is a true partial patch, so
 // editing A then editing-and-saving B must leave A's value exactly as it was.
 describe('cross-editor save sequencing (manual v0.2.1 §2 #1 regression)', () => {
-  it('editing the league name then saving the league logo leaves the name untouched', () => {
+  it('editing the league name then saving the league logo leaves the name untouched', async () => {
     const leagueId = createTestLeague();
     const { updateSettings, updateLeagueLogo } = useAppStore.getState();
-    updateSettings(leagueId, { leagueName: 'Edited League Name' }); // edit A
+    await updateSettings(leagueId, { leagueName: 'Edited League Name' }); // edit A
     updateLeagueLogo(leagueId, { logoMode: 'emoji', logoEmoji: '⚽', logoColor: '#4C8DF5', logoDataUrl: null }); // save B (clean partial)
     const league = useAppStore.getState().leagues[leagueId];
     expect(league.settings.leagueName).toBe('Edited League Name');
@@ -230,10 +270,10 @@ describe('cross-editor save sequencing (manual v0.2.1 §2 #1 regression)', () =>
     expect(userTeam.logoEmoji).toBe('🐉');
   });
 
-  it('toggling an unrelated advanced setting survives a subsequent logo save', () => {
+  it('toggling an unrelated advanced setting survives a subsequent logo save', async () => {
     const leagueId = createTestLeague();
     const { updateSettings, updateLeagueLogo } = useAppStore.getState();
-    updateSettings(leagueId, { hidePicks: true, correlationBlockEnabled: true }); // edit A (multiple toggles)
+    await updateSettings(leagueId, { hidePicks: true, correlationBlockEnabled: true }); // edit A (multiple toggles)
     updateLeagueLogo(leagueId, { logoMode: 'initials', logoEmoji: '🏈', logoColor: '#FF0000', logoDataUrl: null }); // save B
     const settings = useAppStore.getState().leagues[leagueId].settings;
     expect(settings.hidePicks).toBe(true);

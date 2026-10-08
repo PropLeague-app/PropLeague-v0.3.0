@@ -35,7 +35,8 @@ export function normalizeAmericanOdds(price: number): number {
 }
 
 export function formatOdds(odds: number, format: OddsFormat): string {
-  if (format === 'decimal') return americanToDecimal(odds).toFixed(2);
+  // The trailing x marks it as a payout multiplier (1.90x), so it reads as odds and not as a line or stat.
+  if (format === 'decimal') return `${americanToDecimal(odds).toFixed(2)}x`;
   return odds > 0 ? `+${odds}` : `${odds}`;
 }
 

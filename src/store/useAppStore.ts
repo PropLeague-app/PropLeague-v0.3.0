@@ -3,12 +3,10 @@ import { persist } from 'zustand/middleware';
 import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, MatchupDetailMode, NFLGame, OddsFormat, PlayoffFieldSize, ThemeMode, UserProfile, WeekId } from '../types';
 import { DEFAULT_LEAGUE_SETTINGS, TEAM_LOGO_EMOJIS } from '../types';
 import * as leagueService from '../services/leagueService';
-import * as simulationService from '../services/simulationService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { validateLineup } from '../engine/validation';
 import { isWagerScratched } from '../engine/settlement';
-import { findClaimingTeam, ClaimTracker } from '../engine/duplicatePicks';
-import { generateAutoLineup } from '../engine/autoLineup';
+import { findClaimingTeam } from '../engine/duplicatePicks';
 import { fieldSizeOptionsForTeamCount, doubleEliminationAvailable } from '../engine/playoffs';
 import { resolveGame, gameHasStarted } from '../services/oddsService';
 import {
@@ -27,15 +25,15 @@ import {
   markSeasonStartedRemote,
 } from '../services/supabaseLeague';
 import { placeWagerRemote, updateWagerStakeRemote, clearWagerRemote, submitRosterRemote, fetchLeagueRostersForWeek } from '../services/supabaseRoster';
-import { upsertMatchupRemote, upsertStandingRemote, settleWagerRemote, updateLeagueWeekRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
+import { upsertMatchupRemote, upsertStandingRemote, fetchLeagueMatchups, fetchLeagueStandings, fetchLeagueProgress } from '../services/supabaseSettlement';
 import { postAnnouncementRemote, setAnnouncementPinnedRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity, deleteAnnouncementRemote } from '../services/supabaseActivity';
 import { postChatMessageRemote, fetchLeagueChat, deleteChatMessageRemote } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
 import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
 import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
-import { gamesForWeek } from '../data/seed';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
+import { moveReactor } from '../engine/reactions';
 import { effectiveSettings, meaningfulPending, splitPendingSettings } from '../engine/settingsRules';
 
 interface PlaceWagerParams {
@@ -125,13 +123,7 @@ interface AppState {
   loadLeagueResults: (leagueId: string) => Promise<void>;
   syncVoidedPicks: (leagueId: string, week: WeekId) => void;
 
-  advanceWeek: (leagueId: string) => Promise<void>;
-  simulateToWeek: (leagueId: string, week: number) => void;
-  autoFillUserLineup: (leagueId: string) => void;
-  resetSeason: (leagueId: string) => void;
   factoryReset: () => void;
-  setGameOverride: (leagueId: string, gameId: string, status: 'live' | 'final') => void;
-  simulateDay: (leagueId: string, daySlot: string) => void;
   postAnnouncement: (leagueId: string, message: string, pinned?: boolean) => Promise<{ ok: boolean; error?: string }>;
   setAnnouncementPinned: (leagueId: string, itemId: string, pinned: boolean) => Promise<{ ok: boolean; error?: string }>;
   deleteAnnouncement: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -443,9 +435,7 @@ export const useAppStore = create<AppState>()(
         // The name and visibility used to be saved only inside the settings blob, never in
         // their own columns, so prefer the blob's copy when present (it is what the
         // commissioner actually typed); the RPC now keeps both in step.
-        const blobName = typeof meta.settings?.leagueName === 'string' ? meta.settings.leagueName.trim() : '';
-        const name = blobName || meta.name;
-        const isPublic = typeof meta.settings?.isPublic === 'boolean' ? meta.settings.isPublic : meta.isPublic;
+        const { name, isPublic } = leagueService.resolveLeagueIdentity(meta);
         const settings: LeagueSettings = {
           ...DEFAULT_LEAGUE_SETTINGS,
           ...meta.settings,
@@ -867,96 +857,11 @@ export const useAppStore = create<AppState>()(
         );
       },
 
-      // The season simulation itself is still computed locally exactly as before —
-      // see the chat for why porting the whole playoffs/moments/prize-pool engine to
-      // SQL right now would be both risky and premature. What's new: once computed,
-      // the settled week's matchup results, standings, and wager statuses are pushed
-      // to Supabase so every real league member sees the same shared result, not just
-      // whoever clicked Advance Week. This makes the commissioner a trusted reporter
-      // of results, not a cryptographically-enforced one — an accepted trade-off for
-      // now, worth hardening once real settlement data (vs. today's simulated
-      // outcomes) makes server-side enforcement actually meaningful.
-      advanceWeek: async (leagueId) => {
-        const league = get().leagues[leagueId];
-        if (!league) return;
-
-        const settledWeek = league.currentWeek;
-        const updatedLeague = simulationService.advanceWeek(league);
-        if (updatedLeague === league) return;
-
-        const settledMatchups = updatedLeague.matchupsByWeek[String(settledWeek)] ?? [];
-        for (const m of settledMatchups) {
-          await upsertMatchupRemote(leagueId, String(settledWeek), m.teamAId, m.teamBId, m.teamAScore, m.teamBScore, m.winnerId, m.isTie);
-        }
-
-        // Bot-team wagers never went through place_wager (Step 4 scope boundary — see
-        // chat), so there's no real row for them to settle. Real teams only.
-        const realTeamIds = new Set(updatedLeague.teams.filter((t) => !t.isSimulated).map((t) => t.id));
-        for (const team of updatedLeague.teams) {
-          if (!realTeamIds.has(team.id)) continue;
-          const roster = updatedLeague.rostersByTeamWeek[rosterKey(team.id, settledWeek)];
-          if (!roster) continue;
-          for (const slot of roster.slots) {
-            if (!slot.wager || slot.wager.status === 'pending') continue;
-            await settleWagerRemote(slot.wager.id, slot.wager.status, slot.wager.settledProfit);
-          }
-        }
-
-        for (const standing of updatedLeague.standings) {
-          await upsertStandingRemote(standing);
-        }
-
-        await updateLeagueWeekRemote(leagueId, String(updatedLeague.currentWeek), updatedLeague.seasonPhase, updatedLeague.bracket);
-        await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
-
-        set((state) => updateLeague(state, leagueId, () => updatedLeague));
-      },
-
-      autoFillUserLineup: (leagueId) =>
-        set((state) =>
-          updateLeague(state, leagueId, (league) => {
-            const userTeam = league.teams.find((t) => t.isUser);
-            if (!userTeam) return league;
-            const key = rosterKey(userTeam.id, league.currentWeek);
-            const games = gamesForWeek(league.currentWeek);
-            const claims = new ClaimTracker(league, league.currentWeek);
-            const roster = generateAutoLineup(userTeam.id, league.currentWeek, league.settings, games, (g, m, p, s, pt) =>
-              claims.isTaken(g, m, p, s, pt),
-            );
-            return { ...league, rostersByTeamWeek: { ...league.rostersByTeamWeek, [key]: roster } };
-          }),
-        ),
-
-      simulateToWeek: (leagueId, week) =>
-        set((state) => updateLeague(state, leagueId, (league) => simulationService.simulateToWeek(league, week))),
-
-      resetSeason: (leagueId) =>
-        set((state) => updateLeague(state, leagueId, (league) => simulationService.resetSeason(league))),
-
       // manual v0.1.1 §7 #11: wipes every persisted field (profile, leagues,
-      // currentLeagueId) and drops back to onboarding — distinct from Reset Season,
-      // which only rewinds one league's season data and keeps the profile/league intact.
+      // currentLeagueId) and drops back to onboarding.
       factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {}, seenMatchupResultIds: {} }),
       markMatchupResultSeen: (matchupId) =>
         set((state) => ({ seenMatchupResultIds: { ...state.seenMatchupResultIds, [matchupId]: true } })),
-
-      setGameOverride: (leagueId, gameId, status) =>
-        set((state) =>
-          updateLeague(state, leagueId, (league) => ({
-            ...league,
-            manualGameOverrides: { ...league.manualGameOverrides, [gameId]: status },
-          })),
-        ),
-
-      simulateDay: (leagueId, daySlot) =>
-        set((state) =>
-          updateLeague(state, leagueId, (league) => {
-            const dayGames = gamesForWeek(league.currentWeek).filter((g) => g.daySlot === daySlot);
-            const overrides = { ...league.manualGameOverrides };
-            for (const g of dayGames) overrides[g.id] = 'final';
-            return { ...league, manualGameOverrides: overrides };
-          }),
-        ),
 
       postAnnouncement: async (leagueId, message, pinned = false) => {
         const userTeam = get().leagues[leagueId]?.teams.find((t) => t.isUser);
@@ -997,6 +902,7 @@ export const useAppStore = create<AppState>()(
       reactToActivity: async (leagueId, itemId, emoji) => {
         const result = await reactToActivityRemote(itemId, emoji);
         if (!result.ok) return;
+        const myTeamId = get().leagues[leagueId]?.teams.find((t) => t.isUser)?.id;
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
@@ -1009,11 +915,12 @@ export const useAppStore = create<AppState>()(
                 if (next > 0) reactions[prev] = next;
                 else delete reactions[prev];
               }
+              const reactors = myTeamId ? moveReactor(item.reactors, myTeamId, emoji) : item.reactors;
               if (prev === emoji) {
-                return { ...item, reactions, myReaction: undefined };
+                return { ...item, reactions, reactors, myReaction: undefined };
               }
               reactions[emoji] = (reactions[emoji] ?? 0) + 1;
-              return { ...item, reactions, myReaction: emoji };
+              return { ...item, reactions, reactors, myReaction: emoji };
             }),
           })),
         );
@@ -1096,22 +1003,40 @@ export const useAppStore = create<AppState>()(
         for (const { leagueId, teamId } of membershipsResult.memberships) {
           const [metaResult, teamsResult, lockedResult] = await Promise.all([fetchLeagueMeta(leagueId), fetchLeagueTeams(leagueId), fetchSettingsLocked(leagueId)]);
           if (!metaResult.ok || !teamsResult.ok) continue; // skip a league we couldn't load rather than fail the whole hydration
+          // Same name/visibility rule as refreshLeagueSettings, so the league switcher and header show the
+          // commissioner's real name without having to open that league's Settings first.
+          const identity = leagueService.resolveLeagueIdentity(metaResult);
           const league = leagueService.buildLeagueFromRealTeams({
             id: metaResult.id,
-            name: metaResult.name,
+            name: identity.name,
             inviteCode: metaResult.inviteCode,
             commissionerTeamId: metaResult.commissionerTeamId ?? '',
             targetTeamCount: metaResult.targetTeamCount,
-            isPublic: metaResult.isPublic,
+            isPublic: identity.isPublic,
             teams: teamsResult.teams,
             settingsOverrides: metaResult.settings,
             seasonStartWeek: metaResult.seasonStartWeek,
           });
+          // buildLeagueFromRealTeams only knows placeholder logos (initials, trophy, no image), so apply the
+          // real ones here. Without this every league that had not been opened and refreshed this session
+          // showed initials in the league switcher, and image logos on teams vanished until a refresh.
+          const leagueLogo: Partial<League> = metaResult.logoStoragePath
+            ? { logoMode: 'image', logoDataUrl: getLogoPublicUrl(metaResult.logoStoragePath) }
+            : {
+                ...(metaResult.logoMode ? { logoMode: metaResult.logoMode as League['logoMode'] } : {}),
+                ...(metaResult.logoEmoji ? { logoEmoji: metaResult.logoEmoji } : {}),
+                ...(metaResult.logoColor ? { logoColor: metaResult.logoColor } : {}),
+              };
           builtLeagues[league.id] = {
             ...league,
+            ...leagueLogo,
             pendingSettings: meaningfulPending(league.settings, metaResult.pendingSettings),
             settingsLocked: lockedResult ?? false,
-            teams: league.teams.map((t) => (t.id === teamId ? { ...t, isUser: true } : t)),
+            teams: league.teams.map((t) => {
+              const logoPath = teamsResult.teams.find((f) => f.id === t.id)?.logoStoragePath;
+              const withLogo = logoPath ? { ...t, logoMode: 'image' as const, logoDataUrl: getLogoPublicUrl(logoPath) } : t;
+              return t.id === teamId ? { ...withLogo, isUser: true } : withLogo;
+            }),
           };
         }
 

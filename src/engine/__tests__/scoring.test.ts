@@ -91,14 +91,18 @@ describe('expectedScoreDistribution + matchupWinProbability', () => {
     expect(matchupWinProbability(distTied, distTied)).toBe(0.5);
   });
 
-  it('a small stake on a heavy favorite contributes little either way vs. a real stake', () => {
+  it('an undecided pick has zero expected value at any stake; only its spread grows with the stake', () => {
     const base = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
     const tinyFavorite = wagerSlot(base, 0, { stake: 5, oddsAtPlacement: -300 });
     const realFavorite = wagerSlot(base, 0, { stake: 50, oddsAtPlacement: -300 });
     const distTiny = expectedScoreDistribution(tinyFavorite, DEFAULT_LEAGUE_SETTINGS);
     const distReal = expectedScoreDistribution(realFavorite, DEFAULT_LEAGUE_SETTINGS);
-    expect(Math.abs(distTiny.mean)).toBeLessThan(Math.abs(distReal.mean));
-    expect(distTiny.variance).toBeLessThan(distReal.variance);
+    expect(distTiny.mean).toBe(0);
+    expect(distReal.mean).toBe(0);
+    // Compared after the last kickoff so the empty slots' phantom bets drop out and only the pick's own spread is left.
+    const lockedTiny = expectedScoreDistribution(tinyFavorite, DEFAULT_LEAGUE_SETTINGS, undefined, true);
+    const lockedReal = expectedScoreDistribution(realFavorite, DEFAULT_LEAGUE_SETTINGS, undefined, true);
+    expect(lockedTiny.variance).toBeLessThan(lockedReal.variance);
   });
 });
 
@@ -123,6 +127,16 @@ describe('displayWeeklyScore (penalty only after the last kickoff)', () => {
     expect(displayWeeklyScore({ ...args, penaltyLive: false, isFinal: false })).toBe(9);
     expect(displayWeeklyScore({ ...args, penaltyLive: true, isFinal: false })).toBe(-81);
     expect(displayWeeklyScore({ ...args, penaltyLive: true, isFinal: true })).toBe(9);
+  });
+
+  it('pending picks add nothing before they settle, however the odds round (no phantom $0.01)', () => {
+    let roster = base;
+    [-113, -103, 150, -250, 105].forEach((odds, i) => {
+      roster = wagerSlot(roster, i, { stake: 7 + i * 3.37, oddsAtPlacement: odds });
+    });
+    const shown = displayWeeklyScore({ serverScore: null, roster, settings: DEFAULT_LEAGUE_SETTINGS, penaltyLive: false, isFinal: false });
+    expect(Object.is(shown, 0)).toBe(true);
+    expect(expectedScoreDistribution(roster, DEFAULT_LEAGUE_SETTINGS).mean).toBe(0);
   });
 
   it('float crumbs round to a clean $0.00, never -0 or a tiny sign', () => {

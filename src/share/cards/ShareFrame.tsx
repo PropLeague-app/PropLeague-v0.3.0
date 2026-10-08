@@ -75,7 +75,7 @@ export function ShareFrame({
         gap: 24,
         fontFamily: FONT,
         color: C.text,
-        background: `radial-gradient(900px 600px at 100% 0%, ${tint(C.primary, 22)}, transparent 70%), linear-gradient(160deg, ${C.bg2}, ${C.bg})`,
+        background: `radial-gradient(900px 600px at 100% 0%, ${C.glow}, transparent 70%), linear-gradient(160deg, ${C.bg2}, ${C.bg})`,
         overflow: 'hidden',
       }}
     >

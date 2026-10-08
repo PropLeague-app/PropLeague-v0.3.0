@@ -189,7 +189,7 @@ export function FullStandings() {
           <button
             onClick={() => setAdvancedOpen((v) => !v)}
             className={`shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border ${
-              advancedOpen ? 'border-primary text-primary bg-primary/10' : 'border-border text-text-muted'
+              advancedOpen ? 'sel-pill' : 'border-border text-text-muted'
             }`}
           >
             {advancedOpen ? 'Hide advanced' : 'Show advanced'}

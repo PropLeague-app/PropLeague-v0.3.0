@@ -245,12 +245,6 @@ export function teamsActiveInWeek(bracket: PlayoffBracket, weekId: WeekId): stri
   return [...ids];
 }
 
-/** Whether the bracket has any match still waiting to be played (used to know when a
- * league has finished its whole postseason, including any bracket-reset game). */
-export function bracketInProgress(bracket: PlayoffBracket): boolean {
-  return bracket.championId == null;
-}
-
 export function championAndRunnerUp(bracket: PlayoffBracket | null): { championId: string | null; runnerUpId: string | null } {
   if (!bracket?.championId) return { championId: null, runnerUpId: null };
   const decidingId = bracket.matches.some((m) => m.id === 'RESET')

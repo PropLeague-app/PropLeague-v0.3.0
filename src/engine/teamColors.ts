@@ -4,11 +4,11 @@
 // (Steelers gold), and either one disappears on one of the two themes. This nudges a color
 // toward the theme's text color just far enough to clear a contrast target against the card (3.5:1, enough for bold, large text on a tinted pill), so
 // it still looks like the team but is always legible. The card/text values mirror index.css.
-import type { ThemeMode } from '../types';
+import type { ResolvedTheme } from '../types';
 import { NFL_TEAMS } from '../data/nflTeams';
 
-const CARD: Record<ThemeMode, string> = { dark: '#1e2a3d', light: '#fbfcfe' };
-const TEXT: Record<ThemeMode, string> = { dark: '#e8ecf5', light: '#202838' };
+const CARD: Record<ResolvedTheme, string> = { dark: '#1e2a3d', light: '#fbfcfe', graphite: '#1c1c1f' };
+const TEXT: Record<ResolvedTheme, string> = { dark: '#e8ecf5', light: '#202838', graphite: '#ececee' };
 
 type RGB = [number, number, number];
 
@@ -43,7 +43,7 @@ function mix(from: RGB, to: RGB, t: number): RGB {
 
 /** The color, pulled toward the theme's text color only as far as needed to reach `target`
  * contrast against the card. `amount` is how far it moved (0 = untouched, 1 = fully text color). */
-export function readableOnCard(hex: string, mode: ThemeMode, target = 3.5): { color: string; amount: number } {
+export function readableOnCard(hex: string, mode: ResolvedTheme, target = 3.5): { color: string; amount: number } {
   const card = CARD[mode];
   const text = parseHex(TEXT[mode]);
   const base = parseHex(hex);
@@ -57,7 +57,7 @@ export function readableOnCard(hex: string, mode: ThemeMode, target = 3.5): { co
 
 /** The color to use for a team on a card: its primary color, unless that needed a big shove
  * and the secondary color is a better fit. Unknown team returns null. */
-export function teamAccent(abbrev: string | null | undefined, mode: ThemeMode): string | null {
+export function teamAccent(abbrev: string | null | undefined, mode: ResolvedTheme): string | null {
   if (!abbrev) return null;
   const team = NFL_TEAMS.find((t) => t.abbrev === abbrev.toUpperCase());
   if (!team) return null;

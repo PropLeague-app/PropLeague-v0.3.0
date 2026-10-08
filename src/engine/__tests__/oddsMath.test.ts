@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { americanToDecimal, americanToImpliedProbability, profitForStake, formatCents } from '../oddsMath';
+import { americanToDecimal, americanToImpliedProbability, profitForStake, formatCents, formatOdds } from '../oddsMath';
 
 describe('oddsMath', () => {
   it('matches the spec examples exactly (stake excluded from profit)', () => {
@@ -24,5 +24,16 @@ describe('oddsMath', () => {
     expect(formatCents(-1e-15)).toBe('$0.00');
     expect(formatCents(-0.004)).toBe('$0.00');
     expect(formatCents(0)).toBe('$0.00');
+  });
+});
+
+describe('formatOdds', () => {
+  it('shows decimal odds with a trailing x so they read as a multiplier', () => {
+    expect(formatOdds(-110, 'decimal')).toBe('1.91x');
+    expect(formatOdds(150, 'decimal')).toBe('2.50x');
+  });
+  it('leaves American odds signed and unchanged', () => {
+    expect(formatOdds(-110, 'american')).toBe('-110');
+    expect(formatOdds(150, 'american')).toBe('+150');
   });
 });

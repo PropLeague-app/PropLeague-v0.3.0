@@ -16,6 +16,12 @@ export interface RealLeagueMeta {
   settings: Partial<LeagueSettings> | null;
   /** Gameplay changes scheduled for the next week (leagues.pending_settings, migration 0027). */
   pendingSettings: Partial<LeagueSettings> | null;
+  /** The league's own logo. Fetched with the rest of the meta so the league switcher can show every
+   * league's real logo at launch, not just the one that has been opened and refreshed. */
+  logoStoragePath: string | null;
+  logoMode: string | null;
+  logoEmoji: string | null;
+  logoColor: string | null;
   /** Null until the commissioner presses "Start Season" (see chat,
    * 0013_season_start_week.sql / start_season RPC). */
   seasonStartWeek: string | null;
@@ -164,7 +170,7 @@ export async function rejoinRealLeague(params: {
 export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<RealLeagueMeta>> {
   const { data, error } = await supabase
     .from('leagues')
-    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings, pending_settings, season_start_week')
+    .select('id, name, invite_code, commissioner_team_id, target_team_count, is_public, settings, pending_settings, season_start_week, logo_storage_path, logo_mode, logo_emoji, logo_color')
     .eq('id', leagueId)
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? 'League not found.' };
@@ -179,6 +185,10 @@ export async function fetchLeagueMeta(leagueId: string): Promise<ServiceResult<R
     seasonStartWeek: data.season_start_week,
     settings: data.settings ?? null,
     pendingSettings: (data as { pending_settings?: Partial<LeagueSettings> | null }).pending_settings ?? null,
+    logoStoragePath: data.logo_storage_path ?? null,
+    logoMode: data.logo_mode ?? null,
+    logoEmoji: data.logo_emoji ?? null,
+    logoColor: data.logo_color ?? null,
   };
 }
 

@@ -1,3 +1,5 @@
+import { useResolvedTheme } from '../../hooks/useResolvedTheme';
+
 /**
  * Bankroll strip for the Lineup screen: a slim, full-width band under the title. The headline is what
  * is still unspent (unspent credits are what cost you at lock), with what is already in play on the
@@ -34,19 +36,32 @@ export function BudgetBar({
   const solidPct = total > 0 ? Math.min(100, (allocated / total) * 100) : 0;
   const pendingPct = total > 0 ? Math.min(100 - solidPct, (pending / total) * 100) : 0;
   // Orange with little allocated, yellow at 50%, green once most of it is in play (see toneHue).
-  const tone = over ? 'hsl(0 78% 62%)' : `hsl(${Math.round(toneHue(share))} 74% ${Math.round(54 - 6 * share)}%)`;
+  // Light mode: the same hue scale, but darker so it holds up on a pale background. `tone` colors the
+  // bar and `ink` the text and icon (text needs more contrast than a bar does), over a darker gray track.
+  const light = useResolvedTheme() === 'light';
+  const hue = Math.round(toneHue(share));
+  const tone = over
+    ? light ? 'hsl(0 72% 48%)' : 'hsl(0 78% 62%)'
+    : light ? `hsl(${hue} 80% ${Math.round(46 - 8 * share)}%)` : `hsl(${hue} 74% ${Math.round(54 - 6 * share)}%)`;
+  const ink = over
+    ? light ? 'hsl(0 72% 40%)' : tone
+    : light ? `hsl(${hue} 90% ${Math.round(31 - 5 * share)}%)` : tone;
+  const track = light
+    ? 'color-mix(in oklab, var(--color-text) 22%, var(--color-bg))'
+    : 'color-mix(in oklab, var(--color-border) 70%, transparent)';
   const hatch = `repeating-linear-gradient(135deg, ${tone} 0 3px, transparent 3px 6px)`;
-  const barH = hasPending ? 5 : 2;
+  // Fixed so the strip never changes height when a pending stake appears.
+  const barH = 4;
   return (
     <div className={`relative bg-bg border-border ${attached ? 'border-b' : '-mx-4 border-y'}`}>
-      <div className={`flex items-center gap-2 px-4 pt-1.5 ${hasPending ? 'pb-3' : 'pb-2'}`}>
+      <div className={`flex items-center gap-2 px-4 pt-1.5 pb-2.5`}>
         <span
           className="w-[18px] h-[18px] rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold leading-none"
-          style={{ color: tone, boxShadow: `inset 0 0 0 1.25px ${tone}` }}
+          style={{ color: ink, boxShadow: `inset 0 0 0 1.25px ${ink}` }}
         >
           $
         </span>
-        <span className="text-base font-bold tabular-nums leading-none tracking-tight" style={{ color: tone }}>
+        <span className="text-base font-bold tabular-nums leading-none tracking-tight" style={{ color: ink }}>
           {over ? `-$${(projected - total).toFixed(2)}` : `$${remaining.toFixed(2)}`}
         </span>
         <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">
@@ -55,7 +70,7 @@ export function BudgetBar({
         <span className="ml-auto flex items-center gap-1.5">
           <span className="text-xs font-semibold tabular-nums text-text">${allocated.toFixed(2)}</span>
           {hasPending ? (
-            <span className="text-xs font-semibold tabular-nums" style={{ color: tone }}>
+            <span className="text-xs font-semibold tabular-nums" style={{ color: ink }}>
               +${pending.toFixed(2)}
             </span>
           ) : null}
@@ -64,14 +79,14 @@ export function BudgetBar({
       </div>
       <div
         className="absolute left-0 right-0 bottom-0 flex"
-        style={{ height: barH, background: 'color-mix(in oklab, var(--color-border) 70%, transparent)' }}
+        style={{ height: barH, background: track }}
       >
         <div
           className="h-full transition-all duration-300"
           style={{
             width: `${solidPct}%`,
             background: tone,
-            boxShadow: solidPct > 0 ? `0 0 6px ${tone}` : undefined,
+            boxShadow: solidPct > 0 && !light ? `0 0 6px ${tone}` : undefined,
           }}
         />
         {hasPending && pendingPct > 0 ? (

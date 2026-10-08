@@ -1,4 +1,5 @@
-import { activeMarketRules, marketBlockReason } from '../engine/marketRules';
+import { activeMarketRules, marketBlockReason, marketSlotCapReason } from '../engine/marketRules';
+import { PillSelect } from '../components/common/PillSelect';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
@@ -123,9 +124,18 @@ export function MarketBrowser() {
    * claimed by someone else. */
   const currentLeague = league;
   const currentUserTeam = userTeam;
+  const currentRoster = roster;
   function checkBlockedFor(gameId: string, marketKey: MarketKey, playerId: string | undefined) {
     return (outcome: OddsOutcome): string | null => {
-      const ruleBlock = marketBlockReason(activeMarketRules(currentLeague.settings), marketKey, outcome.name);
+      const rules = activeMarketRules(currentLeague.settings);
+      const ruleBlock =
+        marketBlockReason(rules, marketKey, outcome.name) ??
+        marketSlotCapReason(
+          rules,
+          marketKey,
+          outcome.name,
+          currentRoster.slots.flatMap((sl) => (sl.slotId !== slotId && sl.wager ? [{ marketKey: sl.wager.marketKey, side: sl.wager.side }] : [])),
+        );
       if (ruleBlock) return ruleBlock;
       const claimingTeamId = findClaimingTeam(
         currentLeague,
@@ -190,31 +200,26 @@ export function MarketBrowser() {
         )}
         <div className="space-y-2">
           <div className="flex gap-2">
-            <select
+            <PillSelect
+              fill
+              ariaLabel="Filter by game"
               value={gameFilter}
-              onChange={(e) => setGameFilter(e.target.value)}
-              className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0"
-            >
-              <option value="all">All games</option>
-              {games.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {nflTeamById(g.awayTeamId).abbrev} @ {nflTeamById(g.homeTeamId).abbrev}
-                </option>
-              ))}
-            </select>
+              onChange={setGameFilter}
+              active={gameFilter !== 'all'}
+              options={[
+                { value: 'all', label: 'All games' },
+                ...games.map((g) => ({ value: g.id, label: `${nflTeamById(g.awayTeamId).abbrev} @ ${nflTeamById(g.homeTeamId).abbrev}` })),
+              ]}
+            />
             {slot.position !== 'ML' && (
-              <select
+              <PillSelect
+                fill
+                ariaLabel="Filter by prop type"
                 value={propTypeFilter}
-                onChange={(e) => setPropTypeFilter(e.target.value as MarketKey | 'all')}
-                className="bg-bg-card border border-border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0"
-              >
-                <option value="all">All prop types</option>
-                {validMarketKeys.map((key) => (
-                  <option key={key} value={key}>
-                    {MARKET_LABELS[key]}
-                  </option>
-                ))}
-              </select>
+                onChange={setPropTypeFilter}
+                active={propTypeFilter !== 'all'}
+                options={[{ value: 'all', label: 'All prop types' }, ...validMarketKeys.map((key) => ({ value: key, label: MARKET_LABELS[key] }))]}
+              />
             )}
           </div>
           <input

@@ -80,9 +80,10 @@ export function expectedWeeklyScore(
       const result = decided.resultFor(s.wager.gameId);
       if (result) return sum + settleWager(s.wager, result).profit;
     }
-    const p = americanToImpliedProbability(s.wager.oddsAtPlacement);
-    const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
-    return sum + p * profit - (1 - p) * s.wager.stake;
+    // An undecided pick is worth exactly $0 until it settles: its expected value at its own implied
+    // probability is zero by definition. Computing it anyway left rounding crumbs (profit is rounded to
+    // cents) that added up across a lineup to a phantom $0.01 before anything had played.
+    return sum;
   }, 0);
   return expected + (includeIncompletePenalty ? computeIncompleteLineupPenalty(roster, settings) : 0) - pen.fee;
 }
@@ -188,7 +189,7 @@ export function expectedScoreDistribution(
     }
     const p = americanToImpliedProbability(s.wager.oddsAtPlacement);
     const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
-    mean += p * profit - (1 - p) * s.wager.stake;
+    // Mean contribution is exactly 0 (see expectedWeeklyScore); only the spread is real.
     variance += p * (1 - p) * (profit + s.wager.stake) ** 2;
   }
 

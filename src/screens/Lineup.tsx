@@ -8,6 +8,9 @@ import { computeIncompleteLineupPenalty } from '../engine/scoring';
 import { activeMultipliers } from '../engine/prizePool';
 import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
+import { StakeEditSheet } from '../components/roster/StakeEditSheet';
+import { activeMarketRules, marketMaxStake } from '../engine/marketRules';
+import type { StakeContext } from '../engine/stakeRules';
 import { ConfirmSheet } from '../components/common/ConfirmSheet';
 import { BudgetBar } from '../components/common/BudgetBar';
 import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../components/common/buttonStyles';
@@ -17,6 +20,8 @@ import { weekLabel } from '../types';
 export function Lineup() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [pendingClearSlotId, setPendingClearSlotId] = useState<string | null>(null);
+  // The slot whose stake keypad is open.
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   // Why the server refused a stake edit, per slot; cleared by the next accepted edit.
   const [stakeErrors, setStakeErrors] = useState<Record<string, string>>({});
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
@@ -95,6 +100,18 @@ export function Lineup() {
 
   const validation = validateLineup(roster, league.settings);
   const multiplier = activeMultipliers(league)[userTeam.id] ?? 1;
+  // Keypad editing: the same stake rules as the bet slip, for a pick that is already placed.
+  const editingSlot = editingSlotId ? roster.slots.find((sl) => sl.slotId === editingSlotId) : undefined;
+  const editStakeCtx: StakeContext = {
+    settings: league.settings,
+    isMLSlot: editingSlot?.position === 'ML',
+    marketMax: editingSlot?.wager
+      ? marketMaxStake(activeMarketRules(league.settings), editingSlot.wager.marketKey, editingSlot.wager.side)
+      : null,
+    otherStakes: roster.slots.reduce((sum, sl) => (sl.slotId === editingSlotId ? sum : sum + (sl.wager?.stake ?? 0)), 0),
+    emptyOtherSlots: 0,
+    replacing: true,
+  };
   // Penalty preview: only shown when a commissioner penalty setting would actually bite, and then
   // it lists everything the week would cost if it locked as is (including the usual unspent credits).
   const penalties = rosterPenalties(roster, league.settings);
@@ -172,15 +189,8 @@ export function Lineup() {
               multiplier={multiplier}
               currentWeek={league.currentWeek}
               stakeError={stakeErrors[slot.slotId] ?? null}
-              onStakeChange={async (stake) => {
-                const res = await updateWagerStake(league.id, userTeam.id, league.currentWeek, slot.slotId, stake);
-                setStakeErrors((prev) => {
-                  const next = { ...prev };
-                  if (res.ok) delete next[slot.slotId];
-                  else next[slot.slotId] = res.error ?? 'Could not update that stake.';
-                  return next;
-                });
-              }}
+              onEditStake={() => setEditingSlotId(slot.slotId)}
+              editingStake={editingSlotId === slot.slotId}
               onRemove={() => setPendingClearSlotId(slot.slotId)}
             />
           );
@@ -224,6 +234,27 @@ export function Lineup() {
           {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>
       </div>
+
+      {editingSlot?.wager && (
+        <StakeEditSheet
+          key={editingSlot.slotId}
+          wager={editingSlot.wager}
+          title={editingSlot.wager.playerName ?? editingSlot.wager.side}
+          settings={league.settings}
+          stakeCtx={editStakeCtx}
+          onClose={() => setEditingSlotId(null)}
+          onDone={async (stake) => {
+            const slotId = editingSlot.slotId;
+            const res = await updateWagerStake(league.id, userTeam.id, league.currentWeek, slotId, stake);
+            setStakeErrors((prev) => {
+              const next = { ...prev };
+              if (res.ok) delete next[slotId];
+              else next[slotId] = res.error ?? 'Could not update that stake.';
+              return next;
+            });
+          }}
+        />
+      )}
 
       {pendingClearSlotId && (
         <ConfirmSheet

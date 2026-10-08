@@ -14,7 +14,7 @@ import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekR
 import { leagueSeasonAtRisk, REFERENCE_FLOOR_SHARE, seasonScaleRef } from '../engine/plColor';
 import { perfectWeeksForTeam } from '../engine/perfectWeek';
 import { weekLabel, type WeekId } from '../types';
-import { ODDS_BUCKETS, ODDS_BUCKET_LABELS, type BetPreset } from '../engine/betFilters';
+import { ODDS_BUCKETS, ODDS_BUCKET_NAMES, oddsBucketRange, type BetPreset } from '../engine/betFilters';
 import { bestAndWorstWeek, matchupStats, playerHighlights, playerRecords, unspentCredits, weeklyPL, type PlayerRecord } from '../engine/statsExtra';
 import { MARKET_LABELS } from '../data/propsGenerator';
 import { TeamLogo } from '../components/common/TeamLogo';
@@ -32,17 +32,28 @@ function pct(n: number): string {
 // ... can be cleaner". whitespace-nowrap on every value also stops the browser's
 // default line-breaking-after-a-hyphen behavior from splitting e.g. "-$47.25"
 // onto its own line inside a narrow column (see chat: the P/L wrap bug).
-function StatRow({ label, rec, onClick }: { label: string; rec: RecordPL; onClick?: () => void }) {
+// Column widths shared by StatRow, ColHeads and PlayerList so headers sit exactly over their values.
+// The record column is wide enough for "100-20-3"; CHEVRON is the row arrow's footprint, which the
+// header row has to reserve too or every caption lands one arrow-width to the right of its numbers.
+const COL_REC = 'w-16';
+const COL_PL = 'w-[4.5rem]';
+const COL_ROI = 'w-14';
+const CHEVRON = 'w-3 -mr-1 shrink-0';
+
+function StatRow({ label, sub, rec, onClick }: { label: string; sub?: string; rec: RecordPL; onClick?: () => void }) {
   const roi = rec.wagered > 0 ? rec.pl / rec.wagered : 0;
   const body = (
     <>
-      <span className="font-medium flex-1 min-w-0 truncate text-left">{label}</span>
-      <span className="text-text-muted w-11 text-right whitespace-nowrap">
+      <span className="flex-1 min-w-0 text-left">
+        <span className="block font-medium truncate">{label}</span>
+        {sub && <span className="block text-[10px] text-text-muted truncate">{sub}</span>}
+      </span>
+      <span className={`text-text-muted ${COL_REC} text-right whitespace-nowrap`}>
         {rec.wins}-{rec.losses}-{rec.pushes}
       </span>
-      <span className={`w-16 text-right whitespace-nowrap ${rec.pl >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(rec.pl)}</span>
-      <span className="text-text-muted w-14 text-right whitespace-nowrap">{rec.wagered > 0 ? pct(roi) : '—'}</span>
-      {onClick && <ChevronRight size={12} className="text-text-muted shrink-0 -mr-1" />}
+      <span className={`${COL_PL} text-right whitespace-nowrap ${rec.pl >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(rec.pl)}</span>
+      <span className={`text-text-muted ${COL_ROI} text-right whitespace-nowrap`}>{rec.wagered > 0 ? pct(roi) : '–'}</span>
+      {onClick && <ChevronRight size={12} className={`text-text-muted ${CHEVRON}`} />}
     </>
   );
   const cls = 'flex items-center gap-2 text-xs py-1.5 border-b border-border last:border-0 w-full';
@@ -56,13 +67,14 @@ function StatRow({ label, rec, onClick }: { label: string; rec: RecordPL; onClic
 }
 
 /** Column captions for a breakdown card, lined up with StatRow's fixed columns. */
-function ColHeads() {
+function ColHeads({ chevron = true }: { chevron?: boolean }) {
   return (
     <div className="flex items-center gap-2 text-[9px] uppercase tracking-wide text-text-muted pb-1 border-b border-border">
       <span className="flex-1" />
-      <span className="w-11 text-right">W-L-P</span>
-      <span className="w-16 text-right">P/L</span>
-      <span className="w-14 text-right">ROI</span>
+      <span className={`${COL_REC} text-right`}>W-L-P</span>
+      <span className={`${COL_PL} text-right`}>P/L</span>
+      <span className={`${COL_ROI} text-right`}>ROI</span>
+      {chevron && <span className={CHEVRON} />}
     </div>
   );
 }
@@ -102,12 +114,12 @@ function PlayerList({ title, rows, onPick }: { title: string; rows: PlayerRecord
       {rows.map((r) => (
         <button key={r.playerName} onClick={() => onPick(r.playerName)} className="flex items-center gap-2 text-xs py-1.5 border-b border-border last:border-0 w-full active:opacity-70">
           <span className="font-medium flex-1 min-w-0 truncate text-left">{r.playerName}</span>
-          <span className="text-text-muted w-11 text-right whitespace-nowrap">
+          <span className={`text-text-muted ${COL_REC} text-right whitespace-nowrap`}>
             {r.wins}-{r.losses}-{r.pushes}
           </span>
-          <span className={`w-16 text-right whitespace-nowrap ${r.pl >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(r.pl)}</span>
-          <span className="text-text-muted w-8 text-right whitespace-nowrap">{r.picks}x</span>
-          <ChevronRight size={12} className="text-text-muted shrink-0 -mr-1" />
+          <span className={`${COL_PL} text-right whitespace-nowrap ${r.pl >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(r.pl)}</span>
+          <span className={`text-text-muted ${COL_ROI} text-right whitespace-nowrap`}>{r.picks}x</span>
+          <ChevronRight size={12} className={`text-text-muted ${CHEVRON}`} />
         </button>
       ))}
     </div>
@@ -122,6 +134,7 @@ export function MyStats() {
   const realGamesById = useAppStore((s) => s.realGamesById);
   const loadRealGame = useAppStore((s) => s.loadRealGame);
   const plStyle = usePlStyle();
+  const oddsFormat = useAppStore((s) => s.profile?.oddsFormat ?? 'american');
   const navigate = useNavigate();
   const [tab, setTab] = useState<StatsTab>('overview');
   // Past weeks' rosters are what perfect weeks are judged from.
@@ -286,7 +299,7 @@ export function MyStats() {
   };
   const marketItems: Rec[] = marketRows.map(([key, rec]) => ({ label: MARKET_LABELS[key], rec }));
   const slotItems: Rec[] = (['QB', 'RB', 'WR', 'TE', 'K', 'ML'] as const).map((pos) => ({ label: pos, rec: stats.byPosition[pos] }));
-  const oddsItems: Rec[] = ODDS_BUCKETS.map((b) => ({ label: ODDS_BUCKET_LABELS[b].split(' (')[0], rec: stats.byOddsBucket[b] }));
+  const oddsItems: Rec[] = ODDS_BUCKETS.map((b) => ({ label: ODDS_BUCKET_NAMES[b], rec: stats.byOddsBucket[b] }));
   const daySlotItems: Rec[] = (['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'] as const).map((slot) => ({ label: slot.replace('_', ' '), rec: stats.byDaySlot[slot] }));
   const byProfit = (items: Rec[]) => [...items].sort((a, b) => (b.rec?.pl ?? 0) - (a.rec?.pl ?? 0));
   const tabBlocks = (): TabBlock[] => {
@@ -566,7 +579,7 @@ export function MyStats() {
               <ColHeads />
               {ODDS_BUCKETS.map((b) => {
                 const rec = stats.byOddsBucket[b];
-                return rec.wins + rec.losses + rec.pushes > 0 ? <StatRow key={b} label={ODDS_BUCKET_LABELS[b]} rec={rec} onClick={drill({ oddsBucket: b })} /> : null;
+                return rec.wins + rec.losses + rec.pushes > 0 ? <StatRow key={b} label={ODDS_BUCKET_NAMES[b]} sub={oddsBucketRange(b, oddsFormat)} rec={rec} onClick={drill({ oddsBucket: b })} /> : null;
               })}
             </Card>
 
@@ -608,7 +621,7 @@ export function MyStats() {
 
             <Card>
               <p className="text-xs text-text-muted mb-1">By day slot</p>
-              <ColHeads />
+              <ColHeads chevron={false} />
               {(['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'] as const).map(
                 (slot) => stats.byDaySlot[slot] && <StatRow key={slot} label={slot.replace('_', ' ')} rec={stats.byDaySlot[slot]!} />,
               )}
@@ -668,11 +681,11 @@ export function MyStats() {
                       <div key={h.opponentId} className="flex items-center gap-2 text-xs py-1.5 border-b border-border last:border-0">
                         {opp && <TeamLogo team={opp} size="xs" />}
                         <span className="font-medium flex-1 min-w-0 truncate">{opp?.teamName ?? 'Unknown'}</span>
-                        <span className="text-text-muted w-12 text-right whitespace-nowrap">
+                        <span className={`text-text-muted ${COL_REC} text-right whitespace-nowrap`}>
                           {h.wins}-{h.losses}
                           {h.ties ? `-${h.ties}` : ''}
                         </span>
-                        <span className={`w-16 text-right whitespace-nowrap ${diff >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(diff)}</span>
+                        <span className={`${COL_PL} text-right whitespace-nowrap ${diff >= 0 ? 'text-profit' : 'text-loss'}`}>{formatCents(diff)}</span>
                       </div>
                     );
                   })}

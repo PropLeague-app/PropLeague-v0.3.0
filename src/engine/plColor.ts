@@ -66,12 +66,6 @@ export function seasonAtRisk(weeksPlayed: number, settings: Pick<LeagueSettings,
   return Math.max(0, weeksPlayed) * settings.weeklyCredits;
 }
 
-/** Decided weeks a team has played so far, from the standings (wins + losses + ties). */
-export function teamWeeksPlayed(league: Pick<League, 'standings'>, teamId: string): number {
-  const s = league.standings.find((x) => x.teamId === teamId);
-  return s ? s.wins + s.losses + s.ties : 0;
-}
-
 /** What the whole league put at risk over the season so far (for league-wide totals). */
 export function leagueSeasonAtRisk(league: Pick<League, 'standings' | 'settings'>): number {
   return league.standings.reduce((sum, s) => sum + seasonAtRisk(s.wins + s.losses + s.ties, league.settings), 0);

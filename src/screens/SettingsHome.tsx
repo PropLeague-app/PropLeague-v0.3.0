@@ -38,14 +38,19 @@ import {
   CalendarCheck,
   CircleCheck,
   Moon,
+  MoonStar,
   Radio,
   Repeat,
   Smartphone,
   Sun,
+  Check,
+  ChevronDown,
+  SunMoon,
   TrendingDown,
   Wrench,
 } from 'lucide-react';
 import { PasswordInput } from '../components/common/PasswordInput';
+import type { ThemeMode } from '../types';
 
 const MORE_LINKS = [
   { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
@@ -85,6 +90,63 @@ function Seg<T extends string>({
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemeMode; label: string; hint?: string; icon: ReactNode }[] = [
+  { value: 'auto', label: 'Auto', hint: 'Matches your phone', icon: <SunMoon size={14} /> },
+  { value: 'light', label: 'Light', icon: <Sun size={14} /> },
+  { value: 'graphite', label: 'Dark', icon: <Moon size={14} /> },
+  { value: 'dark', label: 'Midnight', icon: <MoonStar size={14} /> },
+];
+
+/** Theme picker as an app-styled dropdown (four options will not fit in a segmented control beside the
+ * label). A small button shows the current choice; tapping it opens a themed menu instead of the native
+ * iOS picker. */
+function ThemeMenu({ value, onChange }: { value: ThemeMode; onChange: (v: ThemeMode) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = THEME_OPTIONS.find((o) => o.value === value) ?? THEME_OPTIONS[3];
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="sel-pill border rounded-lg px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5"
+      >
+        {current.icon}
+        {current.label}
+        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div role="listbox" className="absolute right-0 top-full mt-1.5 z-40 w-48 bg-bg-raised border border-border rounded-xl shadow-2xl p-1">
+            {THEME_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={value === o.value}
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-semibold ${value === o.value ? 'seg-active' : 'text-text'}`}
+              >
+                {o.icon}
+                <span className="flex-1">
+                  {o.label}
+                  {o.hint && <span className="block text-[10px] font-normal text-text-muted">{o.hint}</span>}
+                </span>
+                {value === o.value && <Check size={14} />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -552,14 +614,7 @@ export function SettingsHome() {
                 />
               </PrefRow>
               <PrefRow label="Theme">
-                <Seg
-                  value={profile?.themeMode ?? 'dark'}
-                  onChange={setThemeMode}
-                  options={[
-                    { value: 'dark', label: 'Dark', icon: <Moon size={13} />, ariaLabel: 'Dark theme' },
-                    { value: 'light', label: 'Light', icon: <Sun size={13} />, ariaLabel: 'Light theme' },
-                  ]}
-                />
+                <ThemeMenu value={profile?.themeMode ?? 'dark'} onChange={setThemeMode} />
               </PrefRow>
               {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
               <PrefRow label="Loss colors">

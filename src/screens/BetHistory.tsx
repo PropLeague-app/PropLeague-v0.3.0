@@ -22,7 +22,7 @@ import { MARKET_LABELS, wagerLineDescription } from '../data/propsGenerator';
 import { weekLabel, weekOrder, type MarketKey, type SlotPosition, type WagerStatus, type WeekId } from '../types';
 import {
   BET_SORT_OPTIONS,
-  ODDS_BUCKET_LABELS,
+  oddsBucketLabel,
   oddsBucket,
   sortBets,
   stakeSizeLabel,
@@ -237,7 +237,7 @@ export function BetHistory() {
   if (resultFilter !== 'all') filterParts.push(RESULT_OPTIONS.find((o) => o.value === resultFilter)?.label ?? resultFilter);
   if (statusFilter !== 'all') filterParts.push(statusFilter === 'open' ? 'Open only' : 'Settled only');
   if (sideFilter) filterParts.push(sideFilter === 'over' ? 'Overs only' : 'Unders only');
-  if (oddsFilter) filterParts.push(ODDS_BUCKET_LABELS[oddsFilter]);
+  if (oddsFilter) filterParts.push(oddsBucketLabel(oddsFilter, oddsFormat));
   if (stakeFilter) filterParts.push(stakeSizeLabel(stakeFilter));
   if (search.trim()) filterParts.push(`"${search.trim()}"`);
   const pickCount = `${bets.length} pick${bets.length === 1 ? '' : 's'}`;
@@ -333,7 +333,7 @@ export function BetHistory() {
           </div>
           {(oddsFilter || sideFilter || stakeFilter) && (
             <div className="flex flex-wrap gap-1.5">
-              {oddsFilter && <FilterChip label={ODDS_BUCKET_LABELS[oddsFilter]} onClear={() => setOddsFilter(null)} />}
+              {oddsFilter && <FilterChip label={oddsBucketLabel(oddsFilter, oddsFormat)} onClear={() => setOddsFilter(null)} />}
               {sideFilter && <FilterChip label={sideFilter === 'over' ? 'Overs only' : 'Unders only'} onClear={() => setSideFilter(null)} />}
               {stakeFilter && <FilterChip label={stakeSizeLabel(stakeFilter)} onClear={() => setStakeFilter(null)} />}
             </div>

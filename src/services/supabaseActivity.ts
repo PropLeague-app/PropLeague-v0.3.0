@@ -98,15 +98,24 @@ export async function fetchLeagueActivity(leagueId: string, viewerTeamId?: strin
   const extraPinned = ((pinnedRes.data ?? []) as ActivityRow[]).filter((r) => !seen.has(r.id));
   const data = [...(recentData as ActivityRow[]), ...extraPinned];
 
-  let myReactionByItemId: Record<string, string> = {};
-  if (viewerTeamId) {
-    const { data: myReactions } = await supabase
+  // Every reaction on the loaded items (league members can read them all), oldest first, so each card
+  // knows which teams reacted with what, and which one is the viewer's own.
+  const reactorsByItemId: Record<string, Record<string, string[]>> = {};
+  let loadedReactors = false;
+  const itemIds = (data as ActivityRow[]).map((r) => r.id);
+  if (itemIds.length > 0) {
+    const { data: reactionRows, error: reactionError } = await supabase
       .from('activity_reactions')
-      .select('item_id, emoji')
+      .select('item_id, team_id, emoji')
       .eq('league_id', leagueId)
-      .eq('team_id', viewerTeamId);
-    if (myReactions) {
-      myReactionByItemId = Object.fromEntries((myReactions as { item_id: string; emoji: string }[]).map((r) => [r.item_id, r.emoji]));
+      .in('item_id', itemIds)
+      .order('ts', { ascending: true });
+    if (!reactionError && reactionRows) {
+      loadedReactors = true;
+      for (const r of reactionRows as { item_id: string; team_id: string; emoji: string }[]) {
+        const byEmoji = (reactorsByItemId[r.item_id] ??= {});
+        (byEmoji[r.emoji] ??= []).push(r.team_id);
+      }
     }
   }
 
@@ -117,7 +126,10 @@ export async function fetchLeagueActivity(leagueId: string, viewerTeamId?: strin
     message: row.message,
     pinned: row.pinned || undefined,
     reactions: Object.keys(row.reactions).length > 0 ? row.reactions : undefined,
-    myReaction: myReactionByItemId[row.id],
+    reactors: loadedReactors ? (reactorsByItemId[row.id] ?? {}) : undefined,
+    myReaction: viewerTeamId
+      ? Object.entries(reactorsByItemId[row.id] ?? {}).find(([, ids]) => ids.includes(viewerTeamId))?.[0]
+      : undefined,
     postedByTeamId: row.posted_by_team_id ?? undefined,
     momentCategory: (row.moment_category as MomentCategory) ?? undefined,
     momentDisplayName: row.moment_display_name ?? undefined,

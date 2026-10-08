@@ -9,18 +9,6 @@ const POSITION_CLASSES: Record<SlotPosition, string> = {
   ML: 'bg-pos-ml/15 text-pos-ml border-pos-ml',
 };
 
-export function positionBorderClass(position: SlotPosition): string {
-  const map: Record<SlotPosition, string> = {
-    QB: 'border-l-pos-qb',
-    RB: 'border-l-pos-rb',
-    WR: 'border-l-pos-wr',
-    TE: 'border-l-pos-te',
-    K: 'border-l-pos-k',
-    ML: 'border-l-pos-ml',
-  };
-  return map[position];
-}
-
 /** Full-card border/fill treatment for a lineup slot -- borderSubtle/bgSubtle for
  * an empty, not-yet-picked slot; borderLit/bgLit for one with a pick in it (the
  * "lights up" effect). Kept much lower-opacity than the small position badge's own

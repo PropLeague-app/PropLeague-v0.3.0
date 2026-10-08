@@ -29,6 +29,7 @@ import {
   type VoidSearchRow,
 } from '../../services/voidFlags';
 import { chipClass } from './SettingsPrimitives';
+import { useResolvedTheme } from '../../hooks/useResolvedTheme';
 
 function pickText(row: VoidCandidateRow): string {
   if (row.market_key === 'player_anytime_td') return 'Anytime TD';
@@ -98,7 +99,7 @@ function initialsOf(name: string): string {
 }
 
 function Avatar({ name, playerId }: { name: string; playerId?: string | null }) {
-  const mode = useAppStore((s) => s.profile?.themeMode) ?? 'dark';
+  const mode = useResolvedTheme();
   const color = teamAccent(nflTeamFromPlayerId(playerId), mode);
   return (
     <span

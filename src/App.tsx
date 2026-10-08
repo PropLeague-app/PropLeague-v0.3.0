@@ -5,6 +5,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
 import { startLiveActivities, stopLiveActivities } from './services/liveActivities';
 import { applyThemeMode } from './services/theme';
+import { watchSystemAppearance } from './hooks/useResolvedTheme';
 import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
 
@@ -77,15 +78,25 @@ function RootRedirect() {
     if (session && authProfile?.onboarded && !leaguesHydrated) hydrateMyLeagues();
   }, [session, authProfile?.onboarded, leaguesHydrated, hydrateMyLeagues]);
 
+  // <Navigate> renders nothing for one commit before it moves the router, which showed up as a blank
+  // screen between the loader and the first real screen. Keeping the loader up beside it means the
+  // screen is only ever replaced by the next screen, never by an empty one.
+  const redirect = (to: string) => (
+    <>
+      <BootLoader />
+      <Navigate to={to} replace />
+    </>
+  );
+
   // Auth gates come first: don't decide anything league-related until we know
   // whether there's a real session, and whether it's finished onboarding.
   if (authLoading) {
     return <BootLoader />;
   }
-  if (!session) return <Navigate to="/welcome" replace />;
-  if (authProfile && !authProfile.onboarded) return <Navigate to="/profile-setup" replace />;
+  if (!session) return redirect('/welcome');
+  if (authProfile && !authProfile.onboarded) return redirect('/profile-setup');
 
-  if (!profile) return <Navigate to="/welcome" replace />;
+  if (!profile) return redirect('/welcome');
 
   // Don't decide "no leagues, go create one" until hydration has actually had
   // a chance to check Supabase — otherwise a returning user with a real
@@ -94,8 +105,8 @@ function RootRedirect() {
     return <BootLoader />;
   }
 
-  if (!targetLeague) return <Navigate to="/create-league" replace />;
-  return <Navigate to="/home" replace />;
+  if (!targetLeague) return redirect('/create-league');
+  return redirect('/home');
 }
 
 function AppShellLayout() {
@@ -144,6 +155,9 @@ function App() {
   const themeMode = useAppStore((s) => s.profile?.themeMode);
   useEffect(() => {
     void applyThemeMode(themeMode ?? 'dark');
+    // Auto repaints the moment the phone flips between light and dark.
+    if (themeMode !== 'auto') return;
+    return watchSystemAppearance(() => void applyThemeMode('auto'));
   }, [themeMode]);
 
   return (

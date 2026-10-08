@@ -264,6 +264,11 @@ export function Leaderboards() {
     .filter((w) => weekScoreboard(league, w).length > 0)
     .map((w) => (Number.isNaN(Number(w)) ? (w as WeekId) : (Number(w) as WeekId)))
     .sort((a, b) => weekOrder(a) - weekOrder(b));
+  // The current week always belongs in the picker even before anyone has a score in it, otherwise the
+  // chip has no option matching the week being shown and renders empty (just a chevron).
+  const pickerWeeks = weeksWithScores.some((w) => String(w) === String(league.currentWeek))
+    ? weeksWithScores
+    : [...weeksWithScores, league.currentWeek].sort((a, b) => weekOrder(a) - weekOrder(b));
   const week: WeekId = pickedWeek != null && weeksWithScores.some((w) => String(w) === pickedWeek) ? (weeksWithScores.find((w) => String(w) === pickedWeek) as WeekId) : league.currentWeek;
   const scoreboard = weekScoreboard(league, week);
   const weekRef = weekScaleRef(league, week);
@@ -489,12 +494,12 @@ export function Leaderboards() {
           <>
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] text-text-muted">{isCurrentWeek ? 'Live scores for the current week' : 'Final scores'}</p>
-              {weeksWithScores.length > 1 && (
+              {pickerWeeks.length > 1 && (
                 <PillSelect
                   value={String(week)}
                   onChange={setPickedWeek}
                   ariaLabel="Week"
-                  options={weeksWithScores.map((w) => ({ value: String(w), label: weekLabel(w) }))}
+                  options={pickerWeeks.map((w) => ({ value: String(w), label: weekLabel(w) }))}
                   active={!isCurrentWeek}
                 />
               )}

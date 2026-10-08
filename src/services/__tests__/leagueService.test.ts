@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeague, updateLeagueSettings } from '../leagueService';
+import { createLeague, resolveLeagueIdentity, updateLeagueSettings } from '../leagueService';
 import type { LeagueTeam } from '../../types';
 
 function baseLeague() {
@@ -72,5 +72,21 @@ describe('updateLeagueSettings — eager prize pool creation', () => {
     const settled = { ...withPool, prizePool: { ...withPool.prizePool!, history: [{ week: 1, poolBefore: 80, poolAfter: 85, netRealPL: 5 }] } };
     const changedAmount = updateLeagueSettings(settled, { buyInAmount: 999 });
     expect(changedAmount.prizePool!.initial).toBe(80); // untouched — a real week's history exists now
+  });
+});
+
+// A league renamed before the settings RPC kept the `name` column in step has its real name only in
+// the settings blob. The league switcher must show that name without opening the league's Settings.
+describe('resolveLeagueIdentity', () => {
+  it('prefers the name the commissioner saved in the settings blob over the column', () => {
+    expect(resolveLeagueIdentity({ name: 'Test League 1', isPublic: false, settings: { leagueName: 'DEMO LEAGUE' } }).name).toBe('DEMO LEAGUE');
+  });
+  it('falls back to the column when the blob has no usable name', () => {
+    expect(resolveLeagueIdentity({ name: 'Test League 1', isPublic: false, settings: null }).name).toBe('Test League 1');
+    expect(resolveLeagueIdentity({ name: 'Test League 1', isPublic: false, settings: { leagueName: '   ' } }).name).toBe('Test League 1');
+  });
+  it('takes visibility from the blob when it has one', () => {
+    expect(resolveLeagueIdentity({ name: 'A', isPublic: false, settings: { isPublic: true } }).isPublic).toBe(true);
+    expect(resolveLeagueIdentity({ name: 'A', isPublic: true, settings: {} }).isPublic).toBe(true);
   });
 });

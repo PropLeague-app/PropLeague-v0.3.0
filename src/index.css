@@ -83,6 +83,19 @@
    already compile to color-mix() under the hood app-wide.
    These dark-mode defaults reproduce the exact bg-pos-x/5 and bg-pos-x/10 look
    (mixed toward transparent, same 5%/10%) -- zero dark-mode regression. */
+/* The soft glow in the top corner of every shared picture (src/share/cards/ShareFrame.tsx). Midnight keeps
+   the blue brand tint it was designed with; graphite uses a neutral light haze, since blue on charcoal
+   reads as a stray tint; light uses a lighter touch of blue over its already cool background. */
+:root {
+  --pl-share-glow: color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+:root[data-theme='graphite'] {
+  --pl-share-glow: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+:root[data-theme='light'] {
+  --pl-share-glow: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
 :root {
   --pos-qb-subtle-bg: color-mix(in oklab, var(--color-pos-qb) 5%, transparent);
   --pos-qb-lit-bg: color-mix(in oklab, var(--color-pos-qb) 10%, transparent);
@@ -96,6 +109,18 @@
   --pos-k-lit-bg: color-mix(in oklab, var(--color-pos-k) 10%, transparent);
   --pos-ml-subtle-bg: color-mix(in oklab, var(--color-pos-ml) 5%, transparent);
   --pos-ml-lit-bg: color-mix(in oklab, var(--color-pos-ml) 10%, transparent);
+}
+
+/* Dark (graphite): neutral grays and near-blacks instead of the navy "Midnight" default. Only the
+   chrome tokens change; brand, status and position colors, and the dark-mode "ink" and loss/flame
+   values inherited from :root, stay as they are. */
+:root[data-theme='graphite'] {
+  --color-bg: #0e0e10;
+  --color-bg-raised: #171719;
+  --color-bg-card: #1c1c1f;
+  --color-border: #2e2e33;
+  --color-text: #ececee;
+  --color-text-muted: #9a9aa2;
 }
 
 :root[data-theme='light'] {

@@ -63,7 +63,7 @@ export function PayoutSplitEditor({
             key={preset.label}
             onClick={() => setDraft(preset.splits)}
             className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border ${
-              sameSplits(draft, preset.splits) ? 'border-primary text-primary bg-primary/10' : 'border-border text-text-muted'
+              sameSplits(draft, preset.splits) ? 'sel-pill' : 'border-border text-text-muted'
             }`}
           >
             {preset.label}
@@ -71,7 +71,7 @@ export function PayoutSplitEditor({
         ))}
         <span
           className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border ${
-            PRESETS.some((p) => sameSplits(draft, p.splits)) ? 'border-border text-text-muted' : 'border-primary text-primary bg-primary/10'
+            PRESETS.some((p) => sameSplits(draft, p.splits)) ? 'border-border text-text-muted' : 'sel-pill'
           }`}
         >
           Custom

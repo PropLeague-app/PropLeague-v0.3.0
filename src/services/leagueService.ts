@@ -56,6 +56,22 @@ function matchupsFromSchedule(scheduleByWeek: Record<number, [string, string][]>
   return matchupsByWeek;
 }
 
+/**
+ * The league's display name and visibility as the commissioner last set them. Both used to be saved
+ * only inside the settings blob (never in their own columns), so a league renamed before the settings
+ * RPC started keeping the columns in step still has its real name only in the blob. Prefer the blob's
+ * copy when present, and fall back to the column.
+ */
+export function resolveLeagueIdentity(meta: {
+  name: string;
+  isPublic: boolean;
+  settings?: Partial<LeagueSettings> | null;
+}): { name: string; isPublic: boolean } {
+  const blobName = typeof meta.settings?.leagueName === 'string' ? meta.settings.leagueName.trim() : '';
+  const isPublic = typeof meta.settings?.isPublic === 'boolean' ? meta.settings.isPublic : meta.isPublic;
+  return { name: blobName || meta.name, isPublic };
+}
+
 export interface CreateLeagueParams {
   id: string;
   inviteCode: string;
@@ -336,42 +352,4 @@ export function fillWithSimulatedTeams(league: League, simIdentities: (Simulated
 export function updateLeagueSettings(league: League, partial: Partial<LeagueSettings>): League {
   const updated = { ...league, settings: { ...league.settings, ...partial } };
   return { ...updated, prizePool: ensurePool(updated) };
-}
-
-/** Rebuilds the season from Week 1 with the same teams/settings/conference assignment
- * — dev-panel "Reset Season". */
-export function resetLeagueSeason(league: League): League {
-  const matchupsByWeek = matchupsFromSchedule(buildSeasonSchedule(league.teams, league.settings, `${league.id}-reset-${Date.now()}`));
-
-  const week1Games = gamesForWeek(1);
-  const rostersByTeamWeek: League['rostersByTeamWeek'] = {};
-  const claims = new ClaimTracker({ ...league, rostersByTeamWeek: {} }, 1);
-  for (const team of league.teams) {
-    if (team.isSimulated) {
-      const roster = generateAutoLineup(team.id, 1, league.settings, week1Games, (g, m, p, s, pt) => claims.isTaken(g, m, p, s, pt));
-      claims.claimRoster(roster);
-      rostersByTeamWeek[rosterKey(team.id, 1)] = roster;
-    }
-  }
-
-  return {
-    ...league,
-    currentWeek: 1,
-    seasonPhase: 'regular',
-    seasonStartWeek: null, // dev-panel "Reset Season" -- start the gate over too
-    matchupsByWeek,
-    rostersByTeamWeek,
-    standings: league.teams.map((t) => emptyStanding(t.id)),
-    bracket: null,
-    prizePool: null,
-    manualGameOverrides: {},
-    activity: [
-      {
-        id: `reset-${league.id}-${Date.now()}`,
-        ts: new Date().toISOString(),
-        type: 'announcement',
-        message: 'Season reset to Week 1.',
-      },
-    ],
-  };
 }

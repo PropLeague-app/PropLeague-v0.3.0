@@ -96,7 +96,7 @@ export function LeagueMembers() {
                       disabled={seasonStarted}
                       onClick={() => pick(team.id, conf.id)}
                       className={`text-[10px] px-1.5 py-0.5 rounded-full border disabled:opacity-40 ${
-                        draftFor(team.id) === conf.id ? 'border-primary text-primary bg-primary/10' : 'border-border text-text-muted'
+                        draftFor(team.id) === conf.id ? 'sel-pill' : 'border-border text-text-muted'
                       }`}
                     >
                       {conf.name}

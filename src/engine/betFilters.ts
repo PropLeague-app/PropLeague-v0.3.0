@@ -1,19 +1,46 @@
 // Shared vocabulary for the Bets screen and the Stats screen: odds ranges, sort choices, and the
 // preset a stat row hands to Bets when you tap it ("show me the bets behind this number").
-import type { MarketKey, SlotPosition, WagerStatus, WeekId } from '../types';
+import type { MarketKey, OddsFormat, SlotPosition, WagerStatus, WeekId } from '../types';
 import { weekOrder } from '../types';
 
 export type OddsBucket = 'heavyFav' | 'favorite' | 'pickem' | 'underdog' | 'longshot';
 
 export const ODDS_BUCKETS: OddsBucket[] = ['heavyFav', 'favorite', 'pickem', 'underdog', 'longshot'];
 
-export const ODDS_BUCKET_LABELS: Record<OddsBucket, string> = {
-  heavyFav: 'Heavy fav (−200 or shorter)',
-  favorite: 'Favorite (−199 to −120)',
-  pickem: 'Pick-em (−119 to +119)',
-  underdog: 'Underdog (+120 to +249)',
-  longshot: 'Longshot (+250 or longer)',
+export const ODDS_BUCKET_NAMES: Record<OddsBucket, string> = {
+  heavyFav: 'Heavy fav',
+  favorite: 'Favorite',
+  pickem: 'Pick-em',
+  underdog: 'Underdog',
+  longshot: 'Longshot',
 };
+
+const BUCKET_RANGE_AMERICAN: Record<OddsBucket, string> = {
+  heavyFav: '−200 or shorter',
+  favorite: '−199 to −120',
+  pickem: '−119 to +119',
+  underdog: '+120 to +249',
+  longshot: '+250 or longer',
+};
+
+// The same cut points as the American ranges, expressed as payout multipliers (-200 is 1.50x, +250 is 3.50x).
+const BUCKET_RANGE_DECIMAL: Record<OddsBucket, string> = {
+  heavyFav: '1.50x or lower',
+  favorite: '1.51x to 1.83x',
+  pickem: '1.84x to 2.19x',
+  underdog: '2.20x to 3.49x',
+  longshot: '3.50x or higher',
+};
+
+/** The range a bucket covers, in whichever odds format the viewer uses. */
+export function oddsBucketRange(bucket: OddsBucket, format: OddsFormat = 'american'): string {
+  return (format === 'decimal' ? BUCKET_RANGE_DECIMAL : BUCKET_RANGE_AMERICAN)[bucket];
+}
+
+/** Full label, e.g. "Favorite (−199 to −120)" or "Favorite (1.51x to 1.83x)". */
+export function oddsBucketLabel(bucket: OddsBucket, format: OddsFormat = 'american'): string {
+  return `${ODDS_BUCKET_NAMES[bucket]} (${oddsBucketRange(bucket, format)})`;
+}
 
 /** Which odds range an American price falls in. */
 export function oddsBucket(odds: number): OddsBucket {

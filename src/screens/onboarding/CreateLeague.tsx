@@ -198,7 +198,7 @@ export function CreateLeague() {
                     setFieldSizeNotice(null);
                   }}
                   className={`flex-1 py-2 rounded-lg text-sm border ${
-                    playoffTeams === n ? 'border-primary text-primary bg-primary/10' : 'border-border'
+                    playoffTeams === n ? 'sel-pill' : 'border-border'
                   }`}
                 >
                   {n}
@@ -221,7 +221,7 @@ export function CreateLeague() {
                     onClick={() => setElimination(type)}
                     disabled={disabled}
                     className={`flex-1 py-2 rounded-lg text-sm border capitalize disabled:opacity-30 ${
-                      elimination === type ? 'border-primary text-primary bg-primary/10' : 'border-border'
+                      elimination === type ? 'sel-pill' : 'border-border'
                     }`}
                   >
                     {type}
