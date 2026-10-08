@@ -5,6 +5,7 @@ import * as leagueService from '../../services/leagueService';
 import { joinRealLeague, rejoinRealLeague, fetchLeagueMeta, fetchLeagueTeams } from '../../services/supabaseLeague';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { goBack } from '../../components/layout/BackHeader';
+import { ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
 export function JoinLeague() {
   const navigate = useNavigate();
@@ -116,7 +117,7 @@ export function JoinLeague() {
         <button
           onClick={submit}
           disabled={!code.trim() || submitting}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+          className={ONBOARDING_PRIMARY_BTN}
         >
           {submitting ? 'Joining…' : 'Join League'}
         </button>

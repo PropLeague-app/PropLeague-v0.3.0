@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Car, Flag, Flame, Hand, Hash, Lightbulb, PawPrint, Smile, Trophy, Utensils } from 'lucide-react';
-import { EMOJI_CATEGORIES } from '../../data/emojiPicker';
+import { EMOJI_CATEGORIES, searchEmojis } from '../../data/emojiPicker';
+import { EmojiSearchField } from '../common/EmojiSearchField';
+import { haptic } from '../../services/haptics';
 import { PICKER_COLUMNS, REACTION_PICKER, gridEmojis } from '../../engine/reactions';
 
 interface Tab {
@@ -34,38 +36,53 @@ const TABS: Tab[] = [
 /** The "+" reaction picker: a row of tiny category buttons over a scrolling emoji grid. */
 export function ReactionPicker({ current, onPick }: { current?: string; onPick: (emoji: string) => void }) {
   const [tabId, setTabId] = useState('popular');
+  const [query, setQuery] = useState('');
+  const searching = query.trim().length > 0;
   const tab = TABS.find((t) => t.id === tabId) ?? TABS[0];
-  const emojis = gridEmojis(tab.emojis);
+  const emojis = searching ? searchEmojis(query).map((e) => e.char) : gridEmojis(tab.emojis);
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5 px-0.5" role="tablist" aria-label="Emoji categories">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={t.id === tabId}
-            aria-label={t.label}
-            title={t.label}
-            onClick={() => setTabId(t.id)}
-            className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${
-              t.id === tabId ? 'seg-active' : 'text-text-muted active:text-text'
-            }`}
-          >
-            {t.icon}
-          </button>
-        ))}
+      <div className="mb-1.5">
+        <EmojiSearchField value={query} onChange={setQuery} />
       </div>
+      {!searching && (
+        <div className="flex items-center justify-between mb-1.5 px-0.5" role="tablist" aria-label="Emoji categories">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={t.id === tabId}
+              aria-label={t.label}
+              title={t.label}
+              onClick={() => setTabId(t.id)}
+              className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${
+                t.id === tabId ? 'seg-active' : 'text-text-muted active:text-text'
+              }`}
+            >
+              {t.icon}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         className="grid gap-0.5 max-h-52 overflow-y-auto overscroll-contain"
         style={{ gridTemplateColumns: `repeat(${PICKER_COLUMNS}, minmax(0, 1fr))` }}
-        key={tab.id}
+        key={searching ? 'search' : tab.id}
       >
+        {searching && emojis.length === 0 && (
+          <p className="text-xs text-text-muted text-center py-3" style={{ gridColumn: '1 / -1' }}>
+            No matches.
+          </p>
+        )}
         {emojis.map((emoji, i) => (
           <button
             key={`${emoji}${i}`}
             type="button"
-            onClick={() => onPick(emoji)}
+            onClick={() => {
+                haptic.tap();
+                onPick(emoji);
+              }}
             aria-label={emoji}
             aria-pressed={emoji === current}
             className={`h-[34px] rounded-lg text-xl leading-none flex items-center justify-center ${emoji === current ? 'seg-active' : 'active:bg-bg-card'}`}

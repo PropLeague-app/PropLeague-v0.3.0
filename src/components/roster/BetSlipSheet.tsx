@@ -6,7 +6,7 @@ import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
 import { rosterKey } from '../../engine/rosterSlots';
-import { stakeError, type StakeContext } from '../../engine/stakeRules';
+import { maxStakeRounded, stakeError, type StakeContext } from '../../engine/stakeRules';
 import { activeMarketRules, marketBlockReason, marketMaxStake, marketSlotCapReason } from '../../engine/marketRules';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { MARKET_LABELS } from '../../data/propsGenerator';
@@ -14,6 +14,7 @@ import { BudgetBar } from '../common/BudgetBar';
 import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../common/buttonStyles';
 import { NumericKeypad } from '../common/NumericKeypad';
 import { applyStakeKey, type KeypadKey } from '../../engine/stakeInput';
+import { haptic } from '../../services/haptics';
 
 export interface BetSlipTarget {
   leagueId: string;
@@ -112,10 +113,21 @@ export function BetSlipSheet({
   const valid = reasons.length === 0 && stake > 0;
   const potentialProfit = profitForStake(stake, target.outcome.price);
 
+  // Largest stake the league's rules allow for this slot right now (slot max, market cap, single-pick
+  // cap, credits left, and the minimum held back for other empty slots), rounded down to the cent.
+  // The chip is hidden when no legal stake exists or the field already holds it.
+  const maxStake = maxStakeRounded(stakeCtx);
+  const showMax = !marketBlocked && maxStake >= settings.minBetPerSlot - 0.005 && Math.abs(stake - maxStake) > 0.004;
+
+  function setMax() {
+    haptic.tap();
+    setStakeText(Number.isInteger(maxStake) ? String(maxStake) : maxStake.toFixed(2));
+  }
   function onKey(key: KeypadKey) {
     setStakeText((t) => applyStakeKey(t, key));
   }
   function quickAdd(amount: number) {
+    haptic.tap();
     const next = Math.round((stake + amount) * 100) / 100;
     setStakeText(Number.isInteger(next) ? String(next) : next.toFixed(2));
   }
@@ -145,6 +157,7 @@ export function BetSlipSheet({
     });
     setSubmitting(false);
     if (!result.ok) {
+      haptic.error();
       setClaimError(
         result.claimedByTeamId && league
           ? claimBlockReason(league, result.claimedByTeamId, league.settings.hidePicks)
@@ -152,6 +165,7 @@ export function BetSlipSheet({
       );
       return;
     }
+    haptic.success();
     onConfirmed();
   }
 
@@ -195,6 +209,16 @@ export function BetSlipSheet({
               className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2"
             >
               <span className="text-text-muted">$</span>
+              {showMax && (
+                <button
+                  type="button"
+                  onClick={setMax}
+                  aria-label={`Set stake to the maximum, ${formatCents(maxStake)}`}
+                  className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted active:bg-bg-raised"
+                >
+                  Max
+                </button>
+              )}
               <span className={`w-full min-w-0 truncate text-lg font-semibold text-right tabular-nums ${hasStake || stakeText ? '' : 'text-text-muted/50'}`}>
                 {stakeText || '0'}
               </span>

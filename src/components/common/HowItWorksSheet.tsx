@@ -107,12 +107,18 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'The Lineup screen previews what your lineup would cost if it locked as is. Penalties only apply to weeks played after they are turned on.',
       ],
     },
+    {
+      title: 'NFL Slate and lines',
+      body: [
+        'The NFL Slate tab lists the week\'s games and every market on them, with lines from The Odds API. Tap Refresh Odds to pull the latest, and a warning shows when the lines are more than 12 hours old. Your commissioner can turn alt lines and live line movement on or off.',
+      ],
+    },
   ];
 
   const scoring: Topic[] = [
     {
       title: 'Weekly score',
-      body: ['Your score is the total profit or loss of every pick, plus any penalties. Higher score wins the matchup, and matchups drive the win-loss standings.'],
+      body: ['Your score is the total profit or loss of every pick, plus any penalties. Higher score wins the matchup, and matchups drive the win-loss standings. Win probability on a matchup is an estimate built from the odds on each side\'s picks and the results so far.'],
     },
     {
       title: 'Results',
@@ -140,6 +146,12 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
+      title: 'Weekly Moments',
+      body: [
+        'Eight awards post to the league feed after each week: King of the Slip (best week), Bagel Watch (worst week), Heartbreaker (bet lost by the smallest margin), Against All Odds (longest-odds win), Cash Cow (most profit from one bet), The Hot Hand (longest matchup win streak), The Ice Box (longest matchup loss streak) and The Roller Coaster (biggest swing from last week). Your commissioner can rename or turn off any of them.',
+      ],
+    },
+    {
       title: 'Standings',
       body: ['Ranked by win percentage. Ties break by total profit, then bet record, then head-to-head, then best single week.'],
     },
@@ -147,6 +159,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Playoffs',
       body: [
         `The top ${playoffTeams} teams${generic ? ' by default' : ''} make the playoffs, seeded by standings, timed so the final lands around Conference Championship week. Format can be single or double elimination, and commissioners can split the league into two conferences.`,
+        'Fields can be 2, 4, 6, 8 or 16 teams, never more than the league has. Double elimination is available for 2, 4 and 8. A 6-team field gives the top two seeds a bye. Bigger fields and double elimination start earlier, in Weeks 17 and 18, and the bracket locks once the playoffs begin.',
       ],
     },
   ];
@@ -193,8 +206,21 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
-      title: 'Colors',
-      body: ['Green is profit and red is loss. Each person can switch Loss colors to Scaled in Profile & Team, which tints a loss from yellow to red against the worst loss in view. Odds format and theme are personal too and never change for anyone else.'],
+      title: 'Activity feed and chat',
+      body: [
+        'League Home has an activity feed and a chat tab with an unread badge. The commissioner posts announcements in rich text and can pin up to 3. Anyone can react to a message with an emoji. Weekly Moments and perfect or skunked weeks show up here as cards.',
+      ],
+    },
+    {
+      title: 'Notifications',
+      body: [
+        'Choose what you get in Profile & Settings. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Settled-bet alerts tell you when a pick is graded, and Week results ready tells you when the week closes.',
+        'Live scores on lock screen shows your matchup as a Live Activity and in the Dynamic Island on iOS 16.2 and later.',
+      ],
+    },
+    {
+      title: 'Colors and themes',
+      body: ['Green is profit and red is loss. Each person can switch Loss colors to Scaled in Profile & Team, which tints a loss from yellow to red against the worst loss in view. Theme (Auto, Light, Dark or Midnight) and odds format are personal too and never change for anyone else.'],
     },
   ];
 
@@ -221,6 +247,12 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'Lines & Markets: alt lines and live line movement.',
         'Playoffs & Conferences: field size, elimination type, conferences.',
         'Weekly Moments: weekly awards, custom names, perfect and skunked week announcements.',
+      ],
+    },
+    {
+      title: 'AI teams',
+      body: [
+        'Empty spots can be filled with simulated teams, shown as AI teams. They skip blocked markets but ignore stake caps. By default they count toward the prize pool like any other team, and the commissioner can change that when buy-ins are on.',
       ],
     },
     {

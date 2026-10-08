@@ -11,7 +11,7 @@ import {
   settingsInfeasibility,
   splitPendingSettings,
 } from '../settingsRules';
-import { lastSlotPrefill, maxStakeNow, stakeError, type StakeContext } from '../stakeRules';
+import { lastSlotPrefill, maxStakeNow, maxStakeRounded, stakeError, type StakeContext } from '../stakeRules';
 
 const base = { ...DEFAULT_LEAGUE_SETTINGS };
 
@@ -104,6 +104,19 @@ describe('stake rules at placement', () => {
     expect(stakeError(ctx({ isMLSlot: true, emptyOtherSlots: 0 }), 20)).toContain('Maximum bet is $15.00');
     expect(stakeError(ctx({ emptyOtherSlots: 0 }), 0.5)).toContain('Minimum bet');
     expect(stakeError(ctx({ otherStakes: 95, emptyOtherSlots: 0 }), 10)).toContain('Only $5.00 left');
+  });
+
+  it('rounds the max stake down to the cent and the rules accept it', () => {
+    const odd = ctx({ otherStakes: 93.337, emptyOtherSlots: 0 });
+    expect(maxStakeRounded(odd)).toBe(6.66);
+    expect(stakeError(odd, maxStakeRounded(odd))).toBeNull();
+    for (const c of [ctx(), ctx({ isMLSlot: true }), ctx({ otherStakes: 93, emptyOtherSlots: 1 }), ctx({ replacing: true, otherStakes: 40 })]) {
+      expect(stakeError(c, maxStakeRounded(c))).toBeNull();
+    }
+  });
+
+  it('reports no room to bet when the credits are spent', () => {
+    expect(maxStakeRounded(ctx({ otherStakes: 100, emptyOtherSlots: 0 }))).toBe(0);
   });
 
   it('prefills the last open slot with exactly what is left', () => {

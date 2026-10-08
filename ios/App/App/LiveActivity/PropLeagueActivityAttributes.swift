@@ -35,6 +35,12 @@ struct PropLeagueActivityAttributes: ActivityAttributes {
     /// Unix seconds of the first kickoff this activity is about.
     var kickoff: Double
 
+    /// League logo. Optional so a push from an older server (without these) still decodes.
+    var leagueColor: String?
+    var leagueLogoMode: String?
+    var leagueEmoji: String?
+    var leagueLogoUrl: String?
+
     var myAbbrev: String
     var myColor: String
     var myLogoMode: String

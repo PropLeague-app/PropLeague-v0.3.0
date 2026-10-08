@@ -71,7 +71,7 @@ final class LiveActivityManager {
         // Logos: a widget cannot fetch them, so save them into the shared folder, then redraw.
         Task {
             let attrs = activity.attributes
-            if await LogoCache.prefetch([attrs.myLogoUrl, attrs.oppLogoUrl]) {
+            if await LogoCache.prefetch([attrs.myLogoUrl, attrs.oppLogoUrl, attrs.leagueLogoUrl ?? ""]) {
                 await activity.update(ActivityContent(state: activity.content.state, staleDate: activity.content.staleDate))
             }
         }

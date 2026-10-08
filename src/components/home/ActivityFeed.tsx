@@ -18,6 +18,7 @@ import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from
 import { useResolvedTheme } from '../../hooks/useResolvedTheme';
 import { AnchoredPopover } from '../common/AnchoredPopover';
 import { ReactionPicker } from './ReactionPicker';
+import { haptic } from '../../services/haptics';
 import { CHIP_LOGOS, CHIP_ROW_GAP, QUICK_REACTIONS, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
@@ -135,7 +136,10 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
       {QUICK_REACTIONS.map((emoji) => (
         <button
           key={emoji}
-          onClick={() => onReact(item.id, emoji)}
+          onClick={() => {
+            haptic.tap();
+            onReact(item.id, emoji);
+          }}
           className={`shrink-0 text-xs ${emoji === item.myReaction ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
         >
           {emoji}

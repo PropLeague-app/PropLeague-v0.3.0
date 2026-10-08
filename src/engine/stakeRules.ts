@@ -33,6 +33,12 @@ export function maxStakeNow(ctx: StakeContext): number {
   return Math.max(0, Math.min(slotMax ?? Infinity, ctx.marketMax?.max ?? Infinity, s.weeklyCredits * s.singleBetCapPct, remaining - reserve));
 }
 
+/** `maxStakeNow` rounded down to the cent, so the amount the bet slip's Max button fills in is always
+ * one the rules accept (rounding up could land a hair over the limit). */
+export function maxStakeRounded(ctx: StakeContext): number {
+  return Math.floor(maxStakeNow(ctx) * 100 + 1e-6) / 100;
+}
+
 /** The first thing wrong with this stake, or null. Order matches the server's messages. */
 export function stakeError(ctx: StakeContext, stake: number): string | null {
   const { settings: s } = ctx;

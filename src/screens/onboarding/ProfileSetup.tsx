@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
+import { ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
 const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
 
@@ -77,7 +78,7 @@ export function ProfileSetup() {
         <button
           onClick={submit}
           disabled={submitting}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2 disabled:opacity-40"
+          className={`${ONBOARDING_PRIMARY_BTN} mt-2`}
         >
           Continue
         </button>

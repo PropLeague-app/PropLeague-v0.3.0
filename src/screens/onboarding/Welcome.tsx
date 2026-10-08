@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import logo from '../../assets/logo-color.png';
+import { ONBOARDING_LINK_BTN, ONBOARDING_PRIMARY_BTN, ONBOARDING_SECONDARY_BTN } from '../../components/common/buttonStyles';
 
 export function Welcome() {
   const navigate = useNavigate();
@@ -30,25 +31,25 @@ export function Welcome() {
         <div className="w-full flex flex-col gap-3">
           <button
             onClick={() => go('/create-league')}
-            className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl"
+            className={ONBOARDING_PRIMARY_BTN}
           >
             Create League
           </button>
           <button
             onClick={() => go('/join-league')}
-            className="w-full bg-bg-card border border-border font-semibold py-3.5 rounded-xl"
+            className={ONBOARDING_SECONDARY_BTN}
           >
             Join League
           </button>
           <button
             onClick={() => navigate('/auth', { state: { next: '/' } })}
-            className="w-full text-primary text-sm font-medium py-2"
+            className={`${ONBOARDING_LINK_BTN} w-full py-2`}
           >
             Already have an account? Sign In
           </button>
           <button
             onClick={() => navigate('/how-it-works')}
-            className="w-full text-primary text-sm font-medium py-2"
+            className={`${ONBOARDING_LINK_BTN} w-full py-2`}
           >
             How does PropLeague work?
           </button>

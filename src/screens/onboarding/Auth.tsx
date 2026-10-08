@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { goBack } from '../../components/layout/BackHeader';
 import { PasswordInput } from '../../components/common/PasswordInput';
+import { ONBOARDING_LINK_BTN, ONBOARDING_PRIMARY_BTN, ONBOARDING_PROVIDER_BTN } from '../../components/common/buttonStyles';
 
 type Mode = 'signin' | 'signup' | 'forgot';
 
@@ -129,11 +130,11 @@ export function Auth() {
             <button
               onClick={submitForgotPassword}
               disabled={submitting}
-              className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+              className={ONBOARDING_PRIMARY_BTN}
             >
               Send reset email
             </button>
-            <button onClick={() => goToMode('signin')} className="text-primary text-sm font-medium">
+            <button onClick={() => goToMode('signin')} className={ONBOARDING_LINK_BTN}>
               Back to log in
             </button>
           </div>
@@ -174,13 +175,13 @@ export function Auth() {
               <button
                 onClick={submitEmail}
                 disabled={submitting}
-                className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+                className={ONBOARDING_PRIMARY_BTN}
               >
                 {mode === 'signin' ? 'Log in' : 'Sign up'}
               </button>
             </div>
 
-            <button onClick={() => goToMode(mode === 'signin' ? 'signup' : 'signin')} className="text-primary text-sm font-medium">
+            <button onClick={() => goToMode(mode === 'signin' ? 'signup' : 'signin')} className={ONBOARDING_LINK_BTN}>
               {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
             </button>
 
@@ -188,13 +189,13 @@ export function Auth() {
               <p className="text-center text-xs text-text-muted">or continue with</p>
               <button
                 onClick={() => oauth(signInWithGoogle)}
-                className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+                className={ONBOARDING_PROVIDER_BTN}
               >
                 Google
               </button>
               <button
                 onClick={() => oauth(signInWithApple)}
-                className="w-full bg-bg-card border border-border font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+                className={ONBOARDING_PROVIDER_BTN}
               >
                 Apple
               </button>

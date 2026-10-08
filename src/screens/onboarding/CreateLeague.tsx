@@ -11,6 +11,7 @@ import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount } from '../../
 import { conferencesEligible, defaultConferences } from '../../engine/conferences';
 import { goBack } from '../../components/layout/BackHeader';
 import type { PlayoffFieldSize } from '../../types';
+import { ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
 export function CreateLeague() {
   const navigate = useNavigate();
@@ -241,7 +242,7 @@ export function CreateLeague() {
         <button
           onClick={submit}
           disabled={submitting}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl mt-2 disabled:opacity-40"
+          className={`${ONBOARDING_PRIMARY_BTN} mt-2`}
         >
           {submitting ? 'Creating…' : 'Continue'}
         </button>

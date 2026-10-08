@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { PasswordInput } from '../../components/common/PasswordInput';
+import { ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
 export function ResetPassword() {
   const navigate = useNavigate();
@@ -58,7 +59,7 @@ export function ResetPassword() {
           <button
             onClick={submit}
             disabled={submitting}
-            className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+            className={ONBOARDING_PRIMARY_BTN}
           >
             Set password
           </button>

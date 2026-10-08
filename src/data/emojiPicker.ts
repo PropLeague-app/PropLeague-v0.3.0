@@ -1987,15 +1987,17 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
 ];
 
+/** Emoji whose keywords contain every word typed ("ball soccer" finds the soccer ball). Words match
+ * anywhere in a keyword, case does not matter, and results keep the category order. */
 export function searchEmojis(query: string): EmojiEntry[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
   const results: EmojiEntry[] = [];
   const seen = new Set<string>();
   for (const category of EMOJI_CATEGORIES) {
     for (const entry of category.emojis) {
       if (seen.has(entry.char)) continue;
-      if (entry.keywords.includes(q)) {
+      if (words.every((w) => entry.keywords.includes(w))) {
         results.push(entry);
         seen.add(entry.char);
       }

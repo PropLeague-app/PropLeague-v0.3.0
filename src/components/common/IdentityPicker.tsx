@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LogoIdentity, TeamLogoMode } from '../../types';
 import { EMOJI_CATEGORIES, searchEmojis } from '../../data/emojiPicker';
+import { EmojiSearchField } from './EmojiSearchField';
 import { processLogoFile, LOGO_MAX_BYTES } from '../../engine/imageUpload';
 import { IdentityBadge, type LogoSize } from './TeamLogo';
 import { ColorPicker } from './ColorPicker';
@@ -150,12 +151,7 @@ export function IdentityPicker({
 
       {draft.logoMode === 'emoji' && (
         <div className="space-y-2">
-          <input
-            value={emojiSearch}
-            onChange={(e) => setEmojiSearch(e.target.value)}
-            placeholder="Search emoji…"
-            className="w-full bg-bg-raised border border-border rounded-lg px-3 py-1.5 text-sm"
-          />
+          <EmojiSearchField value={emojiSearch} onChange={setEmojiSearch} />
           {!emojiSearch.trim() && (
             <div className="flex gap-1.5 overflow-x-auto pb-1">
               {EMOJI_CATEGORIES.map((cat) => (

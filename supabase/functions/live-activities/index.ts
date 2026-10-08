@@ -46,6 +46,8 @@ const LINEUP_LEAD_MS = 90 * MIN; // lineup activity appears this long before kic
 const LINEUP_TAIL_MS = 20 * MIN; // and an ending one is still sent this long after kickoff
 const SCORE_FAILSAFE_MS = 7 * 60 * MIN; // a score activity ends this long after its last kickoff regardless
 const START_RETRY_MS = 10 * MIN; // resend a start that never produced a push token
+const PROBE_MS = 10 * MIN; // push an unchanged state this often, so a dead activity (app force-quit) is noticed
+const MAX_RESTARTS = 1; // a dead activity is started again once; a second death (swiped away on purpose) stays gone
 
 const SLOT_LABEL: Record<string, string> = {
   WED: 'Wednesday',
@@ -103,7 +105,7 @@ const zeroState = { picksIn: 0, totalSlots: 0, unspent: 0, hint: '', myScore: 0,
 // deno-lint-ignore no-explicit-any
 async function buildDesired(supabase: any, now: number, onlyProfileId?: string): Promise<Desired[]> {
   const out: Desired[] = [];
-  const { data: leagues } = await supabase.from('leagues').select('id, name, current_week, settings').in('season_phase', ['regular', 'playoffs']);
+  const { data: leagues } = await supabase.from('leagues').select('id, name, current_week, settings, logo_mode, logo_emoji, logo_color, logo_storage_path').in('season_phase', ['regular', 'playoffs']);
   if (!leagues || leagues.length === 0) return out;
 
   const leagueIds = leagues.map((l: { id: string }) => l.id as string);
@@ -174,6 +176,14 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
   for (const league of leagues) {
     const leagueId = league.id as string;
     const week = String(league.current_week);
+    const leagueMode = (league.logo_mode as string | null) ?? 'initials';
+    const leaguePath = league.logo_storage_path as string | null;
+    const leagueLogo = {
+      leagueColor: (league.logo_color as string | null) ?? '#4C8DF5',
+      leagueLogoMode: leagueMode,
+      leagueEmoji: (league.logo_emoji as string | null) ?? '',
+      leagueLogoUrl: leagueMode === 'image' && leaguePath ? `${supabaseUrl}/storage/v1/object/public/logos/${leaguePath}` : '',
+    };
     const wkGames = gamesByWeek.get(week) ?? [];
     if (wkGames.length === 0) continue;
     const { lineupSlots, totalSlots, weeklyCredits, minGames } = settingsSliceFrom(league.settings);
@@ -210,6 +220,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
         teamId: team.id as string,
         week,
         leagueName: (league.name as string | null) ?? '',
+        ...leagueLogo,
         ...identity(team as Record<string, unknown>, 'my'),
         ...identity(opp, 'opp'),
         oppTeamId: mu?.oppId ?? '',
@@ -239,7 +250,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
           emptyNames.length > 0 && emptyNames.length <= 4
             ? `Empty: ${emptyNames.join(', ')}`
             : gamesNeeded > 0
-              ? `Need ${gamesNeeded} more different game${gamesNeeded > 1 ? 's' : ''}`
+              ? `Need ${gamesNeeded} more game${gamesNeeded > 1 ? 's' : ''}`
               : unspent > 0
                 ? `$${String(unspent).replace(/\.0+$/, '')} unspent`
                 : '';
@@ -360,9 +371,22 @@ Deno.serve(async (req: Request) => {
   const desired = await buildDesired(supabase, now);
 
   const { data: openRows } = await supabase.from('live_activities').select('*').is('ended_at', null);
-  const { data: allRows } = await supabase.from('live_activities').select('profile_id, league_id, week, kind, window_key, ended_at');
+  const { data: allRows } = await supabase.from('live_activities').select('id, profile_id, league_id, week, kind, window_key, ended_at, meta');
   const openByKey = new Map<string, Record<string, unknown>>((openRows ?? []).map((r: Record<string, unknown>) => [keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string }), r]));
   const everByKey = new Set<string>((allRows ?? []).map((r: Record<string, unknown>) => keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string })));
+
+  // Rows the server closed because a push to the activity failed (the phone dropped it): candidates for one restart.
+  const closedByKey = new Map<string, { id: string; meta: Record<string, unknown>; restarts: number }>();
+  for (const r of allRows ?? []) {
+    const meta = ((r as Record<string, unknown>).meta as Record<string, unknown> | null) ?? {};
+    if (r.ended_at && meta.endedBy === 'push_failed') {
+      closedByKey.set(keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string }), {
+        id: r.id as string,
+        meta,
+        restarts: typeof meta.restarts === 'number' ? meta.restarts : 0,
+      });
+    }
+  }
 
   const { data: startTokens } = await supabase
     .from('live_activity_start_tokens')
@@ -391,6 +415,28 @@ Deno.serve(async (req: Request) => {
 
     if (d.ending) {
       if (row) await endActivity(row, d.state, d.kind === 'score' ? 30 * 60 : d.state.phase === 'ready' ? 90 : 30);
+      continue;
+    }
+
+    // An activity the phone ended on its own (the app was force-quit) gets one fresh start while its window is still open.
+    const restartable = !row && everByKey.has(key) && closedByKey.get(key) != null && closedByKey.get(key)!.restarts < MAX_RESTARTS;
+    if (!row && restartable) {
+      const startToken = startTokenByProfile.get(d.profileId);
+      if (!startToken) continue;
+      const prev = closedByKey.get(key)!;
+      if (!dry) {
+        const r = await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, priority: 10 });
+        if (!r.ok) {
+          log.push({ restart: key, failure: r.failure.reason });
+          if (r.failure.shouldDeleteToken) await supabase.from('live_activity_start_tokens').delete().eq('token', startToken);
+          continue;
+        }
+        await supabase.from('live_activities').update({
+          ended_at: null, push_token: null, activity_id: null, started_at: new Date(now).toISOString(), last_pushed_at: new Date(now).toISOString(),
+          last_state: d.state, meta: { ...prev.meta, endedBy: null, restarts: prev.restarts + 1 },
+        }).eq('id', prev.id);
+      }
+      log.push({ restarted_after_end: key });
       continue;
     }
 
@@ -428,17 +474,22 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    if (stateJson((row.last_state as Record<string, unknown>) ?? {}) === stateJson(d.state)) continue; // nothing changed
+    const lastPushed = row.last_pushed_at ? new Date(row.last_pushed_at as string).getTime() : 0;
+    const unchanged = stateJson((row.last_state as Record<string, unknown>) ?? {}) === stateJson(d.state);
+    if (unchanged && now - lastPushed < PROBE_MS) continue; // nothing changed, and checked recently
     if (!dry) {
       const r = await sendLiveActivityPush(row.push_token as string, {
         event: 'update',
         contentState: d.state,
         staleDate: d.staleDate,
-        priority: d.kind === 'score' ? 10 : 5,
+        priority: !unchanged && d.kind === 'score' ? 10 : 5,
       });
       if (!r.ok) {
         log.push({ update: key, failure: r.failure.reason });
-        if (r.failure.shouldDeleteToken) await supabase.from('live_activities').update({ ended_at: new Date(now).toISOString() }).eq('id', row.id as string);
+        if (r.failure.shouldDeleteToken) {
+          const meta = { ...(row.meta as Record<string, unknown> | null), endedBy: 'push_failed' };
+          await supabase.from('live_activities').update({ ended_at: new Date(now).toISOString(), meta }).eq('id', row.id as string);
+        }
         continue;
       }
       await supabase.from('live_activities').update({ last_state: d.state, last_pushed_at: new Date(now).toISOString() }).eq('id', row.id as string);

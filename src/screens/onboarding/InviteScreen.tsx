@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { CircleCheck } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { LeagueLogo } from '../../components/common/LeagueLogo';
+import { ONBOARDING_LINK_BTN, ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
 export function InviteScreen() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -57,7 +58,7 @@ export function InviteScreen() {
         <button
           onClick={seasonStarted ? () => navigate('/home') : handleFill}
           disabled={filling}
-          className="w-full bg-primary text-white font-semibold py-3.5 rounded-xl disabled:opacity-40"
+          className={ONBOARDING_PRIMARY_BTN}
         >
           {filling ? 'Filling…' : seasonStarted ? 'Continue to League' : 'Fill with simulated teams'}
         </button>
@@ -66,7 +67,7 @@ export function InviteScreen() {
             <p className="text-xs text-text-muted">
               Populates the league with AI-controlled teams so you can start Week 1 right away.
             </p>
-            <button onClick={() => navigate('/home')} disabled={filling} className="text-primary text-sm font-medium">
+            <button onClick={() => navigate('/home')} disabled={filling} className={ONBOARDING_LINK_BTN}>
               Skip — wait for real friends to join
             </button>
           </>
