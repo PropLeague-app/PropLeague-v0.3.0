@@ -124,7 +124,6 @@ Deno.serve(async (req) => {
         if (u == null || ms < u) upcomingSlots.set(g.day_slot, ms);
       }
     }
-    const remainingSlates = [...upcomingSlots.entries()].sort((a, b) => a[1] - b[1]).map(([slot]) => slotLabel(slot));
     const gamesLeft = upcomingGameIds.size;
 
     let dueSlots = [...earliestKickoffBySlot.entries()].filter(([, kickoffMs]) => {

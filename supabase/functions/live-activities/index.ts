@@ -129,7 +129,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
     .select('id, profile_id')
     .in('id', realTeams.map((t: { membership_id: string }) => t.membership_id));
   const profileByMembership = new Map<string, string>((memberships ?? []).map((m: { id: string; profile_id: string }) => [m.id, m.profile_id]));
-  const profileIds = [...new Set([...profileByMembership.values()])].filter((id) => !onlyProfileId || id === onlyProfileId);
+  const profileIds = [...new Set(profileByMembership.values())].filter((id) => !onlyProfileId || id === onlyProfileId);
   if (profileIds.length === 0) return out;
   const { data: profiles } = await supabase.from('profiles').select('id, notification_prefs').in('id', profileIds);
   const prefsByProfile = new Map<string, unknown>((profiles ?? []).map((p: { id: string; notification_prefs: unknown }) => [p.id, p.notification_prefs]));

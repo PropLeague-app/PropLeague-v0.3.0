@@ -142,7 +142,6 @@ function buildRosterLeague(hidePicks: boolean, currentWeek: number, roster: Week
     activity: [],
     chat: [],
     prizePool: null,
-    manualGameOverrides: {},
   };
 }
 

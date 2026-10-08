@@ -701,7 +701,7 @@ export const useAppStore = create<AppState>()(
             // loading gap, not the norm now that resolveGame checks
             // realGamesById first) should skip for now rather than risk
             // voiding a wager whose game may already be live.
-            const game = resolveGame(slot.wager.gameId, state.realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+            const game = resolveGame(slot.wager.gameId, state.realGamesById, league.currentWeek, league.settings.lineMovementEnabled);
             if (!game || gameHasStarted(game)) return slot;
             // isWagerScratched() is the SIMULATOR's fake "player ruled out" roll (a
             // deterministic ~3% hash of the wager id, see engine/settlement.ts) --
@@ -1088,7 +1088,6 @@ export const useAppStore = create<AppState>()(
                   activity: existing.activity,
                   chat: existing.chat,
                   prizePool: existing.prizePool,
-                  manualGameOverrides: existing.manualGameOverrides,
                 }
               : fresh;
           }

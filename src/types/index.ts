@@ -692,11 +692,6 @@ export interface League {
   activity: ActivityItem[];
   chat: ChatMessage[];
   prizePool: PrizePool | null;
-  /** Dev-panel game-by-game stepper (manual §6): lets a single game (or a whole day
-   * slot) be pushed to 'live' or 'final' ahead of the full weekly settlement, purely
-   * for demo purposes — wager settlement still only happens on Advance Week. Cleared
-   * each time a new week starts. */
-  manualGameOverrides: Record<string, 'live' | 'final'>;
 }
 
 // --- Profile ---------------------------------------------------------------

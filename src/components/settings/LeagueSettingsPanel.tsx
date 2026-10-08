@@ -733,7 +733,7 @@ export function LeagueSettingsPanel({
         <CollapsibleSection
           title="Weekly Moments"
           icon={<Sparkles size={16} />}
-          help={['scoring', 'Perfect weeks']}
+          help={['scoring', 'Perfect and skunked weeks']}
           readOnly={readOnly}
           summary={`${enabledMoments} of ${MOMENT_CATEGORIES.length} awards on`}
         >

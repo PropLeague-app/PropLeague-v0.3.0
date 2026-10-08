@@ -172,7 +172,7 @@ export function Lineup() {
         {roster.slots.map((slot) => {
           const game = slot.wager
             ? (realGamesById[slot.wager.gameId] ??
-              getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides))
+              getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled))
             : undefined;
           const locked = !!game && game.status !== 'upcoming';
           const slotValidation = validation.slotResults.find((r) => r.slotId === slot.slotId);

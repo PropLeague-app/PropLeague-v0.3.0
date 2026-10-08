@@ -127,7 +127,6 @@ export function createLeague(params: CreateLeagueParams): League {
     standings: [emptyStanding(userTeam.id)],
     bracket: null,
     prizePool: null,
-    manualGameOverrides: {},
     activity: [
       {
         id: `welcome-${params.id}`,
@@ -200,7 +199,7 @@ export function buildLeagueFromRealTeams(params: {
 
   const settings: LeagueSettings = {
     ...DEFAULT_LEAGUE_SETTINGS,
-    ...(params.settingsOverrides ?? {}),
+    ...params.settingsOverrides,
     leagueName: params.name,
     isPublic: params.isPublic,
   };
@@ -225,7 +224,6 @@ export function buildLeagueFromRealTeams(params: {
     standings: teams.map((t) => emptyStanding(t.id)),
     bracket: null,
     prizePool: null,
-    manualGameOverrides: {},
     activity: [
       {
         id: `joined-${params.id}`,

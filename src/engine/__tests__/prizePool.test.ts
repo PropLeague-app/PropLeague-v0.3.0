@@ -279,7 +279,6 @@ function leagueForMultiplierTest(overrides: Partial<League> = {}): League {
     activity: [],
     chat: [],
     prizePool: null,
-    manualGameOverrides: {},
     ...overrides,
   };
 }

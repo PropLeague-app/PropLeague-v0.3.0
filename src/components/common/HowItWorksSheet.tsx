@@ -133,9 +133,10 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       body: ['Picks are graded automatically from real stats. A week closes Tuesday morning Eastern, after Monday night, and then scores, matchups, standings and playoffs update on their own.'],
     },
     {
-      title: 'Perfect weeks',
+      title: 'Perfect and skunked weeks',
       body: [
-        'A week with no lost bet: every slot filled, all credits placed, enough different games, and at least one win. Pushes and voids are fine, and a roster hit by the invalid roster penalty never counts. Perfect weeks get a gold treatment with flames, and the league feed announces them (the commissioner can turn that off).',
+        'A perfect week has no lost bet: every slot filled, all credits placed, enough different games, and at least one win. Pushes and voids are fine, and a roster hit by the invalid roster penalty never counts. Perfect weeks get a gold treatment with flames, and the league feed announces them (the commissioner can turn that off).',
+        'A skunked week is the opposite: every slot filled, nothing still pending, at least three losses and no wins or pushes. Voids are ignored. Skunked weeks get a muted olive treatment with stink lines and flies on the matchup, schedule and share picture. The league feed only announces them if the commissioner turns that on, and it is off by default.',
       ],
     },
     {
@@ -170,7 +171,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Sharing',
       body: [
-        'Tap the share icon at the top of Bets, My Stats or any Matchup (current or past), or the small one on a leaderboard, to make a picture to send. It is a clean card built from the numbers on screen, not a screenshot. It follows your theme (light or dark, and scaled P/L colors), and a perfect week gets its flames behind the team logo. Bets shares whatever your filters show: a few picks fill a standard 4:5 picture, and a long list makes it taller, like a long parlay slip (up to 30 picks, then "+N more"). Tap the small icon on one ticket to share just that bet. My Stats shares the tab you are on (Overview, Markets, Trends or Matchups). Picks that are hidden until kickoff stay hidden in the picture.',
+        'Tap the share icon at the top of Bets, My Stats or any Matchup (current or past), or the small one on a leaderboard, to make a picture to send. It is a clean card built from the numbers on screen, not a screenshot. It follows your theme (light or dark, and scaled P/L colors), and a perfect week gets its flames behind the team logo (a skunked week gets stink lines and flies instead). Bets shares whatever your filters show: a few picks fill a standard 4:5 picture, and a long list makes it taller, like a long parlay slip (up to 30 picks, then "+N more"). Tap the small icon on one ticket to share just that bet. My Stats shares the tab you are on (Overview, Markets, Trends or Matchups). Picks that are hidden until kickoff stay hidden in the picture.',
       ],
     },
     {
@@ -207,7 +208,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       body: [
         'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation, market and minimum-game rules, buy-in, multipliers and penalties.',
         'You can still edit them. The change is saved as scheduled, shows an "Applies Week N" pill, and takes effect after Tuesday\'s settlement. You can discard scheduled changes in one tap.',
-        'Everything else applies immediately: league name and visibility, Weekly Moments, perfect week announcements, alt lines, line movement, playoff format, payout splits and conference names.',
+        'Everything else applies immediately: league name and visibility, Weekly Moments, perfect and skunked week announcements, alt lines, line movement, playoff format, payout splits and conference names.',
       ],
     },
     {
@@ -219,7 +220,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'Betting & Buy-In: stake limits, buy-in, payout split, standing multipliers.',
         'Lines & Markets: alt lines and live line movement.',
         'Playoffs & Conferences: field size, elimination type, conferences.',
-        'Weekly Moments: weekly awards, custom names, perfect week announcement.',
+        'Weekly Moments: weekly awards, custom names, perfect and skunked week announcements.',
       ],
     },
     {

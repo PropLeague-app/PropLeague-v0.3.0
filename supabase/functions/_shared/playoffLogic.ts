@@ -10,11 +10,8 @@
 // if the bracket/tiebreaker/multiplier rules ever change -- there is no other
 // mechanism enforcing that today.
 //
-// NOT ported here: engine/moments.ts (weekly awards). That needs per-wager
-// roster data (stake/odds/position/simulatedValue-style "how close" framing)
-// that doesn't have a real-data equivalent worked out yet -- explicitly out of
-// scope for this pass. Weekly Moments cards will simply stop appearing once
-// real-data auto-advance takes over; that's a known, flagged gap, not a bug.
+// Weekly Moments (the awards) are not in this file: they live in
+// _shared/momentsReal.ts, which settle-week runs on real wagers.
 
 export type WeekId = number | 'WC' | 'DIV' | 'CONF';
 export type PlayoffFieldSize = 2 | 4 | 6 | 8 | 16;

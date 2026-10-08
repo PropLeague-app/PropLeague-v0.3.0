@@ -121,7 +121,7 @@ export function BetHistory() {
           wagerWeek: week,
           currentWeek: league.currentWeek,
           wagerStatus: slot.wager!.status,
-          gameStarted: gameHasStarted(resolveGame(slot.wager!.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
+          gameStarted: gameHasStarted(resolveGame(slot.wager!.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled)),
         }),
       );
   }, [league, userTeam, viewedTeam?.id, isLeagueView, realGamesById]);
@@ -198,7 +198,7 @@ export function BetHistory() {
 
   // Share: a slip of the bets currently on screen (filters included), or one ticket on its own.
   const gameStartedFor = (gameId: string) =>
-    gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides));
+    gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled));
   const toSlipRow = ({ slot, teamId }: (typeof bets)[number]): SlipRow => {
     const wager = slot.wager!;
     const betTeam = isLeagueView ? league.teams.find((t) => t.id === teamId) : undefined;
@@ -381,7 +381,7 @@ export function BetHistory() {
                             : undefined
                         }
                         game={(() => {
-                          const g = resolveGame(wager.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+                          const g = resolveGame(wager.gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled);
                           return g ? { homeScore: g.homeScore, awayScore: g.awayScore } : undefined;
                         })()}
                       />

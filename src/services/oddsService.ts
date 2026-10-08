@@ -20,13 +20,8 @@ function deriveInjuryTag(gameId: string, playerId: string): InjuryTag {
 /** Reveals final score/status for games in weeks already advanced past, or for a game
  * the dev-panel game stepper has manually pushed to 'live'/'final' ahead of the full
  * weekly settlement (manual §6 — demo-only, doesn't touch wager settlement). */
-function revealGame(game: NFLGame, currentWeek: WeekId, override?: 'live' | 'final'): NFLGame {
-  if (weekOrder(game.week) >= weekOrder(currentWeek)) {
-    if (!override) return game;
-    const result = resultForGame(game.id);
-    if (!result) return game;
-    return { ...game, status: override, homeScore: result.homeScore, awayScore: result.awayScore };
-  }
+function revealGame(game: NFLGame, currentWeek: WeekId): NFLGame {
+  if (weekOrder(game.week) >= weekOrder(currentWeek)) return game;
   const result = resultForGame(game.id);
   if (!result) return game;
   return { ...game, status: 'final', homeScore: result.homeScore, awayScore: result.awayScore };
@@ -76,19 +71,17 @@ export function getSlate(
   week: WeekId,
   currentWeek: WeekId,
   lineMovementEnabled = true,
-  overrides?: Record<string, 'live' | 'final'>,
 ): NFLGame[] {
-  return gamesForWeekBase(week).map((g) => applyLineMovement(revealGame(g, currentWeek, overrides?.[g.id]), lineMovementEnabled));
+  return gamesForWeekBase(week).map((g) => applyLineMovement(revealGame(g, currentWeek), lineMovementEnabled));
 }
 
 export function getGame(
   gameId: string,
   currentWeek: WeekId,
   lineMovementEnabled = true,
-  overrides?: Record<string, 'live' | 'final'>,
 ): NFLGame | undefined {
   const game = gameByIdBase(gameId);
-  return game ? applyLineMovement(revealGame(game, currentWeek, overrides?.[gameId]), lineMovementEnabled) : undefined;
+  return game ? applyLineMovement(revealGame(game, currentWeek), lineMovementEnabled) : undefined;
 }
 
 export function getPlayerPropGroups(game: NFLGame): PlayerPropGroup[] {
@@ -170,9 +163,8 @@ export function resolveGame(
   realGamesById: Record<string, NFLGame>,
   currentWeek: WeekId,
   lineMovementEnabled = true,
-  overrides?: Record<string, 'live' | 'final'>,
 ): NFLGame | undefined {
-  return realGamesById[gameId] ?? getGame(gameId, currentWeek, lineMovementEnabled, overrides);
+  return realGamesById[gameId] ?? getGame(gameId, currentWeek, lineMovementEnabled);
 }
 
 /** True only once we actually know a game has started -- an unresolved/not-yet-loaded

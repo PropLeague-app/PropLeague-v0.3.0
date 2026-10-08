@@ -121,7 +121,7 @@ export function MatchupDetail() {
   const decided: DecidedGameLookup = {
     isDecided: (gameId) =>
       (realGamesById[gameId] ??
-        getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides))?.status !== 'upcoming',
+        getGame(gameId, league.currentWeek, league.settings.lineMovementEnabled))?.status !== 'upcoming',
     resultFor: (gameId) => resultForGame(gameId),
   };
   // hide-picks: a not-yet-live opponent pick must not leak its stake into the
@@ -197,7 +197,7 @@ export function MatchupDetail() {
   const isSlotLive = (s: RosterSlotState) => {
     if (!s.wager) return false;
     if (s.wager.status !== 'pending') return true;
-    const g = realGamesById[s.wager.gameId] ?? getGame(s.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+    const g = realGamesById[s.wager.gameId] ?? getGame(s.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled);
     return !!g && g.status !== 'upcoming';
   };
   const anyPickLive = rosterA.slots.some(isSlotLive) || rosterB.slots.some(isSlotLive);
@@ -207,7 +207,7 @@ export function MatchupDetail() {
   const shareCell = (slot: RosterSlotState, isUser: boolean, hideEmpty: boolean): MatchupCell => {
     const w = slot.wager;
     if (!w) return { kind: hideEmpty ? 'hidden' : 'empty' };
-    const g = realGamesById[w.gameId] ?? getGame(w.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+    const g = realGamesById[w.gameId] ?? getGame(w.gameId, league.currentWeek, league.settings.lineMovementEnabled);
     const started = !!g && g.status !== 'upcoming';
     if (!isUser && hidePicks && !started) return { kind: 'hidden' };
     return {
@@ -482,7 +482,7 @@ function SlotMini({
   // why every real, genuinely-upcoming pick showed a "Live" pill, and also let
   // hidePicks leak an opponent's real pick before kickoff, since `shouldHide`
   // depends on the same `gameStarted` flag).
-  const game = realGamesById[slot.wager.gameId] ?? getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+  const game = realGamesById[slot.wager.gameId] ?? getGame(slot.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled);
   const gameStarted = !!game && game.status !== 'upcoming';
   const shouldHide = !isUser && hidePicks && !gameStarted;
 

@@ -290,7 +290,7 @@ function settingsFrom(raw: unknown): SettingsSlice {
     buyInEnabled: r.buyInEnabled ?? DEFAULT_SETTINGS.buyInEnabled,
     buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
     aiTeamsAffectPool: r.aiTeamsAffectPool !== false,
-    poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...(r.poolMultipliers ?? {}) },
+    poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...r.poolMultipliers },
     lineupSlots: r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_SETTINGS.lineupSlots,
     emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
     invalidRosterPenaltyEnabled: r.invalidRosterPenaltyEnabled === true,
@@ -1186,7 +1186,7 @@ Deno.serve(async (req) => {
         const leagueUpdate: Record<string, unknown> = { current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool };
         const pendingRaw = (league as any).pending_settings;
         if (pendingRaw && typeof pendingRaw === 'object' && Object.keys(pendingRaw).length > 0 && newWeek !== weekStr) {
-          const merged = { ...((league.settings as Record<string, unknown> | null) ?? {}), ...pendingRaw };
+          const merged = { ...(league.settings as Record<string, unknown> | null), ...pendingRaw };
           const { data: infeasible, error: feasErr } = await supabase.rpc('settings_infeasibility', { p_settings: merged });
           if (feasErr) {
             errors.push(`pending settings check: ${feasErr.message}`); // leave them pending, retry on the next run

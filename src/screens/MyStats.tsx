@@ -171,7 +171,7 @@ export function MyStats() {
 
   const viewedTeam = isLeagueView ? undefined : (league.teams.find((t) => t.id === selectedTeamId) ?? userTeam);
   const isOwnTeam = !isLeagueView && viewedTeam?.id === userTeam.id;
-  const gameLookup = (gameId: string) => resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+  const gameLookup = (gameId: string) => resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled);
   const isGameStarted = (gameId: string) => gameHasStarted(gameLookup(gameId));
 
   const bets = isLeagueView

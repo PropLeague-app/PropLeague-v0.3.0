@@ -47,7 +47,7 @@ export function GameDetail() {
 
   const game = gameId
     ? (realGamesById[gameId] ??
-      getGame(gameId, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled ?? true, league?.manualGameOverrides))
+      getGame(gameId, league?.currentWeek ?? 1, league?.settings.lineMovementEnabled ?? true))
     : undefined;
   if (!game) {
     return (

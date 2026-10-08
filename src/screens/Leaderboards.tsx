@@ -253,7 +253,7 @@ export function Leaderboards() {
   if (!league) return null;
 
   const gameLookup = (gameId: string) =>
-    resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides);
+    resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled);
   const boards = computeLeagueLeaderboards(league, gameLookup, userTeam?.id);
   const skills = computeSkillBoards(league, gameLookup);
   const teamById = (id: string) => league.teams.find((t) => t.id === id);

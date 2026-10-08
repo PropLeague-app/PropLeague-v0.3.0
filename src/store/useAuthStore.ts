@@ -114,8 +114,8 @@ function restoreLocalState(userId: string) {
       seenMatchupResultIds?: Record<string, true>;
     };
     useAppStore.setState((state) => ({
-      lastSeenChatByLeague: { ...(saved.lastSeenChatByLeague ?? {}), ...state.lastSeenChatByLeague },
-      seenMatchupResultIds: { ...(saved.seenMatchupResultIds ?? {}), ...state.seenMatchupResultIds },
+      lastSeenChatByLeague: { ...saved.lastSeenChatByLeague, ...state.lastSeenChatByLeague },
+      seenMatchupResultIds: { ...saved.seenMatchupResultIds, ...state.seenMatchupResultIds },
       profile: state.profile
         ? {
             ...state.profile,

@@ -104,7 +104,7 @@ export function MatchupCard({
 
   const decided: DecidedGameLookup = {
     isDecided: (gameId) =>
-      gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled, league.manualGameOverrides)),
+      gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled)),
     resultFor: (gameId) => resultForGame(gameId),
   };
   // hide-picks: match MatchupDetail's masking so this card's own score preview
