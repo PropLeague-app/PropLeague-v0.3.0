@@ -18,6 +18,8 @@ import { pickProgress, formatProgressLine } from '../components/home/MatchupCard
 import { isWagerVisibleToViewer, rosterHasHiddenPicks, emptySlotsHidden, weekAllGamesStarted } from '../engine/stats';
 import { isPerfectWeek } from '../engine/perfectWeek';
 import { FireAura } from '../components/common/FireAura';
+import { StinkAura } from '../components/common/StinkAura';
+import { isSkunkedWeek } from '../engine/skunkedWeek';
 import { weekScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
 import type { League, LeagueTeam, Matchup, RosterSlotState, WagerStatus } from '../types';
@@ -175,6 +177,9 @@ export function MatchupDetail() {
   const scaleRef = weekScaleRef(league, matchup.week, [scoreHiddenA ? 0 : scoreA, scoreHiddenB ? 0 : scoreB]);
   const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
   const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
+  // Skunked weeks always show here, whether or not the commissioner posts them to the feed.
+  const skunkedA = isSkunkedWeek(rosterA, isFinal);
+  const skunkedB = isSkunkedWeek(rosterB, isFinal);
 
   // Same weekly-record line Home's matchup bubble shows (see pickProgress's own doc
   // comment) -- now doing double duty here in place of the old "Live"/"Final" text
@@ -218,6 +223,7 @@ export function MatchupDetail() {
     score: number,
     progress: ReturnType<typeof pickProgress>,
     perfect: boolean,
+    skunked: boolean,
     hidden: boolean,
     scoreHidden: boolean,
   ): MatchupSide => ({
@@ -228,14 +234,15 @@ export function MatchupDetail() {
     scoreHidden,
     progress: formatProgressLine(progress, hidden),
     perfect,
+    skunked,
   });
   const shareCard = (
     <MatchupShareCard
       leagueName={league.name}
       weekText={weekLabel(matchup.week)}
       statusText={isFinal ? 'Final' : anyPickLive ? 'Live' : 'Upcoming'}
-      a={shareSide(teamA, scoreA, progressA, perfectA, hiddenA, scoreHiddenA)}
-      b={shareSide(teamB, scoreB, progressB, perfectB, hiddenB, scoreHiddenB)}
+      a={shareSide(teamA, scoreA, progressA, perfectA, skunkedA, hiddenA, scoreHiddenA)}
+      b={shareSide(teamB, scoreB, progressB, perfectB, skunkedB, hiddenB, scoreHiddenB)}
       winner={isFinal ? (matchup.isTie ? 'tie' : matchup.winnerId === teamA.id ? 'a' : 'b') : null}
       plRef={scaleRef}
       rows={rosterA.slots.map((slotA, idx) => ({
@@ -268,9 +275,9 @@ export function MatchupDetail() {
       {orderedWeekMatchups.length > 1 && (
         <MatchupTabs league={league} matchups={orderedWeekMatchups} currentMatchupId={matchup.id} onSelect={(id) => navigate(`/matchup/${id}`, { replace: true })} />
       )}
-      <div className={`p-4 space-y-4 ${perfectA || perfectB ? 'pl-slip pl-slip-fade' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''}`}>
+      <div className={`p-4 space-y-4 ${perfectA || perfectB || skunkedA || skunkedB ? 'pl-slip pl-slip-fade' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''} ${skunkedA ? 'pl-skunk-l' : ''} ${skunkedB ? 'pl-skunk-r' : ''}`}>
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} hidden={hiddenA} scoreHidden={scoreHiddenA} />
+          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} skunked={skunkedA} hidden={hiddenA} scoreHidden={scoreHiddenA} />
           <div className="flex flex-col items-center gap-1">
             {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
@@ -281,7 +288,7 @@ export function MatchupDetail() {
               {weekLabel(matchup.week)}
             </span>
           </div>
-          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} hidden={hiddenB} scoreHidden={scoreHiddenB} reverse />
+          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} skunked={skunkedB} hidden={hiddenB} scoreHidden={scoreHiddenB} reverse />
         </div>
 
         <div className="space-y-1.5">
@@ -377,6 +384,7 @@ function TeamHeader({
   reverse,
   scaleRef,
   perfect = false,
+  skunked = false,
   hidden = false,
   scoreHidden = false,
 }: {
@@ -391,6 +399,8 @@ function TeamHeader({
   scaleRef: number;
   /** A perfect week: the headline number is drawn as fire. */
   perfect?: boolean;
+  /** A skunked week: stink lines and flies around the logo, a muted name and a small label. */
+  skunked?: boolean;
 }) {
   const plStyle = usePlStyle();
   // Name used to share its row with the logo, truncating hard into the leftover
@@ -404,10 +414,12 @@ function TeamHeader({
   // fit. mt-1 below just keeps a beat of space between the name and the logo row.
   return (
     <div className={`min-w-0 ${reverse ? 'text-right' : ''}`}>
-      <p className={`text-xs font-medium truncate ${perfect ? 'pl-fire-name' : ''}`}>{team.teamName}</p>
+      <p className={`text-xs font-medium truncate ${perfect ? 'pl-fire-name' : skunked ? 'pl-skunk-name' : ''}`}>{team.teamName}</p>
       <div className={`flex items-center gap-1.5 mt-1 ${reverse ? 'flex-row-reverse' : ''}`}>
         <FireAura active={perfect}>
-          <TeamLogo team={team} size="sm" />
+          <StinkAura active={skunked}>
+            <TeamLogo team={team} size="sm" />
+          </StinkAura>
         </FireAura>
         <div className="min-w-0">
           {scoreHidden ? (
@@ -425,6 +437,7 @@ function TeamHeader({
               since that moved up next to the Week pill above. */}
           <p className={`text-[9px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>{formatProgressLine(progress, hidden)}</p>
           {perfect && <p className="text-[8px] font-bold uppercase tracking-wider pl-gold-text mt-0.5">Perfect week</p>}
+          {skunked && <p className="text-[8px] font-bold uppercase tracking-wider pl-skunk-name mt-0.5">Skunked</p>}
         </div>
       </div>
     </div>

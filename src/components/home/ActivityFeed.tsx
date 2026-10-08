@@ -10,7 +10,9 @@ import { PositionBadge } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { FireAura } from '../common/FireAura';
+import { StinkAura } from '../common/StinkAura';
 import { parsePerfectWeek, type PerfectWeekPost } from '../../engine/perfectAnnouncement';
+import { parseSkunkedWeek, type SkunkedWeekPost } from '../../engine/skunkedAnnouncement';
 import { teamAccent } from '../../engine/teamColors';
 import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from '../../engine/richText';
 import { useResolvedTheme } from '../../hooks/useResolvedTheme';
@@ -281,6 +283,74 @@ function PerfectWeekCard({
   );
 }
 
+/** A few dry lines for under the headline. They poke fun at the week, never at the team. */
+const SKUNK_QUIPS = [
+  'Not one of them cashed.',
+  'The week had other plans.',
+  'Every pick found a new way out.',
+  'A clean sweep, the wrong way.',
+];
+
+/** A skunked week gets the quiet mirror of the perfect-week card: muted olive wash instead of gold,
+ * stink lines and flies instead of flames, and red only on the loss amount. Off unless the commissioner
+ * turned announcements on (settle-week writes it; nothing here decides whether a week was skunked). */
+function SkunkedWeekCard({
+  league,
+  item,
+  post,
+  onReact,
+  onDelete,
+  canDelete,
+}: {
+  league: League;
+  item: ActivityItem;
+  post: SkunkedWeekPost;
+  onReact?: (itemId: string, emoji: string) => void;
+  onDelete?: (itemId: string) => void;
+  canDelete?: boolean;
+}) {
+  const team = league.teams.find((t) => t.id === post.teamId);
+  const quip = SKUNK_QUIPS[[...post.teamId].reduce((n, c) => n + c.charCodeAt(0), 0) % SKUNK_QUIPS.length];
+  const lost = post.pl.startsWith('-');
+  return (
+    <Card dense className="pl-slip pl-slip-l pl-slip-r pl-skunk space-y-1">
+      <div className="flex flex-col items-center text-center">
+        <p className="text-[9px] font-bold uppercase tracking-[0.2em] pl-skunk-name">{post.weekLabel}</p>
+        <div className="flex items-center justify-center gap-2 mt-1 max-w-full">
+          {team && (
+            <StinkAura active>
+              <TeamLogo team={team} size="sm" />
+            </StinkAura>
+          )}
+          <p className="text-base font-bold text-text truncate min-w-0">{team?.teamName ?? post.teamName}</p>
+        </div>
+        <p className="pl-skunk-name text-xl font-extrabold uppercase tracking-wide leading-none mt-1">Skunked</p>
+        <p className="text-[11px] italic text-text-muted mt-1">{quip}</p>
+        <div className="flex items-center justify-center gap-1.5 mt-1.5">
+          <span className="inline-flex items-baseline gap-1 rounded-full bg-black/30 px-2.5 py-0.5 text-sm font-bold text-text">
+            {post.record}
+            <span className="text-[8px] font-semibold uppercase tracking-wide text-text-muted">W-L</span>
+          </span>
+          <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${lost ? 'bg-loss/15 text-loss' : 'bg-black/30 text-text'}`}>{post.pl}</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="shrink-0 text-[9px] text-text-muted">
+          {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+        </p>
+        <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+          <Reactions item={item} onReact={onReact} />
+          {canDelete && onDelete && (
+            <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function NewsCard({
   league,
   item,
@@ -307,6 +377,8 @@ function NewsCard({
   const isAnnouncement = item.type === 'announcement';
   const perfect = isAnnouncement ? parsePerfectWeek(item.message) : null;
   if (perfect) return <PerfectWeekCard league={league} item={item} post={perfect} onReact={onReact} onDelete={onDelete} canDelete={canDelete} />;
+  const skunked = isAnnouncement ? parseSkunkedWeek(item.message) : null;
+  if (skunked) return <SkunkedWeekCard league={league} item={item} post={skunked} onReact={onReact} onDelete={onDelete} canDelete={canDelete} />;
   // Announcements the commissioner posted (or flagged a void with) carry their team id;
   // system ones (season start, welcome) do not.
   const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;

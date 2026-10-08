@@ -31,6 +31,8 @@ export const C = {
   glow: 'var(--pl-share-glow, color-mix(in srgb, var(--color-primary, #4c8df5) 22%, transparent))',
   /** Gold that stays readable as text in light mode (perfect weeks, podium). */
   goldText: 'var(--pl-gold-text, #f4c542)',
+  /** The muted olive used for skunked weeks. */
+  skunkText: 'var(--pl-skunk-text, #b3b184)',
 } as const;
 
 /** A theme color at some strength over whatever is behind it, like Tailwind's `bg-x/20`. */

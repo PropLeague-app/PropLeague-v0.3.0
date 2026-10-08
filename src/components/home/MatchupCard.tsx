@@ -13,6 +13,8 @@ import { AnimatedNumber } from '../common/AnimatedNumber';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
 import { FireAura } from '../common/FireAura';
+import { StinkAura } from '../common/StinkAura';
+import { isSkunkedWeek } from '../../engine/skunkedWeek';
 
 /** Per-team pick progress for the small line under the win-probability bar (see
  * chat): how many of this week's picks are still awaiting a result ("active"),
@@ -181,13 +183,16 @@ export function MatchupCard({
   const scaleRef = weekScaleRef(league, matchup.week, [scoreHiddenA ? 0 : scoreA, scoreHiddenB ? 0 : scoreB]);
   const perfectA = isPerfectWeek(rosterA, league.settings, isFinal);
   const perfectB = isPerfectWeek(rosterB, league.settings, isFinal);
+  // Skunked weeks always show here, whether or not the commissioner posts them to the feed.
+  const skunkedA = isSkunkedWeek(rosterA, isFinal);
+  const skunkedB = isSkunkedWeek(rosterB, isFinal);
   const leaderId = isFinal ? matchup.winnerId : prob === 0.5 ? null : prob > 0.5 ? teamA.id : teamB.id;
 
   return (
     <Card
       onClick={() => navigate(`/matchup/${matchup.id}`)}
       dense={compact}
-      className={`${compact ? 'space-y-1.5' : 'space-y-3'} ${perfectA || perfectB ? 'pl-slip' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''}`}
+      className={`${compact ? 'space-y-1.5' : 'space-y-3'} ${perfectA || perfectB || skunkedA || skunkedB ? 'pl-slip' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''} ${skunkedA ? 'pl-skunk-l' : ''} ${skunkedB ? 'pl-skunk-r' : ''}`}
     >
       <div className="flex items-center gap-1.5">
         <TeamBlock
@@ -195,6 +200,7 @@ export function MatchupCard({
           highlighted={teamA.id === highlightTeamId}
           trailing={leaderId != null && leaderId !== teamA.id}
           perfect={perfectA}
+          skunked={skunkedA}
           compact={compact}
         />
         {/* Single shared indicator on the VS itself, not per-team (see chat, Sept
@@ -241,6 +247,7 @@ export function MatchupCard({
           trailing={leaderId != null && leaderId !== teamB.id}
           reverse
           perfect={perfectB}
+          skunked={skunkedB}
           compact={compact}
         />
       </div>
@@ -324,6 +331,7 @@ function TeamBlock({
   trailing,
   reverse,
   perfect = false,
+  skunked = false,
   compact,
 }: {
   team: LeagueTeam;
@@ -332,6 +340,8 @@ function TeamBlock({
   reverse?: boolean;
   /** A perfect week: flames behind the logo and the name drawn as fire. */
   perfect?: boolean;
+  /** A skunked week: stink lines and flies around the logo and a muted olive name. */
+  skunked?: boolean;
   compact?: boolean;
 }) {
   // flex-1 + min-w-0 (see chat, Sept 2026 -- truncation fix): each side now claims an
@@ -348,10 +358,12 @@ function TeamBlock({
   return (
     <div className={`flex items-center gap-1.5 min-w-0 flex-1 ${reverse ? 'flex-row-reverse text-right' : ''}`}>
       <FireAura active={perfect}>
-        <TeamLogo team={team} size={compact ? 'xs' : 'md'} />
+        <StinkAura active={skunked}>
+          <TeamLogo team={team} size={compact ? 'xs' : 'md'} />
+        </StinkAura>
       </FireAura>
       <p
-        className={`relative text-xs font-medium truncate min-w-0 ${perfect ? 'pl-fire-name' : highlighted ? 'text-primary' : trailing ? 'text-text-muted' : ''}`}
+        className={`relative text-xs font-medium truncate min-w-0 ${perfect ? 'pl-fire-name' : skunked ? 'pl-skunk-name' : highlighted ? 'text-primary' : trailing ? 'text-text-muted' : ''}`}
       >
         {team.teamName}
       </p>

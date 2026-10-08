@@ -8,9 +8,12 @@ import { Card } from '../components/common/Card';
 import { BackHeader } from '../components/layout/BackHeader';
 import { TeamLogo } from '../components/common/TeamLogo';
 import { FireAura } from '../components/common/FireAura';
+import { StinkAura } from '../components/common/StinkAura';
+import { SkunkIcon } from '../components/common/SkunkIcon';
 import { MemberSelector } from '../components/common/MemberSelector';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { isTeamWeekPerfect } from '../engine/perfectWeek';
+import { isTeamWeekSkunked } from '../engine/skunkedWeek';
 
 function toWeekId(week: string): WeekId {
   return Number.isNaN(Number(week)) ? (week as WeekId) : Number(week);
@@ -98,22 +101,27 @@ export function ScheduleView() {
           const tied = isFinal && myScore === oppScore;
           const myPerfect = isFinal && isTeamWeekPerfect(league, viewedTeam.id, toWeekId(week));
           const oppPerfect = isFinal && !!opponent && isTeamWeekPerfect(league, opponent.id, toWeekId(week));
+          // Skunked weeks always show here, whether or not the commissioner posts them to the feed.
+          const mySkunked = isFinal && isTeamWeekSkunked(league, viewedTeam.id, toWeekId(week));
+          const oppSkunked = isFinal && !!opponent && isTeamWeekSkunked(league, opponent.id, toWeekId(week));
 
           return (
             <Card
               key={matchup.id}
               onClick={() => navigate(`/matchup/${matchup.id}`)}
-              className={`flex items-center justify-between gap-3 ${myPerfect || oppPerfect ? 'pl-slip' : ''} ${oppPerfect ? 'pl-slip-l' : ''} ${myPerfect ? 'pl-slip-r' : ''}`}
+              className={`flex items-center justify-between gap-3 ${myPerfect || oppPerfect || mySkunked || oppSkunked ? 'pl-slip' : ''} ${oppPerfect ? 'pl-slip-l' : ''} ${myPerfect ? 'pl-slip-r' : ''} ${oppSkunked ? 'pl-skunk-l' : ''} ${mySkunked ? 'pl-skunk-r' : ''}`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 {opponent && (
                   <FireAura active={oppPerfect}>
-                    <TeamLogo team={opponent} size="sm" />
+                    <StinkAura active={oppSkunked}>
+                      <TeamLogo team={opponent} size="sm" />
+                    </StinkAura>
                   </FireAura>
                 )}
                 <div className="min-w-0">
                   <p className="text-xs text-text-muted">{weekLabel(toWeekId(week))}</p>
-                  <p className={`relative text-sm font-medium truncate ${oppPerfect ? 'pl-fire-name' : ''}`}>vs {opponent?.teamName ?? 'TBD'}</p>
+                  <p className={`relative text-sm font-medium truncate ${oppPerfect ? 'pl-fire-name' : oppSkunked ? 'pl-skunk-name' : ''}`}>vs {opponent?.teamName ?? 'TBD'}</p>
                 </div>
               </div>
               <div className="text-right shrink-0">
@@ -121,12 +129,13 @@ export function ScheduleView() {
                   <>
                     <p className={`text-sm font-bold flex items-center justify-end gap-1 ${won ? 'text-profit' : tied ? 'text-text-muted' : 'text-loss'}`}>
                       {myPerfect && <Flame size={11} fill="currentColor" style={{ color: 'var(--pl-flame-mid)' }} aria-label="Perfect week" />}
+                      {mySkunked && <SkunkIcon size={11} style={{ color: 'var(--pl-skunk-icon)' }} />}
                       {won ? 'W' : tied ? 'T' : 'L'}
                     </p>
                     <p className="text-[11px] text-text-muted">
-                      <span className={myPerfect ? 'pl-gold-text font-semibold' : ''}>{formatCents(myScore!)}</span>
+                      <span className={myPerfect ? 'pl-gold-text font-semibold' : mySkunked ? 'text-loss font-semibold' : ''}>{formatCents(myScore!)}</span>
                       {' - '}
-                      <span className={oppPerfect ? 'pl-gold-text font-semibold' : ''}>{formatCents(oppScore!)}</span>
+                      <span className={oppPerfect ? 'pl-gold-text font-semibold' : oppSkunked ? 'text-loss font-semibold' : ''}>{formatCents(oppScore!)}</span>
                     </p>
                   </>
                 ) : (

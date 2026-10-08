@@ -36,6 +36,15 @@
   --pl-gold: 244, 190, 70;
   --pl-wash-a: 0.2;
   --pl-gold-text: #f4c542;
+  /* Skunked-week card (components/common/StinkAura.tsx): dirty olive and khaki, nothing bright, no green. */
+  --pl-skunk-rgb: 128, 132, 92;
+  --pl-skunk-a: 0.18;
+  --pl-skunk-text: #b3b184;
+  --pl-skunk-icon: #8a8758;
+  --pl-skunk-line: 168, 170, 104;
+  --pl-skunk-fly: 46, 31, 20;
+  --pl-skunk-fly-edge: 214, 198, 168;
+  --pl-skunk-fly-wing: 226, 230, 236;
 
   /* Used to be identical to --color-loss above on purpose, back when QB was
      just "the red position" -- but that's exactly the problem: an invalid
@@ -147,6 +156,14 @@
   --pl-gold: 245, 172, 12;
   --pl-wash-a: 0.36;
   --pl-gold-text: #946400;
+  --pl-skunk-rgb: 112, 106, 66;
+  --pl-skunk-a: 0.26;
+  --pl-skunk-text: #5c5832;
+  --pl-skunk-icon: #66623a;
+  --pl-skunk-line: 102, 98, 50;
+  --pl-skunk-fly: 38, 26, 16;
+  --pl-skunk-fly-edge: 38, 26, 16;
+  --pl-skunk-fly-wing: 128, 132, 140;
 
   /* Mixed toward white instead of transparent, and at a higher percentage than
      the dark-mode defaults above, so empty lineup slots (Lineup screen) get an
@@ -498,6 +515,98 @@ body {
   .pl-slip::before {
     animation: none;
   }
+}
+
+/* Skunked week (components/common/StinkAura.tsx + the feed's SkunkedWeekCard). Same recipe as the
+   perfect-week fire, in a muted olive: pl-skunk re-points the pl-slip wash at the skunk color,
+   pl-stink-line drifts up and fades, pl-fly wanders around the logo. Everything holds still under
+   prefers-reduced-motion. */
+.pl-skunk {
+  --pl-gold: var(--pl-skunk-rgb);
+  --pl-wash-a: var(--pl-skunk-a);
+  border-color: rgba(var(--pl-skunk-rgb), 0.38) !important;
+}
+.pl-skunk-name {
+  color: var(--pl-skunk-text);
+}
+/* One skunked side of a matchup card, schedule row or matchup header: the same edge wash as pl-slip-l
+   and pl-slip-r, in the skunk color. Separate from .pl-skunk (which re-points the whole element) so
+   one side can be skunked while the other is perfect. Used with pl-slip. */
+.pl-skunk-l {
+  --pl-wash-l: linear-gradient(90deg, rgba(var(--pl-skunk-rgb), var(--pl-skunk-a)) 0%, rgba(var(--pl-skunk-rgb), calc(var(--pl-skunk-a) * 0.4)) 60%, rgba(var(--pl-skunk-rgb), 0) 100%);
+}
+.pl-skunk-r {
+  --pl-wash-r: linear-gradient(270deg, rgba(var(--pl-skunk-rgb), var(--pl-skunk-a)) 0%, rgba(var(--pl-skunk-rgb), calc(var(--pl-skunk-a) * 0.4)) 60%, rgba(var(--pl-skunk-rgb), 0) 100%);
+}
+.pl-stink {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.pl-stink-line {
+  position: absolute;
+  bottom: 66%;
+  width: 28%;
+  height: 90%;
+  pointer-events: none;
+  overflow: visible;
+  color: rgba(var(--pl-skunk-line), 0.9);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: pl-stink 4.4s ease-in-out infinite;
+  animation-delay: var(--pl-sd);
+}
+@keyframes pl-stink {
+  0% { transform: translateY(14%) scaleY(calc(var(--pl-ss) * 0.7)); opacity: 0; }
+  25% { opacity: 0.9; }
+  72% { opacity: 0.75; }
+  100% { transform: translateY(-34%) translateX(8%) scaleY(var(--pl-ss)); opacity: 0; }
+}
+.pl-fly {
+  position: absolute;
+  width: 10px;
+  height: 9px;
+  pointer-events: none;
+  overflow: visible;
+}
+.pl-fly-body {
+  fill: rgb(var(--pl-skunk-fly));
+  stroke: rgba(var(--pl-skunk-fly-edge), 0.75);
+  stroke-width: 0.7;
+}
+.pl-fly-wing {
+  fill: rgba(var(--pl-skunk-fly-wing), 0.55);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: pl-fly-wing 0.14s ease-in-out infinite alternate;
+}
+@keyframes pl-fly-wing {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(0.3); }
+}
+.pl-fly-a {
+  animation: pl-fly-a 5.2s ease-in-out infinite;
+}
+.pl-fly-b {
+  animation: pl-fly-b 6.4s ease-in-out infinite;
+  animation-delay: -2s;
+}
+@keyframes pl-fly-a {
+  0%, 100% { transform: translate(0, 0) rotate(20deg); }
+  20% { transform: translate(-9px, -5px) rotate(-30deg); }
+  45% { transform: translate(-3px, 8px) rotate(60deg); }
+  70% { transform: translate(6px, 3px) rotate(10deg); }
+}
+@keyframes pl-fly-b {
+  0%, 100% { transform: translate(0, 0) rotate(-20deg); }
+  25% { transform: translate(8px, -7px) rotate(40deg); }
+  50% { transform: translate(14px, 2px) rotate(-10deg); }
+  75% { transform: translate(4px, 7px) rotate(-60deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-stink-line { animation: none; opacity: 0.6; transform: translateY(-10%); }
+  .pl-fly,
+  .pl-fly-wing { animation: none; }
 }
 
 /* Boot loader: the color logo is revealed left to right over the grayed one, holds full for about a

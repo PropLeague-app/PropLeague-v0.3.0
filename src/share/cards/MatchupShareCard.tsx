@@ -4,6 +4,7 @@ import { C, POS_COLOR, SHARE_BODY_H, STATUS_COLOR, STATUS_LETTER, clamp, signedM
 import { useTone } from '../useTone';
 import { ShareFrame } from './ShareFrame';
 import { ShareFlames } from './ShareFlames';
+import { ShareStink } from './ShareStink';
 import { ShareLogo } from './ShareLogo';
 
 export interface MatchupSide {
@@ -16,6 +17,8 @@ export interface MatchupSide {
   /** e.g. "3-1 · 4 open". */
   progress: string;
   perfect: boolean;
+  /** A skunked week: stink lines and flies around the logo, a muted wash and a "SKUNKED" label. */
+  skunked?: boolean;
 }
 
 export interface MatchupCell {
@@ -92,9 +95,12 @@ function Team({
   const tone = useTone();
   const scoreColor = side.scoreHidden ? C.muted : side.perfect ? C.goldText : Math.round(side.score * 100) === 0 ? C.text : tone(side.score, plRef);
   // A soft gold glow that fades out on every side before the column's edge (no visible box).
+  const textDim = loser && side.skunked ? 0.65 : undefined;
   const wash = side.perfect
     ? 'radial-gradient(ellipse closest-side at 50% 52%, rgba(var(--pl-gold, 244, 190, 70), calc(var(--pl-wash-a, 0.2) * 1.5)) 0%, rgba(var(--pl-gold, 244, 190, 70), calc(var(--pl-wash-a, 0.2) * 0.6)) 55%, rgba(var(--pl-gold, 244, 190, 70), 0) 100%)'
-    : undefined;
+    : side.skunked
+      ? 'radial-gradient(ellipse closest-side at 50% 52%, rgba(var(--pl-skunk-rgb, 128, 132, 92), calc(var(--pl-skunk-a, 0.18) * 1.5)) 0%, rgba(var(--pl-skunk-rgb, 128, 132, 92), calc(var(--pl-skunk-a, 0.18) * 0.6)) 55%, rgba(var(--pl-skunk-rgb, 128, 132, 92), 0) 100%)'
+      : undefined;
   return (
     <div
       style={{
@@ -108,12 +114,16 @@ function Team({
         flexDirection: 'column',
         alignItems: 'center',
         gap: 8,
-        opacity: loser ? 0.65 : 1,
+        // A skunked side is almost always the loser, so dim only its text and keep the stink lines,
+        // flies and wash at full strength (dimming the whole column washes them out, light mode most).
+        opacity: loser && !side.skunked ? 0.65 : 1,
       }}
     >
       <div style={{ position: 'relative' }}>
         <ShareFlames active={side.perfect} size={LOGO}>
-          <ShareLogo identity={side.identity} initials={side.initials} size={LOGO} />
+          <ShareStink active={!!side.skunked} size={LOGO}>
+            <ShareLogo identity={side.identity} initials={side.initials} size={LOGO} />
+          </ShareStink>
         </ShareFlames>
         {winner && (
           <div style={{ position: 'absolute', right: -14, bottom: -6, background: C.gold, color: '#1b1500', fontSize: 18, fontWeight: 800, borderRadius: 999, padding: '3px 10px' }}>
@@ -121,9 +131,11 @@ function Team({
           </div>
         )}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 800, maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.name}</div>
-      <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1, color: scoreColor, whiteSpace: 'nowrap' }}>{side.scoreHidden ? '$–' : signedMoney(side.score)}</div>
-      <div style={{ fontSize: 20, color: side.perfect ? C.goldText : C.muted, whiteSpace: 'nowrap' }}>{side.perfect ? 'PERFECT WEEK' : side.progress}</div>
+      <div style={{ fontSize: 28, fontWeight: 800, maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: textDim }}>{side.name}</div>
+      <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1, color: scoreColor, whiteSpace: 'nowrap', opacity: textDim }}>{side.scoreHidden ? '$–' : signedMoney(side.score)}</div>
+      <div style={{ fontSize: 20, color: side.perfect ? C.goldText : side.skunked ? C.skunkText : C.muted, whiteSpace: 'nowrap' }}>
+        {side.perfect ? 'PERFECT WEEK' : side.skunked ? 'SKUNKED' : side.progress}
+      </div>
     </div>
   );
 }

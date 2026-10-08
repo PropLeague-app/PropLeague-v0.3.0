@@ -367,6 +367,8 @@ export interface LeagueSettings {
   invalidRosterFee: number;
   /** Post a feed announcement when a team has a perfect week. Applies immediately. */
   perfectWeekAnnouncements: boolean;
+  /** Post a feed announcement when a team's whole lineup loses (3+ losses, no wins or pushes). Off by default. */
+  skunkedAnnouncements: boolean;
   altLinesEnabled: boolean;
   lineMovementEnabled: boolean;
   conferencesEnabled: boolean;
@@ -431,6 +433,7 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   invalidRosterPenaltyEnabled: false,
   invalidRosterFee: 0,
   perfectWeekAnnouncements: true,
+  skunkedAnnouncements: false,
   altLinesEnabled: true,
   lineMovementEnabled: true,
   conferencesEnabled: false,

@@ -59,6 +59,7 @@ import {
   type MomentWagerInput,
 } from '../_shared/momentsReal.ts';
 import { encodePerfectWeek, signedMoney } from '../_shared/perfectAnnouncement.ts';
+import { encodeSkunkedWeek, isSkunkedWagers } from '../_shared/skunkedAnnouncement.ts';
 import { checkRosterRules, effectiveEmptyFloor, type CorrelationRuleReal, type PenaltyPickReal } from '../_shared/rosterPenalties.ts';
 import {
   type PlayoffFieldSize,
@@ -253,6 +254,7 @@ interface SettingsSlice {
   correlationBlockEnabled: boolean;
   correlationRules: CorrelationRuleReal[];
   perfectWeekAnnouncements: boolean;
+  skunkedAnnouncements: boolean;
 }
 
 const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, ML: 1 };
@@ -274,6 +276,7 @@ const DEFAULT_SETTINGS: SettingsSlice = {
   correlationBlockEnabled: false,
   correlationRules: [],
   perfectWeekAnnouncements: true,
+  skunkedAnnouncements: false,
 };
 
 function settingsFrom(raw: unknown): SettingsSlice {
@@ -296,6 +299,7 @@ function settingsFrom(raw: unknown): SettingsSlice {
     correlationBlockEnabled: r.correlationBlockEnabled === true,
     correlationRules: Array.isArray(r.correlationRules) ? (r.correlationRules as CorrelationRuleReal[]) : [],
     perfectWeekAnnouncements: r.perfectWeekAnnouncements !== false,
+    skunkedAnnouncements: r.skunkedAnnouncements === true,
   };
 }
 
@@ -1044,6 +1048,43 @@ Deno.serve(async (req) => {
               pinned: false,
             });
             if (perfectErr) errors.push(`perfect week ${teamId}: ${perfectErr.message}`);
+          }
+        }
+
+        // --- Skunked announcement (commissioner toggle skunkedAnnouncements, default OFF, applies
+        // immediately). Same test as src/engine/skunkedWeek.ts: every slot filled, nothing pending,
+        // at least three losses and no win or push (voids are ignored). The week is final here
+        // (weekComplete), so a half-graded week never posts. Idempotent via notification_dedup.
+        if (settings.skunkedAnnouncements && seasonStarted) {
+          const weekText = /^[0-9]+$/.test(weekStr) ? `Week ${weekStr}` : weekStr;
+          for (const t of teams ?? []) {
+            const teamId = (t as any).id as string;
+            const ws = wagersThisWeekByTeam.get(teamId) ?? [];
+            if (!isSkunkedWagers(ws, totalSlots)) continue;
+            const dedupKey = `skunked:${leagueId}:${weekStr}:${teamId}`;
+            let claimed: boolean;
+            try {
+              claimed = await claimMomentOnce(supabase, dedupKey);
+            } catch (claimErr) {
+              errors.push(`skunked week ${teamId}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+              continue;
+            }
+            if (!claimed) continue;
+            const lossCount = ws.filter((w) => w.status === 'lost').length;
+            const weekPL = ws.reduce((sum, w) => sum + (w.settled_profit ?? 0), 0);
+            const { error: skunkedErr } = await supabase.from('activity_items').insert({
+              league_id: leagueId,
+              type: 'announcement',
+              message: encodeSkunkedWeek({
+                weekLabel: weekText,
+                teamName: String(teamNameById.get(teamId) ?? 'A team'),
+                record: `0-${lossCount}`,
+                pl: signedMoney(weekPL),
+                teamId,
+              }),
+              pinned: false,
+            });
+            if (skunkedErr) errors.push(`skunked week ${teamId}: ${skunkedErr.message}`);
           }
         }
       }

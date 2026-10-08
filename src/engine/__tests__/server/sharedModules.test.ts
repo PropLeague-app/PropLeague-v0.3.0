@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import * as clientPen from '../../penalties';
 import * as clientPerfect from '../../perfectAnnouncement';
+import * as clientSkunked from '../../skunkedAnnouncement';
+import { isSkunkedWeek, SKUNKED_MIN_LOSSES } from '../../skunkedWeek';
 import * as clientName from '../../playerNameMatch';
 import * as clientRules from '../../marketRules';
 import { DEFAULT_LEAGUE_SETTINGS } from '../../../types';
 import * as srvPen from '../../../../supabase/functions/_shared/rosterPenalties';
 import * as srvPerfect from '../../../../supabase/functions/_shared/perfectAnnouncement';
+import * as srvSkunked from '../../../../supabase/functions/_shared/skunkedAnnouncement';
 import * as srvName from '../../../../supabase/functions/_shared/playerNameMatch';
 import * as srvRules from '../../../../supabase/functions/_shared/marketRules';
 
@@ -138,6 +141,47 @@ describe('perfect-week announcement: server matches the client', () => {
     expect(srvPerfect.signedMoney(-3.1)).toBe('-$3.10');
     expect(srvPerfect.signedMoney(0)).toBe('+$0.00');
     expect(srvPerfect.signedMoney(0.004)).toBe('+$0.00');
+  });
+});
+
+describe('skunked-week announcement and test: server matches the client', () => {
+  const posts = [
+    { weekLabel: 'Week 5', teamName: 'Blunter\'s Boys', record: '0-6', pl: '-$100.00', teamId: 'team-1' },
+    { weekLabel: 'Wild Card', teamName: '**Bold|Name::sk::**', record: '0-3', pl: '-$30.00', teamId: 'team-2' },
+  ];
+
+  it('writes byte-identical posts that the app reads back', () => {
+    for (const p of posts) {
+      expect(srvSkunked.encodeSkunkedWeek(p)).toBe(clientSkunked.encodeSkunkedWeek(p));
+      const parsed = clientSkunked.parseSkunkedWeek(srvSkunked.encodeSkunkedWeek(p));
+      expect(parsed?.teamId).toBe(p.teamId);
+      expect(parsed?.teamName).not.toMatch(/[*|]|::sk::/);
+    }
+  });
+
+  it('agrees on the tag and the loss threshold', () => {
+    expect(srvSkunked.SKUNKED_TAG).toBe(clientSkunked.SKUNKED_TAG);
+    expect(srvSkunked.SKUNKED_MIN_LOSSES).toBe(SKUNKED_MIN_LOSSES);
+  });
+
+  it('judges every status mix the same way as the client engine', () => {
+    const statuses = ['won', 'lost', 'push', 'voided', 'pending'] as const;
+    let skunked = 0;
+    for (let len = 0; len <= 5; len++) {
+      const total = Math.pow(statuses.length, len);
+      for (let n = 0; n < total; n++) {
+        const mix = Array.from({ length: len }, (_, i) => statuses[Math.floor(n / Math.pow(statuses.length, i)) % statuses.length]);
+        const roster = { week: 1, teamId: 't', submitted: true, slots: mix.map((status, i) => ({ slotId: `s${i}`, position: 'WR', wager: { status } })) } as never;
+        const expected = isSkunkedWeek(roster, true);
+        if (expected) skunked++;
+        expect(srvSkunked.isSkunkedWagers(mix.map((status) => ({ status })), len)).toBe(expected);
+      }
+    }
+    expect(skunked).toBeGreaterThan(0);
+  });
+
+  it('treats a lineup with a missing wager as incomplete', () => {
+    expect(srvSkunked.isSkunkedWagers([{ status: 'lost' }, { status: 'lost' }, { status: 'lost' }], 4)).toBe(false);
   });
 });
 

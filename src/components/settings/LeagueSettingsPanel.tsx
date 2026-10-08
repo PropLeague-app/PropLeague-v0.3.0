@@ -742,6 +742,11 @@ export function LeagueSettingsPanel({
             value={settings.perfectWeekAnnouncements}
             onChange={(v) => update({ perfectWeekAnnouncements: v })}
           />
+          <ToggleRow
+            label="Announce skunked weeks"
+            value={settings.skunkedAnnouncements}
+            onChange={(v) => update({ skunkedAnnouncements: v })}
+          />
           {/* One slim row per award: icon, the award's own name (tap to rename), what it measures, switch. */}
           <div className="rounded-lg bg-bg-raised divide-y divide-border/50 overflow-hidden">
             {MOMENT_CATEGORIES.map((cat) => {
