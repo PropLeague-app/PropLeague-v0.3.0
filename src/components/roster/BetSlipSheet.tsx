@@ -184,18 +184,17 @@ export function BetSlipSheet({
                 +${n}
               </button>
             ))}
-            <div className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2">
+            <label className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2">
               <span className="text-text-muted">$</span>
               <input
                 type="text"
                 inputMode="decimal"
-                autoFocus
                 placeholder="0"
                 value={stakeText}
                 onChange={(e) => onStakeInput(e.target.value)}
                 className="w-full min-w-0 bg-transparent outline-none text-lg font-semibold text-right placeholder:text-text-muted/50"
               />
-            </div>
+            </label>
           </div>
 
           {settings.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (

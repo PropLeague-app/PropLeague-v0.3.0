@@ -187,18 +187,25 @@ export function RosterSlotCard({
             stakeFocused.current = false;
           }}
         >
-          <span className="text-text-muted text-xs">$</span>
-          <NumberInput
-            key={stakeInputKey}
-            min={0}
-            decimals={2}
-            disabled={locked}
-            value={wager.stake}
-            onChange={onStakeChange}
-            className="w-[68px] bg-bg-raised rounded px-1.5 py-1 text-xs disabled:opacity-60"
-          />
+          {/* Same look as the stake box on the bet slip: bordered card-colored box, $ prefix, right-aligned semibold number. */}
+          <label className="flex items-center gap-1 bg-bg-card border border-border rounded-md px-1.5 py-0.5">
+            <span className="text-text-muted text-[13px] leading-4">$</span>
+            {/* The app forces inputs to 16px (index.css, stops iOS zooming on focus), which beats any text size
+                class. So the input stays 16px and is scaled to 13/16 (13px on screen, same as the profit) inside a box of the shrunk size. */}
+            <span className="relative block w-[48px] h-4">
+              <NumberInput
+                key={stakeInputKey}
+                min={0}
+                decimals={2}
+                disabled={locked}
+                value={wager.stake}
+                onChange={onStakeChange}
+                className="absolute right-0 top-1/2 -translate-y-1/2 origin-right scale-[0.8125] w-[59px] h-4 p-0 leading-4 bg-transparent outline-none font-semibold text-right disabled:opacity-60"
+              />
+            </span>
+          </label>
           <span className="text-text-muted text-xs">→</span>
-          <span className="w-14 shrink-0 text-right text-sm font-semibold text-profit">{formatCents(potentialProfit)}</span>
+          <span className="w-14 shrink-0 text-right text-[13px] leading-4 font-semibold text-profit">{formatCents(potentialProfit)}</span>
         </div>
       </div>
 

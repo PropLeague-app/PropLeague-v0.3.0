@@ -10,6 +10,11 @@
  * meter as a slowly moving hazard stripe, and echoed by a plain "+$X" in the same color. The "left"
  * figure is what would remain once it is placed (its label reads "left after").
  */
+/** Orange when little is allocated, yellow at the halfway mark, then green as it fills. */
+function toneHue(share: number): number {
+  return share <= 0.5 ? 26 + 52 * share : 52 + 186 * (share - 0.5);
+}
+
 export function BudgetBar({
   allocated,
   total,
@@ -28,8 +33,8 @@ export function BudgetBar({
   const share = total > 0 ? Math.min(1, projected / total) : 0;
   const solidPct = total > 0 ? Math.min(100, (allocated / total) * 100) : 0;
   const pendingPct = total > 0 ? Math.min(100 - solidPct, (pending / total) * 100) : 0;
-  // Amber (hue 34) with nothing allocated, easing to green (hue 145) once everything is in play.
-  const tone = over ? 'hsl(0 78% 62%)' : `hsl(${Math.round(34 + 111 * share)} 70% ${Math.round(54 - 6 * share)}%)`;
+  // Orange with little allocated, yellow at 50%, green once most of it is in play (see toneHue).
+  const tone = over ? 'hsl(0 78% 62%)' : `hsl(${Math.round(toneHue(share))} 74% ${Math.round(54 - 6 * share)}%)`;
   const hatch = `repeating-linear-gradient(135deg, ${tone} 0 3px, transparent 3px 6px)`;
   const barH = hasPending ? 5 : 2;
   return (
