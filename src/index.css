@@ -19,6 +19,10 @@
   --color-gold-soft: #7a6423;
   --color-text: #e8ecf5;
   --color-text-muted: #8a94a8;
+  /* Readable "ink" versions of the brand blue and money green, for text sitting on a tinted fill of
+     the same color (soft buttons, selected pills). Brighter than the base color on dark, darker on light. */
+  --color-primary-ink: #a9c9ff;
+  --color-profit-ink: #86f2b4;
   /* Scaled loss colors (engine/plColor.ts): small loss yellow, bigger orange, wipeout red.
      Each stop is picked for contrast on this theme's card color. */
   --pl-loss-lo: #f2c94c;
@@ -106,6 +110,8 @@
   --color-border: #ccd5e2;
   --color-text: #202838;
   --color-text-muted: #5a6472;
+  --color-primary-ink: #1a52c4;
+  --color-profit-ink: #0c7a3f;
   --pl-loss-lo: #946400;
   --pl-loss-mid: #c2570c;
   --pl-loss-hi: #d42a2a;
@@ -495,4 +501,41 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .stripe-live { animation: none; }
+}
+
+
+/* Soft, tinted controls: a faint fill and hairline border of the brand color with bright "ink" text,
+   in place of the solid blue slab. Tuned per theme through --color-*-ink above. */
+/* Fills are mixed onto the page background (not transparent) so nothing shows through the button. */
+.btn-soft-primary,
+.btn-soft-profit {
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.btn-soft-primary {
+  color: var(--color-primary-ink);
+  background: color-mix(in oklab, var(--color-primary) 16%, var(--color-bg));
+  border-color: color-mix(in oklab, var(--color-primary) 50%, var(--color-bg));
+}
+.btn-soft-primary:active:not(:disabled) { background: color-mix(in oklab, var(--color-primary) 28%, var(--color-bg)); }
+.btn-soft-profit {
+  color: var(--color-profit-ink);
+  background: color-mix(in oklab, var(--color-profit) 16%, var(--color-bg));
+  border-color: color-mix(in oklab, var(--color-profit) 50%, var(--color-bg));
+}
+.btn-soft-profit:active:not(:disabled) { background: color-mix(in oklab, var(--color-profit) 28%, var(--color-bg)); }
+
+/* Selected state for stand-alone pills (week picker, position filter, matchup and member pickers). */
+.sel-pill {
+  color: var(--color-primary-ink);
+  background: color-mix(in oklab, var(--color-primary) 18%, transparent);
+  border-color: color-mix(in oklab, var(--color-primary) 62%, transparent);
+  box-shadow: 0 3px 12px -4px color-mix(in oklab, var(--color-primary) 60%, transparent);
+}
+/* Selected segment of a joined segmented control: tinted, with a subtle full outline. */
+.seg-active {
+  color: var(--color-primary-ink);
+  background: color-mix(in oklab, var(--color-primary) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 45%, transparent);
+  border-radius: 0.5rem;
 }

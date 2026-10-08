@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Share as ShareIcon, X } from 'lucide-react';
 import { SHARE_H, SHARE_W } from './palette';
 import { renderCardPng, shareFileName, shareImageFile } from './shareImage';
+import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
 
 /** Full-screen preview of a share card with a Share button. It is rendered through a portal on
  * document.body: the share icon lives inside a page header whose blur effect would otherwise become
@@ -90,7 +91,7 @@ export function ShareSheet({ title, onClose, children }: { title: string; onClos
           type="button"
           onClick={() => void handleShare()}
           disabled={busy}
-          className="w-full flex items-center justify-center gap-2 bg-primary text-white font-semibold py-3 rounded-xl disabled:opacity-60"
+          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl ${SOFT_PRIMARY_BTN}`}
         >
           <ShareIcon size={18} />
           {busy ? 'Creating image…' : 'Share image'}

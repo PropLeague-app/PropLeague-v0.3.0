@@ -96,7 +96,7 @@ export function CorrelationRulesEditor({ rules, onChange }: { rules: Correlation
             ]}
             onChange={setScope}
           />
-          <button onClick={addRule} className="flex-1 bg-primary text-white text-[11px] font-semibold py-1 rounded-lg">
+          <button onClick={addRule} className="flex-1 btn-soft-primary text-[11px] font-semibold py-1 rounded-lg">
             Add rule
           </button>
         </div>

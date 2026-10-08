@@ -6,11 +6,12 @@ import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
 import { rosterKey } from '../../engine/rosterSlots';
-import { lastSlotPrefill, maxStakeNow, stakeError, type StakeContext } from '../../engine/stakeRules';
+import { stakeError, type StakeContext } from '../../engine/stakeRules';
 import { activeMarketRules, marketBlockReason, marketMaxStake } from '../../engine/marketRules';
 import { OddsDisplay } from '../common/OddsDisplay';
-import { NumberInput } from '../common/NumberInput';
+import { MARKET_LABELS } from '../../data/propsGenerator';
 import { BudgetBar } from '../common/BudgetBar';
+import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../common/buttonStyles';
 
 export interface BetSlipTarget {
   leagueId: string;
@@ -68,10 +69,12 @@ export function BetSlipSheet({
     emptyOtherSlots: otherSlots ? otherSlots.filter((sl) => !sl.wager).length : 0,
     replacing: !!slotsNow?.find((sl) => sl.slotId === target.slotId)?.wager,
   };
-  const effectiveMax = maxStakeNow(stakeCtx);
 
-  // Last open slot: the only sensible stake is exactly what is left, so start there.
-  const [stake, setStake] = useState(() => lastSlotPrefill(stakeCtx) ?? Math.max(settings.minBetPerSlot, Math.min(effectiveMax, 10)));
+  // The field starts empty (placeholder only) so typing begins from the first digit; the number
+  // everything else reads is derived from the text, so clearing the field really means $0.
+  const [stakeText, setStakeText] = useState('');
+  const stake = Number.isFinite(Number(stakeText)) ? Number(stakeText) : 0;
+  const hasStake = stake > 0;
   const [claimError, setClaimError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -90,7 +93,8 @@ export function BetSlipSheet({
 
   const reasons: string[] = [];
   if (marketBlocked) reasons.push(marketBlocked);
-  const stakeProblem = stakeError(stakeCtx, stake);
+  // No stake typed yet is not an error, the button just waits.
+  const stakeProblem = hasStake ? stakeError(stakeCtx, stake) : null;
   if (stakeProblem) reasons.push(stakeProblem);
   if (minOdds != null && target.outcome.price < minOdds) reasons.push(`Below minimum odds of ${minOdds}`);
   if (preClaimReason) reasons.push(preClaimReason);
@@ -98,6 +102,23 @@ export function BetSlipSheet({
 
   const valid = reasons.length === 0 && stake > 0;
   const potentialProfit = profitForStake(stake, target.outcome.price);
+
+  function onStakeInput(raw: string) {
+    let next = raw.replace(/[^0-9.]/g, '');
+    const dot = next.indexOf('.');
+    if (dot !== -1) next = next.slice(0, dot + 1) + next.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+    setStakeText(next.replace(/^0+(?=\d)/, ''));
+  }
+  function quickAdd(amount: number) {
+    const next = Math.round((stake + amount) * 100) / 100;
+    setStakeText(Number.isInteger(next) ? String(next) : next.toFixed(2));
+  }
+
+  // The full pick, not just the name: "Over 31.5 Passing Attempts", "Tampa Bay Buccaneers -3.5 Spread".
+  const isSpread = target.marketKey === 'spreads';
+  const pointText =
+    target.outcome.point == null ? '' : ` ${isSpread && target.outcome.point > 0 ? '+' : ''}${target.outcome.point}`;
+  const pickLine = `${target.outcome.name}${pointText} · ${MARKET_LABELS[target.marketKey] ?? ''}`.replace(/ · $/, '');
 
   async function confirm() {
     if (!valid) return;
@@ -135,54 +156,67 @@ export function BetSlipSheet({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Bankroll as it would stand with this stake, so the sheet shows what the pick leaves open. */}
-        <BudgetBar attached allocated={stakeCtx.otherStakes} pending={Math.max(0, stake || 0)} total={settings.weeklyCredits} />
-        <div className="p-4 space-y-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="font-bold">{target.label}</p>
-            <p className="text-xs text-text-muted">
-              {target.outcome.name}
-              {target.outcome.point != null ? ` ${target.outcome.point}` : ''} · <OddsDisplay odds={target.outcome.price} />
-            </p>
+        <BudgetBar attached allocated={stakeCtx.otherStakes} pending={hasStake ? stake : 0} total={settings.weeklyCredits} />
+        <div className="p-4 space-y-3" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
+          <div className="flex justify-between items-start gap-3">
+            <div className="min-w-0">
+              <p className="font-bold leading-tight">{target.label}</p>
+              <p className="text-xs text-text-muted mt-0.5">{pickLine}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm font-bold">
+                <OddsDisplay odds={target.outcome.price} />
+              </span>
+              <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1">
+                <X size={20} />
+              </button>
+            </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 -mt-1 p-1"><X size={20} /></button>
-        </div>
 
-        <div>
-          <label className="text-xs text-text-muted mb-1 block">Stake</label>
-          <div className="flex items-center gap-2 bg-bg-card border border-border rounded-lg px-3 py-2">
-            <span className="text-text-muted">$</span>
-            <NumberInput
-              value={stake}
-              onChange={setStake}
-              min={0}
-              decimals={2}
-              className="flex-1 bg-transparent outline-none text-lg font-semibold"
-            />
+          <div className="flex items-stretch gap-2">
+            {[1, 5, 10].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => quickAdd(n)}
+                className={`px-3 rounded-lg text-sm ${SOFT_PROFIT_BTN}`}
+              >
+                +${n}
+              </button>
+            ))}
+            <div className="flex-1 min-w-0 flex items-center gap-1.5 bg-bg-card border border-border rounded-lg px-3 py-2">
+              <span className="text-text-muted">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoFocus
+                placeholder="0"
+                value={stakeText}
+                onChange={(e) => onStakeInput(e.target.value)}
+                className="w-full min-w-0 bg-transparent outline-none text-lg font-semibold text-right placeholder:text-text-muted/50"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="flex justify-between text-sm bg-bg-card border border-border rounded-lg px-3 py-2.5">
-          <span className="text-text-muted">Potential profit</span>
-          <span className="font-semibold text-profit">{formatCents(potentialProfit)}</span>
-        </div>
+          {settings.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
+            <div className="flex justify-between text-xs text-text-muted px-1">
+              <span>Real $ at stake{multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}</span>
+              <span>{formatCents(realDollarAmount(stake, settings.weeklyCredits, pool.current, teamCount) * multiplier)}</span>
+            </div>
+          )}
 
-        {settings.buyInEnabled && settings.showRealDollarStakes && pool && teamCount && (
-          <div className="flex justify-between text-xs text-text-muted px-1">
-            <span>Real $ at stake{multiplier !== 1 ? ` (${multiplier.toFixed(2)}x)` : ''}</span>
-            <span>{formatCents(realDollarAmount(stake, settings.weeklyCredits, pool.current, teamCount) * multiplier)}</span>
-          </div>
-        )}
+          {reasons.length > 0 && <p className="text-loss text-xs">{reasons[0]}</p>}
 
-        {reasons.length > 0 && <p className="text-loss text-xs">{reasons[0]}</p>}
-
-        <button
-          disabled={!valid || submitting}
-          onClick={confirm}
-          className="w-full bg-primary text-white font-semibold py-3 rounded-xl disabled:opacity-40"
-        >
-          {submitting ? 'Adding…' : 'Add to Roster'}
-        </button>
+          <button
+            disabled={!valid || submitting}
+            onClick={confirm}
+            className={`w-full h-[54px] flex flex-col items-center justify-center rounded-xl leading-tight ${SOFT_PRIMARY_BTN}`}
+          >
+            <span className="block text-base">{submitting ? 'Adding…' : hasStake ? 'Add to Roster' : 'Enter Stake'}</span>
+            <span className="block text-xs font-medium opacity-80 mt-0.5 tabular-nums">
+              Potential Profit: {hasStake ? formatCents(potentialProfit) : '$–'}
+            </span>
+          </button>
         </div>
       </div>
     </div>

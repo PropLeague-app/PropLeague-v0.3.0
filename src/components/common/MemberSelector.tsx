@@ -26,7 +26,7 @@ export function MemberSelector({
         <button
           onClick={() => onSelect(LEAGUE_VIEW_ID)}
           className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold border ${
-            selectedTeamId === LEAGUE_VIEW_ID ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+            selectedTeamId === LEAGUE_VIEW_ID ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
           }`}
         >
           <Users size={14} />
@@ -38,7 +38,7 @@ export function MemberSelector({
           key={t.id}
           onClick={() => onSelect(t.id)}
           className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold border ${
-            t.id === selectedTeamId ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+            t.id === selectedTeamId ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
           }`}
         >
           <TeamLogo team={t} size="sm" />

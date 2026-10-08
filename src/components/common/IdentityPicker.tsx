@@ -140,7 +140,7 @@ export function IdentityPicker({
             <button
               key={mode}
               onClick={() => update({ logoMode: mode })}
-              className={`flex-1 py-1.5 text-xs font-semibold ${draft.logoMode === mode ? 'bg-primary text-white' : 'text-text-muted'}`}
+              className={`flex-1 py-1.5 text-xs font-semibold ${draft.logoMode === mode ? 'seg-active' : 'text-text-muted'}`}
             >
               {MODE_LABELS[mode]}
             </button>
@@ -261,7 +261,7 @@ export function IdentityPicker({
             onSave(draft, pendingFile);
             setPendingFile(null);
           }}
-          className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
+          className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
         >
           Save Changes
         </button>

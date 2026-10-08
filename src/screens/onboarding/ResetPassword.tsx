@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
+import { PasswordInput } from '../../components/common/PasswordInput';
 
 export function ResetPassword() {
   const navigate = useNavigate();
@@ -39,19 +40,17 @@ export function ResetPassword() {
         <h1 className="text-2xl font-bold">Set a new password</h1>
 
         <div className="flex flex-col gap-3">
-          <input
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="New password"
-            type="password"
             autoComplete="new-password"
             className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
           />
-          <input
+          <PasswordInput
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
-            type="password"
             autoComplete="new-password"
             className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
           />

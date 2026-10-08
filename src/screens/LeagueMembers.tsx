@@ -115,7 +115,7 @@ export function LeagueMembers() {
             <button onClick={discard} className="flex-1 bg-bg-card border border-border font-semibold py-2 rounded-lg text-sm">
               Discard
             </button>
-            <button onClick={save} className="flex-1 bg-primary text-white font-semibold py-2 rounded-lg text-sm">
+            <button onClick={save} className="flex-1 btn-soft-primary font-semibold py-2 rounded-lg text-sm">
               Save Changes
             </button>
           </div>

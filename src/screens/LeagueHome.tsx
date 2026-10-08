@@ -182,7 +182,7 @@ export function LeagueHome() {
             }
             action={
               isCommissioner ? (
-                <button onClick={() => navigate('/settings')} className="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg">
+                <button onClick={() => navigate('/settings')} className="btn-soft-primary text-sm font-semibold px-4 py-2 rounded-lg">
                   Go to Settings
                 </button>
               ) : undefined
@@ -274,7 +274,7 @@ export function LeagueHome() {
                     setAnnounceError(null);
                     setAnnounceOpen(false);
                   }}
-                  className="bg-primary text-white text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+                  className="btn-soft-primary text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
                 >
                   Post
                 </button>

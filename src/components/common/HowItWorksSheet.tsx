@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, ClipboardList, ChartColumn, ListChecks, SlidersHorizontal } from 'lucide-react';
 import type { LeagueSettings, Position } from '../../types';
 import logoMark from '../../assets/logo-mono-muted.png';
+import { SOFT_PRIMARY_BTN } from './buttonStyles';
 
 /** The in-app help: four collapsible categories, each a short run of titled topics in small text.
  * Used as the onboarding route (settings = null, generic defaults) and as the overlay behind the
@@ -322,7 +323,7 @@ export function HowItWorksSheet({
           })}
         </div>
         <div className="px-4 py-3 border-t border-border" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-          <button onClick={onClose} className="w-full bg-primary text-white text-sm font-semibold py-2.5 rounded-xl">
+          <button onClick={onClose} className={`w-full text-sm py-2.5 rounded-xl ${SOFT_PRIMARY_BTN}`}>
             Got it
           </button>
         </div>

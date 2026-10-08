@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { NameInput } from '../components/common/NameInput';
@@ -44,6 +45,7 @@ import {
   TrendingDown,
   Wrench,
 } from 'lucide-react';
+import { PasswordInput } from '../components/common/PasswordInput';
 
 const MORE_LINKS = [
   { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
@@ -77,7 +79,7 @@ function Seg<T extends string>({
           aria-label={o.ariaLabel}
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1 ${value === o.value ? 'bg-primary text-white' : 'text-text-muted'}`}
+          className={`px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1 ${value === o.value ? 'seg-active' : 'text-text-muted'}`}
         >
           {o.icon}
           {o.label}
@@ -159,19 +161,17 @@ function ChangePasswordRow() {
 
   return (
     <div className="p-3 space-y-2">
-      <input
+      <PasswordInput
         value={newPassword}
         onChange={(e) => setNewPassword(e.target.value)}
         placeholder="New password"
-        type="password"
         autoComplete="new-password"
         className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
       />
-      <input
+      <PasswordInput
         value={confirmPassword}
         onChange={(e) => setConfirmPassword(e.target.value)}
         placeholder="Confirm new password"
-        type="password"
         autoComplete="new-password"
         className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
       />
@@ -181,7 +181,7 @@ function ChangePasswordRow() {
         <button
           onClick={submit}
           disabled={submitting}
-          className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
+          className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
         >
           Save
         </button>
@@ -396,7 +396,7 @@ export function SettingsHome() {
             <button
               disabled={startSeasonBusy || league.teams.length < 2}
               onClick={handleStartSeason}
-              className="w-full bg-primary text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-40"
+              className={`w-full py-2.5 rounded-lg text-sm ${SOFT_PRIMARY_BTN}`}
             >
               {startSeasonBusy ? 'Starting…' : 'Start Season'}
             </button>
@@ -442,7 +442,7 @@ export function SettingsHome() {
                 <button
                   disabled={!profileDirty || profileSaving}
                   onClick={handleSaveProfile}
-                  className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
+                  className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
                 >
                   {profileSaving ? 'Saving…' : 'Save Changes'}
                 </button>
@@ -488,7 +488,7 @@ export function SettingsHome() {
                   <button
                     disabled={!teamNameDirty}
                     onClick={handleSaveTeam}
-                    className="flex-1 bg-primary text-white font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
+                    className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
                   >
                     Save Changes
                   </button>

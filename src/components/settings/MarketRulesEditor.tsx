@@ -114,7 +114,7 @@ export function MarketRulesEditor({
           <button
             onClick={add}
             disabled={!replacesExisting && atMax}
-            className="flex-1 bg-primary text-white text-[11px] font-semibold py-1 rounded-lg disabled:opacity-40"
+            className="flex-1 btn-soft-primary text-[11px] font-semibold py-1 rounded-lg disabled:opacity-40"
           >
             Add rule
           </button>

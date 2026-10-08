@@ -116,7 +116,7 @@ export function BettingLimitsGroup({
           type="button"
           disabled={!canSave}
           onClick={() => void save()}
-          className="flex-1 py-1.5 rounded-lg text-sm font-semibold bg-primary text-white disabled:opacity-40"
+          className="flex-1 py-1.5 rounded-lg text-sm font-semibold btn-soft-primary disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save limits'}
         </button>

@@ -526,7 +526,7 @@ export function ActivityFeed({
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`relative px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${i === 0 ? 'rounded-l-lg' : ''} ${i === all.length - 1 ? 'rounded-r-lg' : ''} ${tab === t ? 'bg-primary text-white' : 'text-text-muted'}`}
+            className={`relative px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${i === 0 ? 'rounded-l-lg' : ''} ${i === all.length - 1 ? 'rounded-r-lg' : ''} ${tab === t ? 'seg-active' : 'text-text-muted'}`}
           >
             {FEED_TAB_LABELS[t]}
             {/* Top-right corner of the pill, same red (bg-loss) and placement as the
@@ -630,7 +630,7 @@ export function ActivityFeed({
                   onSendChat(chatText.trim());
                   setChatText('');
                 }}
-                className="bg-primary text-white text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+                className="btn-soft-primary text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
               >
                 <Send size={16} />
               </button>

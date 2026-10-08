@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 import { useAppStore } from './useAppStore';
+import type { MatchupDetailMode, ThemeMode } from '../types';
 
 export interface AuthProfile {
   id: string;
@@ -74,6 +75,62 @@ async function fetchProfile(userId: string): Promise<AuthProfile | null> {
   return rowToProfile(data as ProfileRow);
 }
 
+
+// Per-account, per-device state that sign-out used to wipe along with everything else: the local-only
+// look settings (theme, simple/advanced matchup view, scaled vs classic P/L colors), which chat
+// messages were already read, and which finished-week results were already shown. Losing them made a
+// log out and back in replay every old result popup, mark all chat unread, and reset the colors to
+// classic. They are stashed under the signed-out user's id and restored when that same account signs
+// back in, so a different account on the same device still starts fresh.
+const LOCAL_STATE_KEY = (userId: string) => `propleague-local-state:${userId}`;
+
+function stashLocalState(userId: string) {
+  try {
+    const { profile, lastSeenChatByLeague, seenMatchupResultIds } = useAppStore.getState();
+    localStorage.setItem(
+      LOCAL_STATE_KEY(userId),
+      JSON.stringify({
+        themeMode: profile?.themeMode,
+        matchupDetailMode: profile?.matchupDetailMode,
+        plColorScale: profile?.plColorScale,
+        lastSeenChatByLeague,
+        seenMatchupResultIds,
+      }),
+    );
+  } catch {
+    // Storage unavailable: the user just starts fresh, same as before.
+  }
+}
+
+function restoreLocalState(userId: string) {
+  try {
+    const raw = localStorage.getItem(LOCAL_STATE_KEY(userId));
+    if (!raw) return;
+    const saved = JSON.parse(raw) as {
+      themeMode?: ThemeMode;
+      matchupDetailMode?: MatchupDetailMode;
+      plColorScale?: 'classic' | 'scaled';
+      lastSeenChatByLeague?: Record<string, string>;
+      seenMatchupResultIds?: Record<string, true>;
+    };
+    useAppStore.setState((state) => ({
+      lastSeenChatByLeague: { ...(saved.lastSeenChatByLeague ?? {}), ...state.lastSeenChatByLeague },
+      seenMatchupResultIds: { ...(saved.seenMatchupResultIds ?? {}), ...state.seenMatchupResultIds },
+      profile: state.profile
+        ? {
+            ...state.profile,
+            themeMode: state.profile.themeMode ?? saved.themeMode,
+            matchupDetailMode: state.profile.matchupDetailMode ?? saved.matchupDetailMode,
+            plColorScale: state.profile.plColorScale ?? saved.plColorScale,
+          }
+        : state.profile,
+    }));
+    localStorage.removeItem(LOCAL_STATE_KEY(userId));
+  } catch {
+    // Corrupt or unavailable: ignore.
+  }
+}
+
 /** Keeps the existing app-wide UserProfile (read by most screens today) in sync
  * with the real Supabase-backed profile, once onboarding is complete. This is
  * what lets every existing screen keep working unchanged for now, rather than
@@ -86,6 +143,7 @@ function syncAppStoreProfile(profile: AuthProfile | null) {
       avatarEmoji: profile.avatarEmoji,
       oddsFormat: profile.oddsFormat,
     });
+    restoreLocalState(profile.id);
   }
 }
 
@@ -137,6 +195,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   signOut: async () => {
+    const signingOutId = get().user?.id;
+    if (signingOutId) stashLocalState(signingOutId);
     await supabase.auth.signOut();
     set({ session: null, user: null, profile: null });
     // Leagues are still local-only at this stage of the build (Step 3 moves them

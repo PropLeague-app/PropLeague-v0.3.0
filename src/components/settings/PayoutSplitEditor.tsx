@@ -118,7 +118,7 @@ export function PayoutSplitEditor({
         <button
           onClick={() => onSave(draft)}
           disabled={!dirty || !validation.valid}
-          className="bg-primary text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-40 shrink-0"
+          className="btn-soft-primary text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-40 shrink-0"
         >
           Save
         </button>

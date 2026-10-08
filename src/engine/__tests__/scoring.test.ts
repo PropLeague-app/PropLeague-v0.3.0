@@ -125,6 +125,13 @@ describe('displayWeeklyScore (penalty only after the last kickoff)', () => {
     expect(displayWeeklyScore({ ...args, penaltyLive: true, isFinal: true })).toBe(9);
   });
 
+  it('float crumbs round to a clean $0.00, never -0 or a tiny sign', () => {
+    const args = { roster: base, settings: DEFAULT_LEAGUE_SETTINGS, penaltyLive: false, isFinal: false };
+    expect(Object.is(displayWeeklyScore({ ...args, serverScore: -1e-15 }), 0)).toBe(true);
+    expect(Object.is(displayWeeklyScore({ ...args, serverScore: 1e-15 }), 0)).toBe(true);
+    expect(displayWeeklyScore({ ...args, serverScore: 12.345 })).toBe(12.35);
+  });
+
   it('win probability folds the penalty in only once locked', () => {
     const a = expectedScoreDistribution(settledWin, DEFAULT_LEAGUE_SETTINGS, undefined, true);
     expect(a.mean).toBe(9 - 90);

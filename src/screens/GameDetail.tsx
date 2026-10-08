@@ -146,7 +146,7 @@ export function GameDetail() {
                 key={pos}
                 onClick={() => setPositionFilter(pos)}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 ${
-                  positionFilter === pos ? 'bg-primary text-white' : 'bg-bg-card text-text-muted border border-border'
+                  positionFilter === pos ? 'sel-pill border' : 'bg-bg-card text-text-muted border border-border'
                 }`}
               >
                 {pos}

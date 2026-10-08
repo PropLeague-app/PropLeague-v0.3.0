@@ -21,6 +21,8 @@ describe('oddsMath', () => {
   it('formats cents with a leading sign', () => {
     expect(formatCents(12.5)).toBe('$12.50');
     expect(formatCents(-12.5)).toBe('-$12.50');
+    expect(formatCents(-1e-15)).toBe('$0.00');
+    expect(formatCents(-0.004)).toBe('$0.00');
     expect(formatCents(0)).toBe('$0.00');
   });
 });

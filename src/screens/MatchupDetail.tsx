@@ -26,6 +26,9 @@ import { ShareButton } from '../share/ShareButton';
 import { MatchupShareCard, type MatchupCell, type MatchupSide } from '../share/cards/MatchupShareCard';
 import type { ShareStatus } from '../share/palette';
 
+// A faint edge plus a soft drop shadow lifts the logos off the matchup switcher pills.
+const LOGO_RING = { boxShadow: '0 0 0 1px color-mix(in oklab, var(--color-text) 16%, transparent), 0 1px 4px rgba(0,0,0,0.35)' } as const;
+
 export function MatchupDetail() {
   const { matchupId } = useParams<{ matchupId: string }>();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
@@ -254,7 +257,7 @@ export function MatchupDetail() {
             <button
               onClick={() => setMatchupDetailMode(advanced ? 'simple' : 'advanced')}
               className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
-                advanced ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+                advanced ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
               }`}
             >
               Advanced
@@ -353,12 +356,12 @@ function MatchupTabs({
               ref={isActive ? activeRef : undefined}
               onClick={() => onSelect(m.id)}
               className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold ${
-                isActive ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+                isActive ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
               }`}
             >
-              {teamA && <TeamLogo team={teamA} size="sm" />}
-              <span className={isActive ? 'text-white/70' : ''}>vs</span>
-              {teamB && <TeamLogo team={teamB} size="sm" />}
+              {teamA && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamA} size="sm" /></span>}
+              <span className={isActive ? 'opacity-70' : ''}>vs</span>
+              {teamB && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamB} size="sm" /></span>}
             </button>
           );
         })}

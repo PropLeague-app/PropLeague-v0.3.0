@@ -11,7 +11,7 @@ export function WeekSelector({ value, onChange }: { value: WeekId; onChange: (we
           key={String(week)}
           onClick={() => onChange(week)}
           className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border ${
-            week === value ? 'bg-primary text-white border-primary' : 'bg-bg-card border-border text-text-muted'
+            week === value ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
           }`}
         >
           {typeof week === 'number' ? week : weekLabel(week)}

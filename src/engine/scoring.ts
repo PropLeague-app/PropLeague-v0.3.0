@@ -103,11 +103,15 @@ export function displayWeeklyScore(params: {
   isFinal: boolean;
 }): number {
   const { serverScore, roster, settings, decided, isSlotHidden, penaltyLive, isFinal } = params;
+  let score: number;
   if (serverScore != null) {
-    if (isFinal || !penaltyLive || !roster) return serverScore;
-    return serverScore + computeIncompleteLineupPenalty(roster, settings);
+    score = isFinal || !penaltyLive || !roster ? serverScore : serverScore + computeIncompleteLineupPenalty(roster, settings);
+  } else {
+    score = roster ? expectedWeeklyScore(roster, settings, decided, isSlotHidden, penaltyLive) : 0;
   }
-  return roster ? expectedWeeklyScore(roster, settings, decided, isSlotHidden, penaltyLive) : 0;
+  // Whole cents, with -0 folded to 0: the sum of pick EVs carries float crumbs (a tiny negative or
+  // positive for a team that is exactly even), which showed as "-$0.00" or a green "$0.00".
+  return Math.round(score * 100) / 100 + 0;
 }
 
 /** Standard normal CDF via the Abramowitz & Stegun erf approximation (max error

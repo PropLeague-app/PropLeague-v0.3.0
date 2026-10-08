@@ -201,7 +201,7 @@ export function FullStandings() {
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-3 py-1.5 text-xs font-semibold capitalize ${view === v ? 'bg-primary text-white' : 'text-text-muted'}`}
+                className={`px-3 py-1.5 text-xs font-semibold capitalize ${view === v ? 'seg-active' : 'text-text-muted'}`}
               >
                 {v === 'conference' ? 'By conference' : 'Overall'}
               </button>

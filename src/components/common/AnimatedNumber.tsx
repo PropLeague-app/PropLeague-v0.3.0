@@ -50,11 +50,13 @@ export function AnimatedNumber({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const colorClass = perfect ? 'pl-fire' : displayed > 0 ? 'text-profit' : displayed < 0 ? 'text-loss' : 'text-text';
+  // Judge sign on whole cents: a $0.00 that is really 1e-15 must read as zero (white), never green or red.
+  const shownCents = Math.round(displayed * 100);
+  const colorClass = perfect ? 'pl-fire' : shownCents > 0 ? 'text-profit' : shownCents < 0 ? 'text-loss' : 'text-text';
   const flashClass = flash === 'profit' ? 'flash-profit' : flash === 'loss' ? 'flash-loss' : '';
 
   return (
-    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect ? undefined : plStyle(displayed, scaleRef)}>
+    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect || shownCents === 0 ? undefined : plStyle(displayed, scaleRef)}>
       {formatCents(displayed)}
     </span>
   );

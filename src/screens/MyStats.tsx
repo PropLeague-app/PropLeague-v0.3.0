@@ -425,7 +425,7 @@ export function MyStats() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 text-xs font-semibold ${activeTab === t.id ? 'bg-primary text-white' : 'text-text-muted'}`}
+              className={`flex-1 py-1.5 text-xs font-semibold ${activeTab === t.id ? 'seg-active' : 'text-text-muted'}`}
             >
               {t.label}
             </button>

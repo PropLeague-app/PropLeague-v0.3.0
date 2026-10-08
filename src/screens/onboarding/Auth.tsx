@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { goBack } from '../../components/layout/BackHeader';
+import { PasswordInput } from '../../components/common/PasswordInput';
 
 type Mode = 'signin' | 'signup' | 'forgot';
 
@@ -147,20 +148,18 @@ export function Auth() {
                 autoComplete="email"
                 className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
               />
-              <input
+              <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                type="password"
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
               />
               {mode === 'signup' && (
-                <input
+                <PasswordInput
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm password"
-                  type="password"
                   autoComplete="new-password"
                   className="w-full bg-bg-card border border-border rounded-lg px-3 py-2.5"
                 />

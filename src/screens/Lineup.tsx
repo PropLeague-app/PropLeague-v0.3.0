@@ -10,6 +10,7 @@ import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
 import { ConfirmSheet } from '../components/common/ConfirmSheet';
 import { BudgetBar } from '../components/common/BudgetBar';
+import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../components/common/buttonStyles';
 import { BOTTOM_TAB_BAR_HEIGHT } from '../components/layout/BottomTabBar';
 import { weekLabel } from '../types';
 
@@ -218,7 +219,7 @@ export function Lineup() {
         <button
           disabled={!validation.valid}
           onClick={() => submitLineup(league.id, userTeam.id, league.currentWeek)}
-          className="w-full bg-primary text-white font-semibold py-3 rounded-xl disabled:opacity-40"
+          className={`w-full py-3 rounded-xl ${roster.submitted && validation.valid ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}
         >
           {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>

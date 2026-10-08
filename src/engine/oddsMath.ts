@@ -40,6 +40,9 @@ export function formatOdds(odds: number, format: OddsFormat): string {
 }
 
 export function formatCents(amount: number): string {
-  const sign = amount < 0 ? '-' : '';
-  return `${sign}$${Math.abs(amount).toFixed(2)}`;
+  // Work in whole cents so a float crumb (-1e-15, or an average of pick EVs that should be 0) can
+  // never print as "-$0.00".
+  const cents = Math.round(amount * 100);
+  const sign = cents < 0 ? '-' : '';
+  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
