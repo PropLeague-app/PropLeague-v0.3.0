@@ -766,7 +766,11 @@ struct LogoBadge: View {
                     .frame(width: size, height: size)
                     .clipShape(Circle())
             } else if mode == "emoji", !emoji.isEmpty {
-                Text(emoji).font(.system(size: size * 0.55))
+                // Same rule as the app's badge (src/components/common/emojiScale.ts): the emoji is 78% of the
+                // circle's inside (diameter minus the 1pt border on both sides), with the same soft drop shadow.
+                Text(emoji)
+                    .font(.system(size: max(1, size - 2) * 0.78))
+                    .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
             } else {
                 Text(String(fallback.prefix(3)))
                     .font(.system(size: size * (fallback.count > 2 ? 0.30 : 0.36), weight: .heavy))

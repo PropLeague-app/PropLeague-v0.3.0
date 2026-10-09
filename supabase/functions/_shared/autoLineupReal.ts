@@ -140,6 +140,8 @@ export function generateAutoLineup(
   isPickTaken: (gameId: string, marketKey: MarketKey, playerId: string | undefined, side: string, point: number | undefined) => boolean = () => false,
   /** True when a pick on this market and side would break a commissioner slot cap, given the picks already in the lineup. */
   breaksSlotCap: (marketKey: MarketKey, side: string, picksSoFar: Array<{ marketKey: string; side: string }>) => boolean = () => false,
+  /** The commissioner's per-pick stake cap on this market and side, or null when there is none. */
+  stakeCapFor: (marketKey: MarketKey, side: string) => number | null = () => null,
 ): { slots: RosterSlotState[] } {
   const rng = createRng(`${teamId}-${week}-autolineup`);
   const slots = buildEmptySlots(settings.lineupSlots);
@@ -197,7 +199,53 @@ export function generateAutoLineup(
     }
   });
 
+  applyStakeCaps(wagers, slots, settings, mlIndex, stakeCapFor);
+
   return { slots: slots.map((slot, idx) => ({ ...slot, wager: wagers[idx] })) };
+}
+
+/** Brings every stake down to its market's cap (never below the league's minimum bet) and hands the
+ * freed credits to picks that still have room, so a bot spends about what it would have without
+ * breaking a cap. Anything that cannot be placed is simply left unallocated. */
+export function applyStakeCaps(
+  wagers: (Wager | null)[],
+  slots: { position: Position | 'ML' }[],
+  settings: AutoLineupSettings,
+  mlIndex: number,
+  stakeCapFor: (marketKey: MarketKey, side: string) => number | null,
+): void {
+  // Round down, so the stakes can never add up to more than the bot was going to spend.
+  const cents = (n: number) => Math.floor(n * 100 + 1e-6) / 100;
+  const limitFor = (i: number): number => {
+    const w = wagers[i];
+    if (!w) return 0;
+    const leagueMax = i === mlIndex ? settings.maxMLBet : settings.weeklyCredits * settings.singleBetCapPct;
+    const cap = stakeCapFor(w.marketKey, w.side);
+    return cap == null ? leagueMax : Math.min(leagueMax, Math.max(cap, settings.minBetPerSlot));
+  };
+  let freed = 0;
+  wagers.forEach((w, i) => {
+    if (!w) return;
+    const limit = limitFor(i);
+    if (w.stake > limit) {
+      freed += w.stake - limit;
+      w.stake = cents(limit);
+    }
+  });
+  if (freed < 0.01) return;
+  // Give the freed credits out evenly, a few rounds in case some picks hit their own limit.
+  for (let round = 0; round < 4 && freed >= 0.01; round++) {
+    const room = wagers.map((w, i) => (w ? limitFor(i) - w.stake : 0));
+    const open = room.filter((r) => r >= 0.01).length;
+    if (open === 0) return;
+    const share = freed / open;
+    wagers.forEach((w, i) => {
+      if (!w || room[i] < 0.01) return;
+      const add = Math.min(room[i], share);
+      w.stake = cents(w.stake + add);
+      freed -= add;
+    });
+  }
 }
 
 function makeWager(

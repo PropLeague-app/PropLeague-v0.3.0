@@ -87,7 +87,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Stakes and games',
       body: [
-        `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, and no single bet can use up the whole budget. The bet slip shows the limits.`,
+        `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
       ],
     },
     {
@@ -105,7 +105,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Blocked and limited markets',
       body: [
-        'A commissioner can block a market (or just its Over or Under side), or cap how much one pick on it can stake. Blocked markets cannot be picked and a capped market shows its max on the bet slip. Bots skip blocked markets but ignore caps.',
+        'A commissioner can block a market (or just its Over or Under side) or put a limit on it. A limit can cap how much one pick on it can stake, how many of your lineup slots can use it (for example 2 of your 5 receiving slots), or both. Blocked markets cannot be picked. A stake cap shows its max on the bet slip and keypad, and a slot cap stops another pick on that market once the allowed slots are taken, with a message saying why. Slot caps only count the slots that could hold that market, so a cap equal to all of them would limit nothing and is not offered. Moneyline, spread and total cannot be ruled on. AI teams follow every rule: they skip blocked markets, stay inside slot caps and keep each stake at or under its cap.',
       ],
     },
     {
@@ -210,7 +210,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'My Stats',
       body: [
-        'Pick any team, or the whole league, at the top. Overview has ROI, P/L, record and breakdowns by position, odds range and stake size. Markets splits results by prop type. Trends shows weekly P/L and your best and worst players. Matchups (single team) shows your head-to-head history.',
+        'Pick any team, or the whole league, at the top. Overview has ROI, P/L, record and breakdowns by position, odds range and stake size. Odds ranges are shown in your odds format (American or decimal). Markets splits results by prop type. Trends shows weekly P/L and your best and worst players. Matchups (single team) shows your head-to-head history.',
         'Tap most rows to open the bets behind them. Pushes and voids stay in those lists so every pick the lineup held is counted.',
       ],
     },
@@ -228,7 +228,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Activity feed and chat',
       body: [
-        'League Home has an activity feed and a chat tab with an unread badge. The commissioner posts announcements in rich text and can pin up to 3. Anyone can react to a message with an emoji. Weekly Moments and perfect or skunked weeks show up here as cards.',
+        'League Home has an activity feed and a chat tab with an unread badge. The commissioner posts announcements in rich text and can pin up to 3. Anyone can react to a post with an emoji. Tap one of the four quick reactions, or the + for a full picker with a search box and every emoji category. Each team gets one reaction per post, so picking a different one moves yours instead of adding a second (tap your own again to remove it). Reactions show as chips with the logos of the teams that picked them, extra ones collapse into a stack, and tapping a chip or the stack shows who reacted. Weekly Moments and perfect or skunked weeks show up here as cards.',
       ],
     },
     {
@@ -247,6 +247,10 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'On iOS 17 and later, the card also has a lineup scroller. Tap the arrows to step through your slots and see the position, player, line, stake and status of each. Scores use your Loss colors setting, so Scaled shows up here too.',
         'In the Dynamic Island, press and hold to expand. If you are in more than one league at the same time, the island shows one matchup at a time. Your favorite league goes first and wears a small gold star by its logo, and with no favorite the most urgent one goes first. Tap the league name pill to bring in the next league\'s matchup. It stays until the next slate, when your favorite takes the front again. Turn all of this off with Live scores on lock screen in Profile & Settings. Needs iOS 16.2 or later.',
       ],
+    },
+    {
+      title: 'Taps and feedback',
+      body: ['On iPhone, small haptic taps confirm the moments that matter: choosing a chip or a reaction, adding a pick to your roster, and a refused action. They only happen in the app on the phone.'],
     },
     {
       title: 'Colors and themes',
@@ -282,7 +286,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'AI teams',
       body: [
-        'Empty spots can be filled with simulated teams, shown as AI teams. They skip blocked markets but ignore stake caps. By default they count toward the prize pool like any other team, and the commissioner can change that when buy-ins are on.',
+        'Empty spots can be filled with simulated teams, shown as AI teams. They follow the same market rules as everyone else: they skip blocked markets, stay inside slot caps and keep each stake at or under its cap. By default they count toward the prize pool like any other team, and the commissioner can change that when buy-ins are on.',
       ],
     },
     {
