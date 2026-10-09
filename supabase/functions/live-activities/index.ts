@@ -92,6 +92,8 @@ interface Desired {
   windowKey: string;
   attributes: Record<string, unknown>;
   state: Record<string, unknown>;
+  /** Default ranking for the Dynamic Island (higher shows first); a league the person switched to gets 100. */
+  relevance: number;
   /** True when this activity is finished: if one is showing it gets an end push, otherwise nothing. */
   ending: boolean;
   staleDate?: number;
@@ -215,6 +217,8 @@ const zeroState = {
   winProb: null as number | null,
   lossRef: 0,
   slots: [] as SlotLine[],
+  // How many leagues have a live score activity right now, so the island can offer a switch button.
+  liveLeagues: 0,
 };
 
 // deno-lint-ignore no-explicit-any
@@ -420,6 +424,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
             attributes: { ...baseAttrs, kind: 'lineup', windowKey: slot, title: SLOT_LABEL[slot] ?? slot, kickoff: Math.floor(k / 1000) },
             state: { ...zeroState, phase: locked ? 'locked' : needsWork ? 'open' : 'ready', picksIn, totalSlots, unspent, hint },
             ending,
+            relevance: locked ? 20 : needsWork ? 90 : 40,
             staleDate: Math.floor(k / 1000),
             alert: { title: `${SLOT_LABEL[slot] ?? slot} kicks off soon`, body: hint || 'Your lineup needs work.' },
           });
@@ -488,10 +493,25 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
               slots: slotLines(wagers, lineupSlots, gameById, now),
             },
             ending: finished,
+            // More picks live and a closer matchup rank higher (60 to 95); a finished one drops to 20.
+            relevance: finished
+              ? 20
+              : 60 + Math.min(10, mine.live + theirs.live) * 2 + (winProb == null ? 5 : Math.round(15 * (1 - Math.abs(winProb - 0.5) * 2))),
           });
         }
       }
     }
+  }
+  // Tell each score activity how many leagues are live for this person (drives the island switch).
+  const liveByProfile = new Map<string, Set<string>>();
+  for (const d of out) {
+    if (d.kind !== 'score' || d.ending) continue;
+    const set = liveByProfile.get(d.profileId) ?? new Set<string>();
+    set.add(d.leagueId);
+    liveByProfile.set(d.profileId, set);
+  }
+  for (const d of out) {
+    if (d.kind === 'score') d.state = { ...d.state, liveLeagues: liveByProfile.get(d.profileId)?.size ?? 0 };
   }
   return out;
 }
@@ -549,6 +569,13 @@ Deno.serve(async (req: Request) => {
     const callerId = userData?.user?.id;
     if (!callerId) return json({ ok: false, error: 'unauthorized' }, 401);
     const desired = await buildDesired(supabase, now, callerId);
+    const { data: frontRows } = await supabase
+      .from('live_activities')
+      .select('league_id, week, kind, window_key')
+      .eq('profile_id', callerId)
+      .eq('is_front', true)
+      .is('ended_at', null);
+    const frontKeys = new Set<string>((frontRows ?? []).map((r: Record<string, unknown>) => keyOf({ profileId: callerId, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string })));
     return json({
       ok: true,
       items: desired.map((d) => ({
@@ -561,6 +588,7 @@ Deno.serve(async (req: Request) => {
         state: d.state,
         ending: d.ending,
         staleDate: d.staleDate ?? null,
+        relevance: frontKeys.has(keyOf(d)) ? 100 : d.relevance,
       })),
     });
   }
@@ -624,7 +652,7 @@ Deno.serve(async (req: Request) => {
       if (!startToken) continue;
       const prev = closedByKey.get(key)!;
       if (!dry) {
-        const r = await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, priority: 10 });
+        const r = await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, relevanceScore: d.relevance, priority: 10 });
         if (!r.ok) {
           log.push({ restart: key, failure: r.failure.reason });
           if (r.failure.shouldDeleteToken) await supabase.from('live_activity_start_tokens').delete().eq('token', startToken);
@@ -644,7 +672,7 @@ Deno.serve(async (req: Request) => {
       const startToken = startTokenByProfile.get(d.profileId);
       if (!startToken) continue; // no push-to-start (older iOS): the app starts it itself when opened
       if (!dry) {
-        const r = await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, alert: d.alert, priority: 10 });
+        const r = await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, alert: d.alert, relevanceScore: d.relevance, priority: 10 });
         if (!r.ok) {
           log.push({ start: key, failure: r.failure.reason });
           if (r.failure.shouldDeleteToken) await supabase.from('live_activity_start_tokens').delete().eq('token', startToken);
@@ -665,7 +693,7 @@ Deno.serve(async (req: Request) => {
       const startToken = startTokenByProfile.get(d.profileId);
       if (startToken && now - startedAt > START_RETRY_MS) {
         if (!dry) {
-          await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, priority: 10 });
+          await sendLiveActivityPush(startToken, { event: 'start', contentState: d.state, attributes: d.attributes, staleDate: d.staleDate, relevanceScore: d.relevance, priority: 10 });
           await supabase.from('live_activities').update({ started_at: new Date(now).toISOString() }).eq('id', row.id as string);
         }
         log.push({ restarted: key });
@@ -681,6 +709,8 @@ Deno.serve(async (req: Request) => {
         event: 'update',
         contentState: d.state,
         staleDate: d.staleDate,
+        // The league the person switched to in the island keeps the top score.
+        relevanceScore: row.is_front ? 100 : d.relevance,
         priority: !unchanged && d.kind === 'score' ? 10 : 5,
       });
       if (!r.ok) {

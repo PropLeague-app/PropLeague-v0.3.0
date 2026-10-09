@@ -17,13 +17,13 @@ struct PropLeagueLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             let a = context.attributes
             let s = context.state
+            let isScore = a.kind == "score"
             return DynamicIsland {
+                // Expanded: badge and score on each side (Apple Sports), the league, win bar and lead in
+                // the middle (ESPN), and the lineup scroller underneath.
                 DynamicIslandExpandedRegion(.leading) {
-                    if a.kind == "score" {
-                        VStack(spacing: 2) {
-                            TeamBadge(side: .mine, attributes: a, size: 34)
-                            Text(a.myAbbrev).font(.caption2.weight(.bold)).foregroundColor(.white.opacity(0.8))
-                        }
+                    if isScore {
+                        IslandSide(side: .mine, attributes: a, state: s)
                     } else {
                         VStack(spacing: 2) {
                             TeamBadge(side: .mine, attributes: a, size: 34)
@@ -32,18 +32,15 @@ struct PropLeagueLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if a.kind == "score" {
-                        VStack(spacing: 2) {
-                            TeamBadge(side: .opponent, attributes: a, size: 34)
-                            Text(a.oppAbbrev).font(.caption2.weight(.bold)).foregroundColor(.white.opacity(0.8))
-                        }
+                    if isScore {
+                        IslandSide(side: .opponent, attributes: a, state: s)
                     } else {
                         LineupRing(attributes: a, state: s, size: 52)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    if a.kind == "score" {
-                        ScoreLine(attributes: a, state: s, size: 22)
+                    if isScore {
+                        IslandScoreCenter(attributes: a, state: s)
                     } else {
                         VStack(spacing: 1) {
                             Text(PL.lineupHeadline(s.phase, title: a.title))
@@ -59,49 +56,52 @@ struct PropLeagueLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if a.kind == "score" {
-                        ScoreFooter(attributes: a, state: s)
+                    if isScore {
+                        IslandScoreBottom(attributes: a, state: s, activityID: context.activityID)
                     } else {
                         LineupFooter(state: s)
                     }
                 }
             } compactLeading: {
-                if a.kind == "score" {
+                if isScore {
                     HStack(spacing: 4) {
-                        TeamBadge(side: .mine, attributes: a, size: 18)
-                        Text(PL.scoreCompact(s.myScore))
-                            .font(.caption.weight(.bold).monospacedDigit())
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                        TeamBadge(side: .mine, attributes: a, size: 20)
+                        CompactScore(value: s.myScore, dimmed: s.oppScore > s.myScore, lossRef: s.lossRef)
                     }
                 } else {
                     Image(systemName: PL.lineupIcon(s.phase))
                         .foregroundColor(PL.lineupTint(s.phase))
                 }
             } compactTrailing: {
-                if a.kind == "score" {
+                if isScore {
                     HStack(spacing: 4) {
-                        Text(PL.scoreCompact(s.oppScore))
-                            .font(.caption.weight(.bold).monospacedDigit())
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        TeamBadge(side: .opponent, attributes: a, size: 18)
+                        CompactScore(value: s.oppScore, dimmed: s.myScore > s.oppScore, lossRef: s.lossRef)
+                        TeamBadge(side: .opponent, attributes: a, size: 20)
                     }
                 } else {
                     LineupCountdown(attributes: a, state: s, font: .caption.weight(.bold))
                         .frame(maxWidth: 52)
                 }
             } minimal: {
-                if a.kind == "score" {
-                    TeamBadge(side: .mine, attributes: a, size: 20)
+                if isScore {
+                    // Both teams' badges overlapping, the leader in front (mine on a tie).
+                    let mineFront = s.myScore >= s.oppScore
+                    ZStack {
+                        TeamBadge(side: .opponent, attributes: a, size: 20)
+                            .opacity(mineFront ? 0.55 : 1)
+                            .offset(x: 7)
+                            .zIndex(mineFront ? 0 : 1)
+                        TeamBadge(side: .mine, attributes: a, size: 20)
+                            .opacity(mineFront ? 1 : 0.55)
+                            .offset(x: -7)
+                            .zIndex(mineFront ? 1 : 0)
+                    }
                 } else {
                     Image(systemName: PL.lineupIcon(s.phase))
                         .foregroundColor(PL.lineupTint(s.phase))
                 }
             }
-            .keylineTint(PL.accent)
+            .keylineTint(isScore ? (PL.leadColor(mine: s.myScore, opp: s.oppScore) ?? PL.accent) : PL.accent)
         }
     }
 }
@@ -244,37 +244,11 @@ struct ScoreBoard: View {
 
     private func side(_ value: Double, dimmed: Bool, won: Int?, lost: Int?, push: Int?, live: Int?, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 1) {
-            Text(PL.score(value))
-                .font(.system(size: 36, weight: .heavy))
-                .fontWidth(.condensed)
-                .foregroundColor(PL.scoreColor(value, lossRef: state.lossRef).opacity(dimmed ? 0.55 : 1))
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            ScoreText(value: value, dimmed: dimmed, lossRef: state.lossRef, size: 36)
                 .frame(height: 40)
-            recordLine(won: won, lost: lost, push: push, live: live)
+            RecordLine(won: won, lost: lost, push: push, live: live, isFinal: isFinal)
         }
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .top))
-    }
-
-    @ViewBuilder
-    private func recordLine(won: Int?, lost: Int?, push: Int?, live: Int?) -> some View {
-        if let w = won, let l = lost, let p = push {
-            HStack(spacing: 4) {
-                Text("\(w)-\(l)-\(p)")
-                    .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundColor(.white.opacity(0.85))
-                if !isFinal, let live = live {
-                    HStack(spacing: 2) {
-                        if live > 0 { Circle().fill(PL.accent).frame(width: 4, height: 4) }
-                        Text("\(live) live")
-                            .font(.system(size: 9))
-                            .foregroundColor(live > 0 ? PL.accent : .white.opacity(0.45))
-                    }
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-        }
     }
 
     /// Window and lead ("TNF", "+$12.34"), then the win-probability bar.
@@ -446,105 +420,194 @@ struct StatusMark: View {
     }
 }
 
-struct ScoreLine: View {
-    let attributes: PropLeagueActivityAttributes
-    let state: PropLeagueActivityAttributes.ContentState
+/// One side's score in the lock-screen / island style: bold condensed, green or red like the app,
+/// dimmed when that side is trailing.
+struct ScoreText: View {
+    let value: Double
+    let dimmed: Bool
+    let lossRef: Double?
     let size: CGFloat
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(PL.score(state.myScore))
-                .foregroundColor(PL.marginColor(mine: state.myScore, opp: state.oppScore))
-            Text("-").foregroundColor(.white.opacity(0.45))
-            Text(PL.score(state.oppScore))
-                .foregroundColor(.white)
-        }
-        .font(.system(size: size, weight: .heavy, design: .rounded).monospacedDigit())
-        .minimumScaleFactor(0.5)
-        .lineLimit(1)
+        Text(PL.score(value))
+            .font(.system(size: size, weight: .heavy))
+            .fontWidth(.condensed)
+            .foregroundColor(PL.scoreColor(value, lossRef: lossRef).opacity(dimmed ? 0.55 : 1))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
     }
 }
 
-struct ScoreFooter: View {
+/// "3-1-0 . 2 live": a team's weekly W-L-P and how many picks are in a game that is on now.
+struct RecordLine: View {
+    let won: Int?
+    let lost: Int?
+    let push: Int?
+    let live: Int?
+    let isFinal: Bool
+
+    var body: some View {
+        if let w = won, let l = lost, let p = push {
+            HStack(spacing: 4) {
+                Text("\(w)-\(l)-\(p)")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .foregroundColor(.white.opacity(0.85))
+                if !isFinal, let live = live {
+                    HStack(spacing: 2) {
+                        if live > 0 { Circle().fill(PL.accent).frame(width: 4, height: 4) }
+                        Text("\(live) live")
+                            .font(.system(size: 9))
+                            .foregroundColor(live > 0 ? PL.accent : .white.opacity(0.45))
+                    }
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+        }
+    }
+}
+
+/// Compact island score: whole dollars, bold condensed, green / red, dimmed when trailing.
+struct CompactScore: View {
+    let value: Double
+    let dimmed: Bool
+    let lossRef: Double?
+
+    var body: some View {
+        Text(PL.scoreCompact(value))
+            .font(.system(size: 17, weight: .heavy))
+            .fontWidth(.condensed)
+            .foregroundColor(PL.scoreColor(value, lossRef: lossRef).opacity(dimmed ? 0.6 : 1))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+}
+
+/// Expanded island, one side: badge with its abbreviation, and the score (record and live count
+/// under it) right beside the badge. Mirrored for the opponent so the score hugs its badge.
+struct IslandSide: View {
+    let side: TeamBadge.Side
     let attributes: PropLeagueActivityAttributes
     let state: PropLeagueActivityAttributes.ContentState
 
     var body: some View {
-        if let mine = record(state.myWon, state.myLost, state.myPush), let theirs = record(state.oppWon, state.oppLost, state.oppPush) {
-            HStack(alignment: .top) {
-                RecordColumn(record: mine, live: state.myLive ?? 0, isFinal: state.phase == "final", alignment: .leading)
-                Spacer(minLength: 6)
-                Text(center)
-                    .font(.caption.weight(state.phase == "final" ? .semibold : .regular))
-                    .foregroundColor(centerColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 6)
-                RecordColumn(record: theirs, live: state.oppLive ?? 0, isFinal: state.phase == "final", alignment: .trailing)
-            }
-        } else {
-            // Older server push without records.
-            HStack {
-                Text(legacyLeft)
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(.white.opacity(0.75))
-                Spacer()
-                Text(attributes.title)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+        let mine = side == .mine
+        let isFinal = state.phase == "final"
+        let value = mine ? state.myScore : state.oppScore
+        let trailing = mine ? state.oppScore > state.myScore : state.myScore > state.oppScore
+        let badge = VStack(spacing: 2) {
+            TeamBadge(side: side, attributes: attributes, size: 38)
+            Text(mine ? attributes.myAbbrev : attributes.oppAbbrev)
+                .font(.caption2.weight(.bold))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+        }
+        let score = VStack(alignment: mine ? .leading : .trailing, spacing: 0) {
+            ScoreText(value: value, dimmed: trailing, lossRef: state.lossRef, size: 34)
+            RecordLine(
+                won: mine ? state.myWon : state.oppWon,
+                lost: mine ? state.myLost : state.oppLost,
+                push: mine ? state.myPush : state.oppPush,
+                live: mine ? state.myLive : state.oppLive,
+                isFinal: isFinal
+            )
+        }
+        HStack(alignment: .top, spacing: 6) {
+            if mine {
+                badge
+                score
+            } else {
+                score
+                badge
             }
         }
-    }
-
-    private func record(_ w: Int?, _ l: Int?, _ p: Int?) -> String? {
-        guard let w = w, let l = l, let p = p else { return nil }
-        return "\(w)-\(l)-\(p)"
-    }
-
-    private var center: String {
-        guard state.phase == "final" else { return PL.shortTitle(attributes.title) }
-        if state.myScore > state.oppScore { return "You won by \(PL.score(state.myScore - state.oppScore))" }
-        if state.myScore < state.oppScore { return "You lost by \(PL.score(state.oppScore - state.myScore))" }
-        return "Tied"
-    }
-
-    private var centerColor: Color {
-        guard state.phase == "final" else { return .white.opacity(0.5) }
-        return PL.marginColor(mine: state.myScore, opp: state.oppScore).opacity(0.95)
-    }
-
-    private var legacyLeft: String {
-        if state.phase == "final" {
-            if state.myScore > state.oppScore { return "You won by \(PL.score(state.myScore - state.oppScore))" }
-            if state.myScore < state.oppScore { return "You lost by \(PL.score(state.oppScore - state.myScore))" }
-            return "Tied"
-        }
-        let total = state.picksAlive + state.picksSettled
-        if total == 0 { return "Games in progress" }
-        return "\(state.picksAlive) alive, \(state.picksSettled) settled"
     }
 }
 
-/// One team's weekly W-L-P record with how many of its picks are in a game that is on right now.
-struct RecordColumn: View {
-    let record: String
-    let live: Int
-    let isFinal: Bool
-    let alignment: HorizontalAlignment
+/// Island middle row when several leagues are live: tapping it brings the next league's matchup in.
+@available(iOS 17.0, *)
+struct LeagueSwitchButton: View {
+    let attributes: PropLeagueActivityAttributes
+    let label: String
 
     var body: some View {
-        VStack(alignment: alignment, spacing: 1) {
-            Text(record)
-                .font(.caption.weight(.bold).monospacedDigit())
-                .foregroundColor(.white.opacity(0.9))
-            if !isFinal {
-                HStack(spacing: 3) {
-                    if live > 0 { Circle().fill(PL.accent).frame(width: 5, height: 5) }
-                    Text("\(live) live")
-                        .font(.caption2)
-                        .foregroundColor(live > 0 ? PL.accent : .white.opacity(0.45))
+        Button(intent: SwitchLeagueIntent()) {
+            HStack(spacing: 4) {
+                LeagueBadge(attributes: attributes, size: 16)
+                Text(label)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(1)
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.white.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Expanded island, middle: league badge and window, the mini win bar, and the lead.
+struct IslandScoreCenter: View {
+    let attributes: PropLeagueActivityAttributes
+    let state: PropLeagueActivityAttributes.ContentState
+
+    var body: some View {
+        let isFinal = state.phase == "final"
+        let margin = abs(state.myScore - state.oppScore)
+        let mineAhead = state.myScore > state.oppScore
+        let label = isFinal ? "FINAL" : PL.shortTitle(attributes.title)
+        let multi = (state.liveLeagues ?? 0) > 1
+        VStack(spacing: 3) {
+            if #available(iOS 17.0, *), multi {
+                LeagueSwitchButton(attributes: attributes, label: label)
+            } else {
+                HStack(spacing: 4) {
+                    LeagueBadge(attributes: attributes, size: 16)
+                    Text(label)
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(1)
                 }
             }
+            if multi {
+                Text(attributes.leagueName)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            if let p = state.winProb, !isFinal {
+                WinBar(probability: p, mine: attributes.myColor, opponent: attributes.oppColor)
+                    .frame(width: 96)
+            }
+            if margin >= 0.005 {
+                Text((mineAhead ? "+" : "-") + PL.score(margin))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(mineAhead ? PL.win : PL.loss)
+            } else {
+                Text("Even").font(.caption2).foregroundColor(.white.opacity(0.55))
+            }
+        }
+    }
+}
+
+/// Expanded island, bottom: the lineup scroller (iOS 17+), or the league name on older iOS.
+struct IslandScoreBottom: View {
+    let attributes: PropLeagueActivityAttributes
+    let state: PropLeagueActivityAttributes.ContentState
+    let activityID: String
+
+    var body: some View {
+        if #available(iOS 17.0, *), let slots = state.slots, !slots.isEmpty, !activityID.isEmpty {
+            SlotScroller(activityID: activityID, slots: slots)
+        } else {
+            Text(attributes.leagueName)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
         }
     }
 }
@@ -800,10 +863,11 @@ enum PL {
         return whole < 0 ? "-$\(abs(whole))" : "$\(whole)"
     }
 
-    static func marginColor(mine: Double, opp: Double) -> Color {
+    /// Green when I am ahead, red when behind, nil when tied.
+    static func leadColor(mine: Double, opp: Double) -> Color? {
         if mine > opp { return win }
         if mine < opp { return loss }
-        return .white
+        return nil
     }
 
     static func lineupIcon(_ phase: String) -> String {

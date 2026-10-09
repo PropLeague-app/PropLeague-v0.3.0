@@ -40,6 +40,8 @@ struct PropLeagueActivityAttributes: ActivityAttributes {
         var slots: [SlotLine]?
         /// Bumped locally to force a redraw (the scroller moved, a setting changed). Never sent by the server.
         var nudge: Int?
+        /// How many leagues have a live score activity right now; the island shows a switch button above 1.
+        var liveLeagues: Int?
     }
 
     var kind: String
@@ -95,6 +97,21 @@ enum SharedPrefs {
         set { defaults?.set(newValue, forKey: "plColorScale") }
     }
 
+    /// Where Supabase is and which device this is, saved by the app so a Live Activity button (which
+    /// can run with no web view and no signed-in session) can tell the server what the person chose.
+    static var supabaseUrl: String? {
+        get { defaults?.string(forKey: "supabaseUrl") }
+        set { defaults?.set(newValue, forKey: "supabaseUrl") }
+    }
+    static var anonKey: String? {
+        get { defaults?.string(forKey: "anonKey") }
+        set { defaults?.set(newValue, forKey: "anonKey") }
+    }
+    static var startToken: String? {
+        get { defaults?.string(forKey: "startToken") }
+        set { defaults?.set(newValue, forKey: "startToken") }
+    }
+
     /// Which lineup slot each activity's scroller is on.
     static func slotIndex(_ activityId: String, count: Int) -> Int {
         guard count > 0 else { return 0 }
@@ -139,6 +156,48 @@ struct StepLineupSlotIntent: LiveActivityIntent {
             var state = activity.content.state
             state.nudge = (state.nudge ?? 0) &+ 1
             await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate))
+        }
+        return .result()
+    }
+}
+
+/// The island's switch button: brings the next league's matchup into the Dynamic Island. iOS shows
+/// one activity per app there, the one with the highest relevance score, so this gives the next
+/// score activity the top score (and the rest a low one), then tells the server so later pushes keep it.
+@available(iOS 17.0, *)
+struct SwitchLeagueIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Switch league"
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let scores = Activity<PropLeagueActivityAttributes>.activities
+            .filter { $0.attributes.kind == "score" && $0.activityState == .active }
+            .sorted { ($0.attributes.leagueName, $0.id) < ($1.attributes.leagueName, $1.id) }
+        guard scores.count > 1, let top = scores.map({ $0.content.relevanceScore }).max() else { return .result() }
+        let current = scores.firstIndex { $0.content.relevanceScore == top } ?? 0
+        let next = scores[(current + 1) % scores.count]
+
+        for activity in scores {
+            let content = activity.content
+            await activity.update(ActivityContent(
+                state: content.state,
+                staleDate: content.staleDate,
+                relevanceScore: activity.id == next.id ? 100 : 10
+            ))
+        }
+
+        // Remember the choice on the server (best effort), so its next push does not undo it.
+        if let base = SharedPrefs.supabaseUrl, let key = SharedPrefs.anonKey, let token = SharedPrefs.startToken,
+           let url = URL(string: base + "/rest/v1/rpc/set_live_activity_front_by_start_token") {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 8
+            request.setValue(key, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["p_start_token": token, "p_activity_id": next.id])
+            _ = try? await URLSession.shared.data(for: request)
         }
         return .result()
     }

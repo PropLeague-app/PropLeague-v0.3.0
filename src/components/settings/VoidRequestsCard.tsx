@@ -296,6 +296,7 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
       <CollapsibleSection
         title="Void Requests"
         variant="action"
+        actionLabel={isCommissioner ? 'Review' : 'Request'}
         icon={<UserX size={16} />}
         help={isCommissioner ? ['commissioner', 'Void Requests'] : ['scoring', 'Void requests']}
         badge={isCommissioner && pending.length > 0 ? `${pending.length} pending` : undefined}

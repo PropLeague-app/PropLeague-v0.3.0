@@ -44,6 +44,7 @@ final class LiveActivityManager {
                 for await data in Activity<PropLeagueActivityAttributes>.pushToStartTokenUpdates {
                     let token = Self.hex(data)
                     UserDefaults.standard.set(token, forKey: Keys.startToken)
+                    SharedPrefs.startToken = token
                     await MainActor.run { self.plugin?.notifyListeners("startToken", data: ["token": token]) }
                 }
             }
@@ -82,6 +83,8 @@ final class LiveActivityManager {
     func configure(supabaseUrl: String, anonKey: String) {
         UserDefaults.standard.set(supabaseUrl, forKey: Keys.supabaseUrl)
         UserDefaults.standard.set(anonKey, forKey: Keys.anonKey)
+        SharedPrefs.supabaseUrl = supabaseUrl
+        SharedPrefs.anonKey = anonKey
     }
 
     var startToken: String? { UserDefaults.standard.string(forKey: Keys.startToken) }
@@ -146,6 +149,7 @@ final class LiveActivityManager {
         let kind: String
         let ending: Bool
         let staleDate: Date?
+        let relevance: Double
         let attributes: PropLeagueActivityAttributes
         let state: PropLeagueActivityAttributes.ContentState
     }
@@ -170,7 +174,7 @@ final class LiveActivityManager {
                 }
                 continue
             }
-            let content = ActivityContent(state: item.state, staleDate: item.staleDate)
+            let content = ActivityContent(state: item.state, staleDate: item.staleDate, relevanceScore: item.relevance)
             if let current = current {
                 kept.append(current.id)
                 await current.update(content)

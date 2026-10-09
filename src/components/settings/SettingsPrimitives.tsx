@@ -40,6 +40,7 @@ export function CollapsibleSection({
   defaultOpen = false,
   help,
   variant = 'default',
+  actionLabel,
   children,
 }: {
   title: string;
@@ -49,8 +50,11 @@ export function CollapsibleSection({
   readOnly?: boolean;
   defaultOpen?: boolean;
   /** 'action' is for a card that is a task to do rather than a settings category (Void Requests): a
-   * tinted border and background, a solid icon tile, and a filled badge, so it reads as interactive. */
+   * purple icon tile (the Voided color) and a pill button on the right in place of the chevron, so it
+   * reads as something to press. The card itself stays the normal neutral card. */
   variant?: 'default' | 'action';
+  /** The pill's word while closed in the 'action' variant ("Review", "Request"); it says "Close" when open. */
+  actionLabel?: string;
   /** [help category id, topic title]: draws a small help icon that opens the help sheet there. */
   help?: [string, string];
   children: ReactNode;
@@ -59,7 +63,7 @@ export function CollapsibleSection({
   const openHelp = useContext(HelpContext);
   const action = variant === 'action';
   return (
-    <div className={`rounded-xl overflow-hidden border ${action ? 'bg-primary/5 border-primary/40' : 'bg-bg-card border-border'}`}>
+    <div className="rounded-xl overflow-hidden border bg-bg-card border-border">
       <div className="flex items-center transition-colors active:bg-bg-raised">
         <button
           type="button"
@@ -69,7 +73,7 @@ export function CollapsibleSection({
         >
           {icon && (
             <span
-              className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${action ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}
+              className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${action ? 'bg-accent/15 text-accent' : 'bg-primary/10 text-primary'}`}
             >
               {icon}
             </span>
@@ -103,10 +107,16 @@ export function CollapsibleSection({
           aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
           className="pl-1 pr-3 py-2.5 shrink-0"
         >
-          <ChevronDown size={16} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+          {action ? (
+            <span className="inline-block rounded-full border border-accent/40 bg-accent/15 text-accent text-[11px] font-semibold px-2.5 py-1">
+              {open ? 'Close' : (actionLabel ?? 'Open')}
+            </span>
+          ) : (
+            <ChevronDown size={16} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+          )}
         </button>
       </div>
-      <div hidden={!open} className={`border-t ${action ? 'border-primary/30' : 'border-border'}`}>
+      <div hidden={!open} className="border-t border-border">
         <fieldset
           disabled={readOnly}
           className={`min-w-0 border-0 m-0 p-2.5 space-y-3 ${readOnly ? 'settings-readonly' : ''}`}

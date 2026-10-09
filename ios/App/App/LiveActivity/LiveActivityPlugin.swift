@@ -87,10 +87,12 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 var stale: Date? = nil
                 if let s = entry["staleDate"] as? Double { stale = Date(timeIntervalSince1970: s) }
                 else if let s = entry["staleDate"] as? Int { stale = Date(timeIntervalSince1970: Double(s)) }
+                let relevance = (entry["relevance"] as? Double) ?? (entry["relevance"] as? Int).map(Double.init) ?? 0
                 items.append(.init(
                     kind: entry["kind"] as? String ?? attrs.kind,
                     ending: entry["ending"] as? Bool ?? false,
                     staleDate: stale,
+                    relevance: relevance,
                     attributes: attrs,
                     state: state
                 ))

@@ -23,6 +23,7 @@ interface NativeSyncItem {
   kind: string;
   ending: boolean;
   staleDate?: number;
+  relevance?: number;
   attributesJson: string;
   stateJson: string;
 }
@@ -50,6 +51,7 @@ interface PlanItem {
   kind: string;
   ending: boolean;
   staleDate?: number | null;
+  relevance?: number;
   attributes: unknown;
   state: unknown;
 }
@@ -110,6 +112,7 @@ export async function syncLiveActivities(force = false): Promise<void> {
         kind: item.kind,
         ending: item.ending,
         ...(typeof item.staleDate === 'number' ? { staleDate: item.staleDate } : {}),
+        ...(typeof item.relevance === 'number' ? { relevance: item.relevance } : {}),
         attributesJson: JSON.stringify(item.attributes),
         stateJson: JSON.stringify(item.state),
       })),

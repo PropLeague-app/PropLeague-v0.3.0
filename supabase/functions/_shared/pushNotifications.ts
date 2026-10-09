@@ -220,6 +220,8 @@ export interface LiveActivityPush {
   alert?: { title: string; body: string };
   /** 10 for start and end and score changes, 5 for quiet refreshes (Apple budgets priority 10). */
   priority?: 5 | 10;
+  /** Which of the app's activities the Dynamic Island shows when several are running: the highest wins. */
+  relevanceScore?: number;
 }
 
 export async function sendLiveActivityPush(token: string, push: LiveActivityPush): Promise<{ ok: true } | { ok: false; failure: PushFailure }> {
@@ -232,6 +234,7 @@ export async function sendLiveActivityPush(token: string, push: LiveActivityPush
     'content-state': push.contentState,
   };
   if (push.staleDate != null) aps['stale-date'] = push.staleDate;
+  if (push.relevanceScore != null) aps['relevance-score'] = push.relevanceScore;
   if (push.event === 'end' && push.dismissalDate != null) aps['dismissal-date'] = push.dismissalDate;
   if (push.event === 'start') {
     aps['attributes-type'] = 'PropLeagueActivityAttributes';
