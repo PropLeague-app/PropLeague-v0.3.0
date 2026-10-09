@@ -5,6 +5,7 @@
  */
 export const SOFT_PRIMARY_BTN = 'btn-soft-primary disabled:opacity-40';
 export const SOFT_PROFIT_BTN = 'btn-soft-profit disabled:opacity-40';
+export const SOFT_LOSS_BTN = 'btn-soft-loss disabled:opacity-40';
 
 /** Onboarding buttons: the solid primary slab, an outlined secondary and a plain text link, all with the
  * same quick pressed feedback (a slight shrink) so every tap on the first screens registers. */

@@ -23,6 +23,7 @@
      the same color (soft buttons, selected pills). Brighter than the base color on dark, darker on light. */
   --color-primary-ink: #a9c9ff;
   --color-profit-ink: #86f2b4;
+  --color-loss-ink: #ff9a9a;
   /* Scaled loss colors (engine/plColor.ts): small loss yellow, bigger orange, wipeout red.
      Each stop is picked for contrast on this theme's card color. */
   --pl-loss-lo: #f2c94c;
@@ -146,6 +147,7 @@
   --color-text-muted: #5a6472;
   --color-primary-ink: #1a52c4;
   --color-profit-ink: #0c7a3f;
+  --color-loss-ink: #b3261e;
   --pl-loss-lo: #946400;
   --pl-loss-mid: #c2570c;
   --pl-loss-hi: #d42a2a;
@@ -658,6 +660,14 @@ body {
   border-color: color-mix(in oklab, var(--color-profit) 50%, var(--color-bg));
 }
 .btn-soft-profit:active:not(:disabled) { background: color-mix(in oklab, var(--color-profit) 28%, var(--color-bg)); }
+/* Destructive actions (leave, void, log out) in the same soft recipe, tinted red. */
+.btn-soft-loss {
+  font-weight: 600;
+  color: var(--color-loss-ink);
+  background: color-mix(in oklab, var(--color-loss) 14%, var(--color-bg));
+  border: 1px solid color-mix(in oklab, var(--color-loss) 50%, var(--color-bg));
+}
+.btn-soft-loss:active:not(:disabled) { background: color-mix(in oklab, var(--color-loss) 26%, var(--color-bg)); }
 
 /* Selected state for stand-alone pills (week picker, position filter, matchup and member pickers). */
 .sel-pill {

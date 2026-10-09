@@ -41,6 +41,7 @@ interface LiveActivityPlugin {
   getStatus(): Promise<LiveActivityStatus>;
   configure(options: { supabaseUrl: string; anonKey: string }): Promise<void>;
   sync(options: { items: NativeSyncItem[] }): Promise<void>;
+  setPlColorScale(options: { scale: 'classic' | 'scaled' }): Promise<void>;
   addListener(event: 'startToken', handler: (data: { token: string }) => void): Promise<{ remove: () => Promise<void> }>;
   addListener(event: 'activityToken', handler: (data: ActivityTokenEvent) => void): Promise<{ remove: () => Promise<void> }>;
 }
@@ -146,6 +147,18 @@ export async function startLiveActivities(): Promise<void> {
     console.error('[live-activity] setup failed:', err instanceof Error ? err.message : err);
   }
   await syncLiveActivities(true);
+}
+
+/** Tells the widget which P/L colors the person chose (Settings, App Preferences) so the lock screen
+ * scores match the app: classic green/red, or red shaded by how big the loss is. Native only; an
+ * older build without the method just ignores it. */
+export async function setLiveActivityColorScale(scale: 'classic' | 'scaled'): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await LiveActivity.setPlColorScale({ scale });
+  } catch {
+    // plugin method not in this build: scores stay classic
+  }
 }
 
 /** Signed out: end everything on the device. */

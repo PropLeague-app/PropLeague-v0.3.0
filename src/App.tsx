@@ -3,7 +3,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
-import { startLiveActivities, stopLiveActivities } from './services/liveActivities';
+import { setLiveActivityColorScale, startLiveActivities, stopLiveActivities } from './services/liveActivities';
 import { applyThemeMode } from './services/theme';
 import { watchSystemAppearance } from './hooks/useResolvedTheme';
 import { MobileShell } from './components/layout/MobileShell';
@@ -25,6 +25,7 @@ import { MarketBrowser } from './screens/MarketBrowser';
 import { NFLSlate } from './screens/NFLSlate';
 import { GameDetail } from './screens/GameDetail';
 import { SettingsHome } from './screens/SettingsHome';
+import { LeagueSettingsScreen } from './screens/LeagueSettingsScreen';
 import { FullStandings } from './screens/FullStandings';
 import { ScheduleView } from './screens/ScheduleView';
 import { WeekMatchups } from './screens/WeekMatchups';
@@ -146,6 +147,12 @@ function App() {
     else if (!pushSession) void stopLiveActivities();
   }, [pushSession, pushProfile?.onboarded, pushProfile?.id]);
 
+  // The lock screen scores follow the same P/L color choice as the app (classic or scaled).
+  const plColorScale = useAppStore((s) => s.profile?.plColorScale) ?? 'classic';
+  useEffect(() => {
+    void setLiveActivityColorScale(plColorScale);
+  }, [plColorScale]);
+
   // Local appearance setting (see chat, Sept 2026 -- light mode) -- lives here
   // rather than per-screen for the same reason push registration does: App()
   // mounts once for the whole app lifetime, so this can't miss applying the
@@ -181,6 +188,7 @@ function App() {
         <Route path="/slate" element={<NFLSlate />} />
         <Route path="/slate/game/:gameId" element={<GameDetail />} />
         <Route path="/settings" element={<SettingsHome />} />
+        <Route path="/settings/league" element={<LeagueSettingsScreen />} />
         <Route path="/standings" element={<FullStandings />} />
         <Route path="/schedule" element={<ScheduleView />} />
         <Route path="/matchups" element={<WeekMatchups />} />

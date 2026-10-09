@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { ChevronDown, CircleHelp } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
 import { NumberInput, NullableNumberInput } from '../common/NumberInput';
 import { NameInput } from '../common/NameInput';
 
@@ -39,6 +39,7 @@ export function CollapsibleSection({
   readOnly = false,
   defaultOpen = false,
   help,
+  variant = 'default',
   children,
 }: {
   title: string;
@@ -47,15 +48,19 @@ export function CollapsibleSection({
   badge?: string;
   readOnly?: boolean;
   defaultOpen?: boolean;
+  /** 'action' is for a card that is a task to do rather than a settings category (Void Requests): a
+   * tinted border and background, a solid icon tile, and a filled badge, so it reads as interactive. */
+  variant?: 'default' | 'action';
   /** [help category id, topic title]: draws a small help icon that opens the help sheet there. */
   help?: [string, string];
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const openHelp = useContext(HelpContext);
+  const action = variant === 'action';
   return (
-    <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
-      <div className="flex items-center">
+    <div className={`rounded-xl overflow-hidden border ${action ? 'bg-primary/5 border-primary/40' : 'bg-bg-card border-border'}`}>
+      <div className="flex items-center transition-colors active:bg-bg-raised">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -63,12 +68,21 @@ export function CollapsibleSection({
           className="flex-1 min-w-0 flex items-center gap-2.5 pl-3 pr-2 py-2.5 text-left"
         >
           {icon && (
-            <span className="w-7 h-7 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center">{icon}</span>
+            <span
+              className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center ${action ? 'bg-primary text-white' : 'bg-primary/10 text-primary'}`}
+            >
+              {icon}
+            </span>
           )}
           <span className="flex-1 min-w-0">
             <span className="flex items-center gap-2">
               <span className="text-sm font-bold text-text">{title}</span>
-              {badge && <span className="text-[10px] text-accent font-semibold shrink-0">{badge}</span>}
+              {badge &&
+                (action ? (
+                  <span className="text-[10px] font-bold text-white bg-accent rounded-full px-1.5 py-px shrink-0">{badge}</span>
+                ) : (
+                  <span className="text-[10px] text-accent font-semibold shrink-0">{badge}</span>
+                ))}
             </span>
             {summary && !open && <span className="block text-[11px] text-text-muted truncate">{summary}</span>}
           </span>
@@ -92,7 +106,7 @@ export function CollapsibleSection({
           <ChevronDown size={16} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       </div>
-      <div hidden={!open} className="border-t border-border">
+      <div hidden={!open} className={`border-t ${action ? 'border-primary/30' : 'border-border'}`}>
         <fieldset
           disabled={readOnly}
           className={`min-w-0 border-0 m-0 p-2.5 space-y-3 ${readOnly ? 'settings-readonly' : ''}`}
@@ -228,11 +242,11 @@ export function Stepper({
     <div className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
       <span className="text-xs font-medium">{label}</span>
       <div className="flex items-center gap-1">
-        <button type="button" disabled={disabled || value <= min} onClick={() => onChange(Math.max(min, value - 1))} className="text-text-muted w-6 h-6 disabled:opacity-30">
+        <button type="button" disabled={disabled || value <= min} onClick={() => onChange(Math.max(min, value - 1))} className="text-text-muted w-7 h-7 disabled:opacity-30 active:text-text">
           −
         </button>
         <span className="text-sm w-10 text-center">{format ? format(value) : value}</span>
-        <button type="button" disabled={disabled || value >= max} onClick={() => onChange(Math.min(max, value + 1))} className="text-text-muted w-6 h-6 disabled:opacity-30">
+        <button type="button" disabled={disabled || value >= max} onClick={() => onChange(Math.min(max, value + 1))} className="text-text-muted w-7 h-7 disabled:opacity-30 active:text-text">
           +
         </button>
       </div>
@@ -267,5 +281,57 @@ export function ChipRow<T extends string | number>({
         </button>
       ))}
     </div>
+  );
+}
+
+
+/** A tappable row in a list card (League Settings, Create a League, Log Out, ...). Same icon tile,
+ * title and summary as a CollapsibleSection header, with a chevron instead of an expander, and the
+ * same pressed state. Put rows inside `bg-bg-card border border-border rounded-xl overflow-hidden
+ * divide-y divide-border`. `tone="danger"` is for leave and log out. */
+export function SettingsRow({
+  icon,
+  label,
+  summary,
+  badge,
+  tone = 'default',
+  chevron = true,
+  compact = false,
+  onClick,
+}: {
+  icon?: ReactNode;
+  label: string;
+  summary?: string;
+  badge?: string;
+  tone?: 'default' | 'danger';
+  chevron?: boolean;
+  /** For plain actions (Create a League, Log Out) rather than categories: smaller tile and label,
+   * medium weight, so they read as buttons under the bold category rows. */
+  compact?: boolean;
+  onClick: () => void;
+}) {
+  const danger = tone === 'danger';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-2.5 pl-3 pr-3 text-left transition-colors active:bg-bg-raised ${compact ? 'py-2' : 'py-2.5'}`}
+    >
+      {icon && (
+        <span
+          className={`shrink-0 flex items-center justify-center ${compact ? 'w-6 h-6 rounded-md' : 'w-7 h-7 rounded-lg'} ${danger ? 'bg-loss/10 text-loss' : 'bg-primary/10 text-primary'}`}
+        >
+          {icon}
+        </span>
+      )}
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2">
+          <span className={`${compact ? 'text-xs font-medium' : 'text-sm font-bold'} ${danger ? 'text-loss' : 'text-text'}`}>{label}</span>
+          {badge && <span className="text-[10px] text-accent font-semibold shrink-0">{badge}</span>}
+        </span>
+        {summary && <span className="block text-[11px] text-text-muted truncate">{summary}</span>}
+      </span>
+      {chevron && <ChevronRight size={16} className="text-text-muted shrink-0" />}
+    </button>
   );
 }

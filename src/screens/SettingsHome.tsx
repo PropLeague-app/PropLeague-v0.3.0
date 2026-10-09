@@ -14,11 +14,11 @@ import { ConfirmSheet } from '../components/common/ConfirmSheet';
 import { fetchNotificationPrefs, getCachedNotificationPrefs, updateNotificationPrefs, DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs, type SlateUpdates } from '../services/notificationPrefs';
 import logoMark from '../assets/logo-mono-muted.png';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
-import { LeagueSettingsPanel } from '../components/settings/LeagueSettingsPanel';
 import { VoidRequestsCard } from '../components/settings/VoidRequestsCard';
 import { lossColor, lossIntensity } from '../engine/plColor';
 import { formatCents } from '../engine/oddsMath';
-import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SubSection } from '../components/settings/SettingsPrimitives';
+import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SettingsRow, SubSection } from '../components/settings/SettingsPrimitives';
+import { meaningfulPending, pendingKeys } from '../engine/settingsRules';
 import {
   ChartColumn,
   Calendar,
@@ -45,7 +45,9 @@ import {
   Sun,
   Check,
   ChevronDown,
+  ChevronRight,
   SunMoon,
+  SlidersHorizontal,
   TrendingDown,
   Wrench,
 } from 'lucide-react';
@@ -151,19 +153,6 @@ function ThemeMenu({ value, onChange }: { value: ThemeMode; onChange: (v: ThemeM
   );
 }
 
-/** A group title with a small icon and a scope tag on the right, in place of a description line. */
-function GroupTitle({ icon, title, tag }: { icon: ReactNode; title: string; tag?: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <p className="text-[13px] font-semibold flex items-center gap-1.5">
-        <span className="text-text-muted">{icon}</span>
-        {title}
-      </p>
-      {tag && <span className="text-[10px] text-text-muted">{tag}</span>}
-    </div>
-  );
-}
-
 function PrefRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -214,9 +203,13 @@ function ChangePasswordRow() {
           setSuccess(false);
           setError(null);
         }}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left"
+        className="w-full flex items-center gap-2.5 pl-3 pr-3 py-2 text-left transition-colors active:bg-bg-raised"
       >
-        <KeyRound size={16} /> Change Password
+        <span className="w-6 h-6 shrink-0 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+          <KeyRound size={14} />
+        </span>
+        <span className="flex-1 text-xs font-medium text-text">Change Password</span>
+        <ChevronRight size={16} className="text-text-muted shrink-0" />
       </button>
     );
   }
@@ -320,7 +313,6 @@ export function SettingsHome() {
   const [pendingNav, setPendingNav] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [teamIdentityDirty, setTeamIdentityDirty] = useState(false);
-  const [leagueIdentityDirty, setLeagueIdentityDirty] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
 
@@ -404,7 +396,7 @@ export function SettingsHome() {
   // Drives the bottom tab bar's discard-on-leave confirm (manual v0.1.1 §2 #4) — reset
   // on unmount too, as a safety net against a stale "dirty" flag surviving a route change.
   const setHasUnsavedChanges = useUIStore((s) => s.setHasUnsavedChanges);
-  const anyDirty = teamIdentityDirty || leagueIdentityDirty || profileDirty || teamNameDirty;
+  const anyDirty = teamIdentityDirty || profileDirty || teamNameDirty;
   useEffect(() => {
     setHasUnsavedChanges(anyDirty);
   }, [anyDirty, setHasUnsavedChanges]);
@@ -418,6 +410,9 @@ export function SettingsHome() {
     navigate(link);
   }
 
+  const notificationsOn = [notificationPrefs.lineupReminders, notificationPrefs.wagerSettled, notificationPrefs.weekResults, notificationPrefs.liveActivities].filter(Boolean).length;
+  const notificationSummary = prefsLoaded ? `${notificationsOn} of 4 on${notificationPrefs.lineupReminders ? ' · lineup reminders on' : ''}` : undefined;
+  const leagueScheduledChanges = !!league && pendingKeys(meaningfulPending(league.settings, league.pendingSettings)).length > 0;
   const profileTeamSummary = [profile?.username, userTeam?.teamName].filter(Boolean).join(' · ');
   const profileTeamDirty = profileDirty || teamNameDirty || teamIdentityDirty;
 
@@ -440,7 +435,7 @@ export function SettingsHome() {
             <button
               key={link.to}
               onClick={() => goTo(link.to)}
-              className="bg-bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm"
+              className="bg-bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm transition-colors active:bg-bg-raised"
             >
               <span>{link.icon}</span>
               {link.label}
@@ -466,99 +461,56 @@ export function SettingsHome() {
           </div>
         )}
 
-        {profile && (
-          <CollapsibleSection
-            title="Profile & Team"
-            icon={<UserRound size={16} />}
-            summary={profileTeamSummary}
-            badge={profileTeamDirty ? 'Unsaved changes' : undefined}
-          >
-            <SubSection title="Profile (all leagues)">
-              <div>
-                <label className="text-xs text-text-muted mb-0.5 block">Username</label>
-                <NameInput
-                  value={usernameDraft}
-                  fallback="Commissioner"
-                  onChange={setUsernameDraft}
-                  className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-text-muted mb-0.5 block">Avatar</label>
-                <div className="grid grid-cols-6 gap-1">
-                  {AVATARS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => setAvatarDraft(emoji)}
-                      className={`text-lg h-9 rounded-lg border flex items-center justify-center ${
-                        avatarDraft === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
+        <section className="space-y-2">
+          <SectionHeader>You</SectionHeader>
+          {profile && (
+            <CollapsibleSection
+              title="Profile & Team"
+              icon={<UserRound size={16} />}
+              summary={profileTeamSummary}
+              badge={profileTeamDirty ? 'Unsaved changes' : undefined}
+            >
+              <SubSection title="Profile (all leagues)">
+                <div>
+                  <label className="text-xs text-text-muted mb-0.5 block">Username</label>
+                  <NameInput
+                    value={usernameDraft}
+                    fallback="Commissioner"
+                    onChange={setUsernameDraft}
+                    className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
+                  />
                 </div>
-              </div>
-              {profileError && <p className="text-loss text-xs">{profileError}</p>}
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={!profileDirty || profileSaving}
-                  onClick={handleSaveProfile}
-                  className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
-                >
-                  {profileSaving ? 'Saving…' : 'Save Changes'}
-                </button>
-                {profileDirty && (
-                  <button
-                    onClick={() => {
-                      setUsernameDraft(profile.username);
-                      setAvatarDraft(profile.avatarEmoji);
-                      setProfileError(null);
-                    }}
-                    className="text-xs text-text-muted px-2"
-                  >
-                    Discard
-                  </button>
-                )}
-              </div>
-            </SubSection>
-
-            {league && userTeam && (
-              <SubSection title="Team (this league)">
-                <div className="grid grid-cols-[1fr_4.5rem] gap-2">
-                  <div>
-                    <label className="text-xs text-text-muted mb-0.5 block">Team name</label>
-                    <NameInput
-                      value={teamNameDraft}
-                      fallback={profile?.username ?? 'My Team'}
-                      onChange={setTeamNameDraft}
-                      className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-text-muted mb-0.5 block">Abbr.</label>
-                    <NameInput
-                      maxLength={4}
-                      value={abbrevDraft}
-                      fallback={abbrevFromName(teamNameDraft)}
-                      onChange={(v) => setAbbrevDraft(v.toUpperCase())}
-                      className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm uppercase"
-                    />
+                <div>
+                  <label className="text-xs text-text-muted mb-0.5 block">Avatar</label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {AVATARS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => setAvatarDraft(emoji)}
+                        className={`text-lg h-9 rounded-lg border flex items-center justify-center ${
+                          avatarDraft === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
                   </div>
                 </div>
+                {profileError && <p className="text-loss text-xs">{profileError}</p>}
                 <div className="flex items-center gap-2">
                   <button
-                    disabled={!teamNameDirty}
-                    onClick={handleSaveTeam}
+                    disabled={!profileDirty || profileSaving}
+                    onClick={handleSaveProfile}
                     className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
                   >
-                    Save Changes
+                    {profileSaving ? 'Saving…' : 'Save Changes'}
                   </button>
-                  {teamNameDirty && (
+                  {profileDirty && (
                     <button
                       onClick={() => {
-                        setTeamNameDraft(userTeam.teamName);
-                        setAbbrevDraft(userTeam.abbrev);
+                        setUsernameDraft(profile.username);
+                        setAvatarDraft(profile.avatarEmoji);
+                        setProfileError(null);
                       }}
                       className="text-xs text-text-muted px-2"
                     >
@@ -567,81 +519,132 @@ export function SettingsHome() {
                   )}
                 </div>
               </SubSection>
-            )}
 
-            {league && userTeam && (
-              <div className="pt-3 border-t border-border">
-                <IdentityPicker
-                  key={`team-${userTeam.id}`}
-                  bare
-                  title="Team Logo"
-                  value={userTeam}
-                  initials={userTeam.abbrev.slice(0, 2)}
-                  colorLabel="Team color"
-                  onSave={async (next, file) => {
-                    updateUserTeam(league.id, next);
-                    if (!file) return;
-                    setLogoUploadError(null);
-                    const result = await uploadTeamLogo(userTeam.id, file);
-                    if (!result.ok) {
-                      setLogoUploadError(result.error);
-                      return;
-                    }
-                    // Swap the local base64 preview for the real, now-shared public URL.
-                    updateUserTeam(league.id, { logoDataUrl: result.publicUrl });
-                  }}
-                  onDirtyChange={setTeamIdentityDirty}
-                />
-                {logoUploadError && <p className="text-loss text-xs mt-1">{logoUploadError}</p>}
-              </div>
-            )}
-          </CollapsibleSection>
-        )}
+              {league && userTeam && (
+                <SubSection title="Team (this league)">
+                  <div className="grid grid-cols-[1fr_4.5rem] gap-2">
+                    <div>
+                      <label className="text-xs text-text-muted mb-0.5 block">Team name</label>
+                      <NameInput
+                        value={teamNameDraft}
+                        fallback={profile?.username ?? 'My Team'}
+                        onChange={setTeamNameDraft}
+                        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-0.5 block">Abbr.</label>
+                      <NameInput
+                        maxLength={4}
+                        value={abbrevDraft}
+                        fallback={abbrevFromName(teamNameDraft)}
+                        onChange={(v) => setAbbrevDraft(v.toUpperCase())}
+                        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm uppercase"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={!teamNameDirty}
+                      onClick={handleSaveTeam}
+                      className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
+                    >
+                      Save Changes
+                    </button>
+                    {teamNameDirty && (
+                      <button
+                        onClick={() => {
+                          setTeamNameDraft(userTeam.teamName);
+                          setAbbrevDraft(userTeam.abbrev);
+                        }}
+                        className="text-xs text-text-muted px-2"
+                      >
+                        Discard
+                      </button>
+                    )}
+                  </div>
+                </SubSection>
+              )}
 
-        <section className="space-y-2">
-          <SectionHeader>App Preferences</SectionHeader>
-          <div className="bg-bg-card border border-border rounded-xl p-2.5 space-y-3">
-            <div className="space-y-2.5">
-              <GroupTitle icon={<Smartphone size={14} />} title="Display" tag="This device" />
-              <PrefRow label="Odds">
-                <Seg
-                  value={profile?.oddsFormat ?? 'american'}
-                  onChange={setOddsFormat}
-                  options={[
-                    { value: 'american', label: 'American', ariaLabel: 'American odds' },
-                    { value: 'decimal', label: 'Decimal', ariaLabel: 'Decimal odds' },
-                  ]}
-                />
-              </PrefRow>
-              <PrefRow label="Theme">
-                <ThemeMenu value={profile?.themeMode ?? 'dark'} onChange={setThemeMode} />
-              </PrefRow>
-              {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
-              <PrefRow label="Loss colors">
-                <Seg
-                  value={profile?.plColorScale ?? 'classic'}
-                  onChange={(mode) => updateProfile({ plColorScale: mode })}
-                  options={[
-                    { value: 'classic', label: 'Classic', ariaLabel: 'Every loss red' },
-                    { value: 'scaled', label: 'Scaled', ariaLabel: 'Losses fade from yellow to red' },
-                  ]}
-                />
-              </PrefRow>
-              <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-1.5 text-xs font-semibold tabular-nums">
-                <span className="text-profit">{formatCents(20)}</span>
-                {[-5, -30, -75].map((amount) => (
-                  <span
-                    key={amount}
-                    className="text-loss"
-                    style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
-                  >
-                    {formatCents(amount)}
-                  </span>
-                ))}
+              {league && userTeam && (
+                <div className="pt-3 border-t border-border">
+                  <IdentityPicker
+                    key={`team-${userTeam.id}`}
+                    bare
+                    title="Team Logo"
+                    value={userTeam}
+                    initials={userTeam.abbrev.slice(0, 2)}
+                    colorLabel="Team color"
+                    onSave={async (next, file) => {
+                      updateUserTeam(league.id, next);
+                      if (!file) return;
+                      setLogoUploadError(null);
+                      const result = await uploadTeamLogo(userTeam.id, file);
+                      if (!result.ok) {
+                        setLogoUploadError(result.error);
+                        return;
+                      }
+                      // Swap the local base64 preview for the real, now-shared public URL.
+                      updateUserTeam(league.id, { logoDataUrl: result.publicUrl });
+                    }}
+                    onDirtyChange={setTeamIdentityDirty}
+                  />
+                  {logoUploadError && <p className="text-loss text-xs mt-1">{logoUploadError}</p>}
+                </div>
+              )}
+            </CollapsibleSection>
+          )}
+          <div className="bg-bg-card border border-border rounded-xl">
+            <div className="flex items-center gap-2.5 pl-3 pr-3 py-2.5">
+              <span className="w-7 h-7 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <Smartphone size={16} />
+              </span>
+              <span className="text-sm font-bold text-text flex-1">Display</span>
+              <span className="text-[10px] text-text-muted">This device</span>
+            </div>
+            <div className="border-t border-border p-2.5">
+              <div className="space-y-2.5">
+                <PrefRow label="Odds">
+                  <Seg
+                    value={profile?.oddsFormat ?? 'american'}
+                    onChange={setOddsFormat}
+                    options={[
+                      { value: 'american', label: 'American', ariaLabel: 'American odds' },
+                      { value: 'decimal', label: 'Decimal', ariaLabel: 'Decimal odds' },
+                    ]}
+                  />
+                </PrefRow>
+                <PrefRow label="Theme">
+                  <ThemeMenu value={profile?.themeMode ?? 'dark'} onChange={setThemeMode} />
+                </PrefRow>
+                {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
+                <PrefRow label="Loss colors">
+                  <Seg
+                    value={profile?.plColorScale ?? 'classic'}
+                    onChange={(mode) => updateProfile({ plColorScale: mode })}
+                    options={[
+                      { value: 'classic', label: 'Classic', ariaLabel: 'Every loss red' },
+                      { value: 'scaled', label: 'Scaled', ariaLabel: 'Losses fade from yellow to red' },
+                    ]}
+                  />
+                </PrefRow>
+                <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-1.5 text-xs font-semibold tabular-nums">
+                  <span className="text-profit">{formatCents(20)}</span>
+                  {[-5, -30, -75].map((amount) => (
+                    <span
+                      key={amount}
+                      className="text-loss"
+                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
+                    >
+                      {formatCents(amount)}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className={`pt-3 border-t border-border space-y-2.5 transition-opacity duration-150 ${prefsLoaded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-              <GroupTitle icon={<Bell size={14} />} title="Notifications" />
+          </div>
+          <CollapsibleSection title="Notifications" icon={<Bell size={16} />} summary={notificationSummary}>
+            <div className={`space-y-2.5 transition-opacity duration-150 ${prefsLoaded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
               <ToggleRow
                 icon={<BellRing size={15} />}
                 label="Lineup reminders"
@@ -690,40 +693,28 @@ export function SettingsHome() {
                 Your matchup score and lineup countdown on the lock screen and Dynamic Island. iPhone with iOS 16.2 or later.
               </p>
             </div>
-          </div>
+          </CollapsibleSection>
         </section>
 
-        {league && settings && (
-          <LeagueSettingsPanel
-            league={league}
-            isCommissioner={isCommissioner}
-            defaultLeagueName={`${profile?.username ?? 'Commissioner'}'s League`}
-            onIdentityDirtyChange={setLeagueIdentityDirty}
-          />
-        )}
-
-        {league && userTeam && !seasonNotStarted && <VoidRequestsCard leagueId={league.id} week={league.currentWeek} isCommissioner={isCommissioner} />}
-
-        {/* The "Advance Past Week" commissioner button that used to live here is gone --
-            season progression (week advance, live-game status, playoff bracket seeding,
-            prize pool) is now fully automatic server-side (settle-week's cron schedule),
-            per Hunter's explicit "everything should work on its own" call. See chat. */}
         <section className="space-y-2">
           <SectionHeader>League</SectionHeader>
+          {league && settings && (
+            <div className="bg-bg-card border border-border rounded-xl overflow-hidden">
+              <SettingsRow
+                icon={<SlidersHorizontal size={16} />}
+                label="League Settings"
+                badge={leagueScheduledChanges ? 'Changes scheduled' : undefined}
+                summary={isCommissioner ? 'You are the commissioner' : 'View only, the commissioner edits these'}
+                onClick={() => goTo('/settings/league')}
+              />
+            </div>
+          )}
+  {league && userTeam && !seasonNotStarted && <VoidRequestsCard leagueId={league.id} week={league.currentWeek} isCommissioner={isCommissioner} />}
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
-            <button onClick={() => goTo('/create-league')} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left">
-              <Plus size={16} /> Create a League
-            </button>
-            <button onClick={() => goTo('/join-league')} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left">
-              <KeyRound size={16} /> Join a League
-            </button>
+            <SettingsRow icon={<Plus size={14} />} compact label="Create a League" onClick={() => goTo('/create-league')} />
+            <SettingsRow icon={<KeyRound size={14} />} compact label="Join a League" onClick={() => goTo('/join-league')} />
             {league && userTeam && (
-              <button
-                onClick={() => setLeaveSheetOpen(true)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-loss"
-              >
-                <DoorOpen size={16} /> Leave This League
-              </button>
+              <SettingsRow icon={<DoorOpen size={14} />} compact label="Leave This League" tone="danger" onClick={() => setLeaveSheetOpen(true)} />
             )}
           </div>
         </section>
@@ -732,12 +723,7 @@ export function SettingsHome() {
           <SectionHeader>Account</SectionHeader>
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
             <ChangePasswordRow />
-            <button
-              onClick={() => setLogoutConfirmOpen(true)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-loss"
-            >
-              <Lock size={16} /> Log Out
-            </button>
+            <SettingsRow icon={<Lock size={14} />} compact label="Log Out" tone="danger" chevron={false} onClick={() => setLogoutConfirmOpen(true)} />
           </div>
         </section>
 

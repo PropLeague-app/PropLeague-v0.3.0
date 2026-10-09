@@ -175,6 +175,9 @@ final class LiveActivityManager {
                 kept.append(current.id)
                 await current.update(content)
             } else if ActivityAuthorizationInfo().areActivitiesEnabled {
+                // Save the logos first so the very first draw already has them.
+                let at = item.attributes
+                _ = await LogoCache.prefetch([at.myLogoUrl, at.oppLogoUrl, at.leagueLogoUrl ?? ""])
                 do {
                     let created = try Activity<PropLeagueActivityAttributes>.request(attributes: item.attributes, content: content, pushType: .token)
                     kept.append(created.id)
@@ -186,6 +189,16 @@ final class LiveActivityManager {
         }
         for activity in existing where !kept.contains(activity.id) {
             await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    /// Redraws every showing activity (same content, one counter bumped), e.g. after a color setting
+    /// changed.
+    func nudgeAll() async {
+        for activity in Activity<PropLeagueActivityAttributes>.activities {
+            var state = activity.content.state
+            state.nudge = (state.nudge ?? 0) &+ 1
+            await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate))
         }
     }
 

@@ -82,11 +82,11 @@ function MoneyStepper({ label, value, min, max, step = 1, onChange }: { label: s
     <div className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
       <span className="text-xs font-medium">{label}</span>
       <div className="flex items-center gap-1">
-        <button type="button" onClick={() => onChange(clamp(value - step))} className="text-text-muted w-5">
+        <button type="button" onClick={() => onChange(clamp(value - step))} className="text-text-muted w-6 h-6 active:text-text">
           −
         </button>
         <span className="text-sm w-14 text-center">${value.toFixed(2)}</span>
-        <button type="button" onClick={() => onChange(clamp(value + step))} className="text-text-muted w-5">
+        <button type="button" onClick={() => onChange(clamp(value + step))} className="text-text-muted w-6 h-6 active:text-text">
           +
         </button>
       </div>
@@ -121,12 +121,15 @@ export function LeagueSettingsPanel({
   isCommissioner,
   defaultLeagueName,
   onIdentityDirtyChange,
+  showHeader = true,
 }: {
   league: League;
   isCommissioner: boolean;
   /** Fallback shown/restored for an emptied league-name field. */
   defaultLeagueName: string;
   onIdentityDirtyChange: (dirty: boolean) => void;
+  /** Draw the "League Settings" section title. Off on its own page, where the page header says it. */
+  showHeader?: boolean;
 }) {
   const updateSettingsStore = useAppStore((s) => s.updateSettings);
   const discardPendingStore = useAppStore((s) => s.discardPendingSettings);
@@ -196,7 +199,7 @@ export function LeagueSettingsPanel({
   const enabledMoments = MOMENT_CATEGORIES.filter((cat) => settings.moments[cat].enabled).length;
   return (
     <section className="space-y-2">
-      <SectionHeader>League Settings</SectionHeader>
+      {showHeader && <SectionHeader>League Settings</SectionHeader>}
       {/* One line, always. Orange for the commissioner, gray for everyone else. */}
       <div
         className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${

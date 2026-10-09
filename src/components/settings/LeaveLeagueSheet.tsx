@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { League } from '../../types';
 import { TeamLogo } from '../common/TeamLogo';
+import { SOFT_LOSS_BTN } from '../common/buttonStyles';
 
 /** "Leave This League" confirm flow (manual v0.2.0 §6 #12, fixed in v0.2.1 §4 #3).
  * Spells out the consequences up front, and — only when the departing user is
@@ -96,7 +97,7 @@ export function LeaveLeagueSheet({
             <button
               onClick={confirmTransferAndLeave}
               disabled={busy}
-              className="flex-1 bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl text-sm disabled:opacity-50"
+              className={`flex-1 py-3 rounded-xl text-sm ${SOFT_LOSS_BTN}`}
             >
               {busy ? 'Confirming…' : 'Confirm'}
             </button>
@@ -151,7 +152,7 @@ export function LeaveLeagueSheet({
             <button
               onClick={handleLeave}
               disabled={busy}
-              className="w-full bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl disabled:opacity-50"
+              className={`w-full py-3 rounded-xl ${SOFT_LOSS_BTN}`}
             >
               {busy ? 'Leaving…' : 'Leave This League'}
             </button>

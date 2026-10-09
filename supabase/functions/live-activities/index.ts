@@ -32,6 +32,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,6 +74,9 @@ function settingsSliceFrom(raw: unknown) {
     totalSlots: Object.values(slots).reduce((a, b) => a + b, 0),
     weeklyCredits: typeof r.weeklyCredits === 'number' ? r.weeklyCredits : 100,
     minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 2,
+    hidePicks: r.hidePicks === true,
+    hideEmptySlots: r.hideEmptySlots !== false,
+    emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
   };
 }
 const prefsAllow = (raw: unknown, key: 'lineupReminders' | 'liveActivities') =>
@@ -97,10 +101,121 @@ interface Desired {
 const keyOf = (d: { profileId: string; leagueId: string; week: string; kind: string; windowKey: string }) =>
   `${d.profileId}|${d.leagueId}|${d.week}|${d.kind}|${d.windowKey}`;
 
-interface WagerLite { slot_id: string | null; game_id: string | null; stake: number | null; status: string }
+interface WagerLite {
+  slot_id: string | null;
+  game_id: string | null;
+  stake: number | null;
+  status: string;
+  odds_at_placement: number | null;
+  settled_profit: number | null;
+  market_key: string | null;
+  player_name: string | null;
+  side: string | null;
+  point: number | null;
+}
 interface GameLite { id: string; day_slot: string | null; kickoff: string | null; status: string | null }
 
-const zeroState = { picksIn: 0, totalSlots: 0, unspent: 0, hint: '', myScore: 0, oppScore: 0, picksAlive: 0, picksSettled: 0 };
+interface SlotLine {
+  pos: string;
+  name: string;
+  line: string;
+  stake: number;
+  /** pending | live | won | lost | push | empty */
+  status: string;
+}
+
+const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'ML'];
+// Short labels for the pick line (a copy of MARKET_SHORT_LABELS in src/data/propsGenerator.ts).
+const MARKET_SHORT: Record<string, string> = {
+  player_pass_yds: 'pass yds',
+  player_pass_tds: 'pass TDs',
+  player_pass_interceptions: 'INTs',
+  player_rush_yds: 'rush yds',
+  player_rush_attempts: 'rush att',
+  player_pass_rush_yds: 'pass+rush yds',
+  player_anytime_td: 'anytime TD',
+  player_reception_yds: 'rec yds',
+  player_receptions: 'receptions',
+  player_rush_reception_yds: 'rush+rec yds',
+  player_kicking_points: 'kicking pts',
+  player_field_goals: 'FGs made',
+  player_pass_attempts: 'pass att',
+  player_pass_completions: 'completions',
+  player_rush_longest: 'longest rush',
+  player_reception_longest: 'longest rec',
+  player_pats: 'XPs made',
+};
+
+/** "Over 85.5 rec yds", "Anytime TD", "GB -3.5", "GB ML": the pick without the player's name. */
+function pickLine(w: WagerLite): string {
+  const key = w.market_key ?? '';
+  if (key === 'player_anytime_td') return 'Anytime TD';
+  const side = w.side ?? '';
+  const point = w.point != null ? ` ${w.point}` : '';
+  const label = MARKET_SHORT[key];
+  if (!label) return `${side}${point}${key === 'h2h' ? ' ML' : ''}`.trim();
+  return `${side}${point} ${label}`.trim();
+}
+
+/** The lineup in slot order (QB, RB, WR, TE, K, ML) with every slot, filled or empty, for the
+ * card's scroller. Only ever built for the viewer's own team. */
+function slotLines(wagers: WagerLite[], lineupSlots: Record<string, number>, gameById: Map<string, GameLite>, now: number): SlotLine[] {
+  const byPos = new Map<string, WagerLite[]>();
+  for (const w of [...wagers].sort((a, b) => String(a.slot_id ?? '').localeCompare(String(b.slot_id ?? ''), undefined, { numeric: true }))) {
+    const pos = String(w.slot_id ?? '').split('-')[0];
+    if (!pos) continue;
+    byPos.set(pos, [...(byPos.get(pos) ?? []), w]);
+  }
+  const positions = [...POSITION_ORDER.filter((p) => p in lineupSlots), ...Object.keys(lineupSlots).filter((p) => !POSITION_ORDER.includes(p))];
+  const out: SlotLine[] = [];
+  for (const pos of positions) {
+    const count = lineupSlots[pos] ?? 0;
+    const picks = byPos.get(pos) ?? [];
+    for (let i = 0; i < count; i++) {
+      const w = picks[i];
+      if (!w) {
+        out.push({ pos, name: '', line: '', stake: 0, status: 'empty' });
+        continue;
+      }
+      let status = 'pending';
+      if (w.status === 'won') status = 'won';
+      else if (w.status === 'lost') status = 'lost';
+      else if (w.status === 'push' || w.status === 'voided') status = 'push';
+      else {
+        const g = w.game_id ? gameById.get(w.game_id) : undefined;
+        const k = g?.kickoff ? new Date(g.kickoff).getTime() : null;
+        if (k != null && k <= now && g?.status !== 'final') status = 'live';
+      }
+      out.push({
+        pos,
+        name: (w.player_name ?? '').slice(0, 26),
+        line: pickLine(w),
+        stake: Math.round((w.stake ?? 0) * 100) / 100,
+        status,
+      });
+    }
+  }
+  return out;
+}
+
+const zeroState = {
+  picksIn: 0,
+  totalSlots: 0,
+  unspent: 0,
+  hint: '',
+  myScore: 0,
+  oppScore: 0,
+  picksAlive: 0,
+  picksSettled: 0,
+  // Weekly W-L-P record and how many picks are in a game that is on right now, per side.
+  myWon: 0, myLost: 0, myPush: 0, myLive: 0,
+  oppWon: 0, oppLost: 0, oppPush: 0, oppLive: 0,
+  // My win probability (null when the opponent's picks are still hidden), the loss that counts as
+  // full red for scaled P/L colors, and my lineup slots for the scroller.
+  winProb: null as number | null,
+  lossRef: 0,
+  slots: [] as SlotLine[],
+};
 
 // deno-lint-ignore no-explicit-any
 async function buildDesired(supabase: any, now: number, onlyProfileId?: string): Promise<Desired[]> {
@@ -138,9 +253,9 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
 
   const { data: rosterRows } = await supabase
     .from('weekly_rosters')
-    .select('team_id, week, wagers(slot_id, game_id, stake, status)')
+    .select('team_id, week, wagers(slot_id, game_id, stake, status, odds_at_placement, settled_profit, market_key, player_name, side, point)')
     .in('week', weeks)
-    .in('team_id', realTeams.map((t: { id: string }) => t.id));
+    .in('team_id', (teams ?? []).map((t: { id: string }) => t.id));
   const wagersByTeamWeek = new Map<string, WagerLite[]>(
     (rosterRows ?? []).map((r: { team_id: string; week: string; wagers: WagerLite[] }) => [`${r.team_id}|${r.week}`, r.wagers ?? []]),
   );
@@ -186,7 +301,41 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
     };
     const wkGames = gamesByWeek.get(week) ?? [];
     if (wkGames.length === 0) continue;
-    const { lineupSlots, totalSlots, weeklyCredits, minGames } = settingsSliceFrom(league.settings);
+    const { lineupSlots, totalSlots, weeklyCredits, minGames, hidePicks, hideEmptySlots, emptySlotFloor } = settingsSliceFrom(league.settings);
+
+    // Weekly record (W-L-P, a voided pick counts as a push like the app's matchup card) and how many
+    // picks are in a game that has kicked off and is not final. Only graded picks and picks whose game
+    // is already on are counted, so an opponent's still-hidden picks are never revealed.
+    const gameById = new Map<string, GameLite>(wkGames.map((g) => [g.id, g]));
+    const tally = (ws: WagerLite[]) => {
+      let won = 0;
+      let lost = 0;
+      let push = 0;
+      let live = 0;
+      for (const x of ws) {
+        if (x.status === 'won') won++;
+        else if (x.status === 'lost') lost++;
+        else if (x.status === 'push' || x.status === 'voided') push++;
+        else if (x.status === 'pending') {
+          const g = x.game_id ? gameById.get(x.game_id) : undefined;
+          const k = g?.kickoff ? new Date(g.kickoff).getTime() : null;
+          if (k != null && k <= now && g?.status !== 'final') live++;
+        }
+      }
+      return { won, lost, push, live };
+    };
+
+    // Every game of the week has kicked off: an empty slot can no longer be filled.
+    const weekLocked = wkGames.length > 0 && wkGames.every((g) => g.kickoff != null && new Date(g.kickoff).getTime() <= now);
+    // The worst score in this league this week, for scaled P/L colors.
+    let worstLoss = 0;
+    for (const m of matchupRows ?? []) {
+      if (m.league_id !== leagueId || String(m.week) !== week) continue;
+      worstLoss = Math.min(worstLoss, Number(m.team_a_score ?? 0), Number(m.team_b_score ?? 0));
+    }
+    const lossRef = lossReference(-worstLoss, weeklyCredits);
+    const toPicks = (ws: WagerLite[]): WinProbPick[] =>
+      ws.map((x) => ({ stake: x.stake ?? 0, status: x.status, odds: x.odds_at_placement, settledProfit: x.settled_profit }));
 
     // Earliest kickoff per slot, and per score window the games, first and last kickoff.
     const kickoffBySlot = new Map<string, number>();
@@ -287,6 +436,30 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
           const finished = (settledAll && w.allFinal) || now > w.last + SCORE_FAILSAFE_MS;
           const picksAlive = wagers.filter((x) => x.status === 'pending').length;
           const picksSettled = inWindow.filter((x) => x.status === 'won' || x.status === 'lost' || x.status === 'push').length;
+          const mine = tally(wagers);
+          const oppWagers = wagersByTeamWeek.get(`${mu.oppId}|${week}`) ?? [];
+          const theirs = tally(oppWagers);
+          // Same rule as the app's matchup card: with Hide Picks on, an opponent who still has a
+          // pick in a game that has not started (or an empty slot that reads Hidden) gets no
+          // probability, since it would give those picks away.
+          const oppHasHidden =
+            hidePicks &&
+            (oppWagers.some((x) => {
+              if (x.status !== 'pending') return false;
+              const g = x.game_id ? gameById.get(x.game_id) : undefined;
+              const k = g?.kickoff ? new Date(g.kickoff).getTime() : null;
+              return k == null || k > now;
+            }) ||
+              (hideEmptySlots && !weekLocked && oppWagers.length < totalSlots));
+          const winProb =
+            oppHasHidden && !finished
+              ? null
+              : Math.round(
+                  winProbability(
+                    sideDistribution({ picks: toPicks(wagers), totalSlots }, { weeklyCredits, emptySlotFloor }, weekLocked),
+                    sideDistribution({ picks: toPicks(oppWagers), totalSlots }, { weeklyCredits, emptySlotFloor }, weekLocked),
+                  ) * 1000,
+                ) / 1000;
           out.push({
             profileId,
             leagueId,
@@ -295,7 +468,25 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
             kind: 'score',
             windowKey,
             attributes: { ...baseAttrs, kind: 'score', windowKey, title: WINDOW_LABEL[windowKey] ?? windowKey, kickoff: Math.floor(w.first / 1000) },
-            state: { ...zeroState, phase: finished ? 'final' : 'live', myScore: mu.mine, oppScore: mu.theirs, picksAlive, picksSettled },
+            state: {
+              ...zeroState,
+              phase: finished ? 'final' : 'live',
+              myScore: mu.mine,
+              oppScore: mu.theirs,
+              picksAlive,
+              picksSettled,
+              myWon: mine.won,
+              myLost: mine.lost,
+              myPush: mine.push,
+              myLive: mine.live,
+              oppWon: theirs.won,
+              oppLost: theirs.lost,
+              oppPush: theirs.push,
+              oppLive: theirs.live,
+              winProb,
+              lossRef: Math.round(lossRef * 100) / 100,
+              slots: slotLines(wagers, lineupSlots, gameById, now),
+            },
             ending: finished,
           });
         }
@@ -305,7 +496,15 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
   return out;
 }
 
-const stateJson = (s: Record<string, unknown>) => JSON.stringify(s, Object.keys(s).sort());
+// Keys sorted at every level, so two states with the same content compare equal (an array replacer
+// would also drop the keys of nested objects like the lineup slots).
+const canon = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(canon)
+    : v && typeof v === 'object'
+      ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
+      : v;
+const stateJson = (s: Record<string, unknown>) => JSON.stringify(canon(s));
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });

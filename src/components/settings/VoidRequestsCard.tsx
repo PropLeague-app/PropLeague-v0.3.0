@@ -5,7 +5,7 @@ import { CollapsibleSection } from './SettingsPrimitives';
 import { MARKET_SHORT_LABELS } from '../../data/propsGenerator';
 import { CompactInput } from '../common/CompactInput';
 import { useAppStore } from '../../store/useAppStore';
-import { SOFT_PRIMARY_BTN } from '../common/buttonStyles';
+import { SOFT_LOSS_BTN, SOFT_PRIMARY_BTN } from '../common/buttonStyles';
 import { nflTeamFromPlayerId, teamAccent } from '../../engine/teamColors';
 import type { MarketKey, WeekId } from '../../types';
 import type { RealPlayerStatLine } from '../../engine/realGameResult';
@@ -295,6 +295,7 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
     <>
       <CollapsibleSection
         title="Void Requests"
+        variant="action"
         icon={<UserX size={16} />}
         help={isCommissioner ? ['commissioner', 'Void Requests'] : ['scoring', 'Void requests']}
         badge={isCommissioner && pending.length > 0 ? `${pending.length} pending` : undefined}
@@ -515,7 +516,7 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
                   type="button"
                   disabled={!canSubmit}
                   onClick={() => setConfirmOpen(true)}
-                  className="w-full py-2 rounded-lg bg-loss text-white text-[13px] font-semibold disabled:opacity-40"
+                  className={`w-full py-2 rounded-lg text-[13px] ${SOFT_LOSS_BTN}`}
                 >
                   Void his picks
                 </button>

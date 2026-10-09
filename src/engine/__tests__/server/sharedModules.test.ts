@@ -11,6 +11,11 @@ import * as srvPerfect from '../../../../supabase/functions/_shared/perfectAnnou
 import * as srvSkunked from '../../../../supabase/functions/_shared/skunkedAnnouncement';
 import * as srvName from '../../../../supabase/functions/_shared/playerNameMatch';
 import * as srvRules from '../../../../supabase/functions/_shared/marketRules';
+import * as srvWin from '../../../../supabase/functions/_shared/winProb';
+import { expectedScoreDistribution, matchupWinProbability } from '../../scoring';
+import { scaleReference } from '../../plColor';
+import { buildEmptyRoster } from '../../rosterSlots';
+import type { Wager } from '../../../types';
 
 // Same idea as playoffLogic.test.ts: these edge-function helpers are hand copies of client modules,
 // so they are run side by side with the client versions on the same inputs.
@@ -304,6 +309,57 @@ describe('market rules for bot lineups', () => {
         const clientBlocks = clientRules.marketSlotCapReason([rule as never], 'player_reception_yds', side, picks) != null;
         expect(srvRules.breaksSlotCap(srvRule, 'player_reception_yds', side, picks)).toBe(clientBlocks);
       }
+    }
+  });
+});
+
+
+describe('win probability: server matches the client', () => {
+  const STATUSES = ['pending', 'pending', 'pending', 'won', 'lost', 'push'] as const;
+  const ODDS = [-110, -150, 120, 250, -300, 400, -105];
+
+  function randomSide(rand: () => number, week: number, floor: number | null) {
+    const settings = { ...DEFAULT_LEAGUE_SETTINGS, emptySlotFloor: floor };
+    const roster = buildEmptyRoster('t', week, settings.lineupSlots);
+    const picks: srvWin.WinProbPick[] = [];
+    roster.slots.forEach((slot, i) => {
+      if (rand() < 0.25) return; // leave some slots empty
+      const status = STATUSES[Math.floor(rand() * STATUSES.length)];
+      const stake = 2 + Math.floor(rand() * 15);
+      const odds = ODDS[Math.floor(rand() * ODDS.length)];
+      const settledProfit = status === 'won' ? stake * 0.9 : status === 'lost' ? -stake : status === 'push' ? 0 : null;
+      slot.wager = { id: `w${i}`, slotId: slot.slotId, gameId: 'g', marketKey: 'h2h', side: 'X', oddsAtPlacement: odds, stake, placedAt: '', status, settledProfit } as Wager;
+      picks.push({ stake, status, odds, settledProfit });
+    });
+    roster.submitted = true;
+    return { roster, picks, settings };
+  }
+
+  it('gives the same probability on random matchups, before and after the lock', () => {
+    const rand = lcg(77);
+    for (let trial = 0; trial < 300; trial++) {
+      const floor = [null, 0, 3][trial % 3];
+      const a = randomSide(rand, 1, floor);
+      const b = randomSide(rand, 1, floor);
+      for (const locked of [false, true]) {
+        const client = matchupWinProbability(
+          expectedScoreDistribution(a.roster, a.settings, undefined, locked),
+          expectedScoreDistribution(b.roster, b.settings, undefined, locked),
+        );
+        const totalSlots = a.roster.slots.length;
+        const cfg = { weeklyCredits: a.settings.weeklyCredits, emptySlotFloor: floor };
+        const server = srvWin.winProbability(
+          srvWin.sideDistribution({ picks: a.picks, totalSlots }, cfg, locked),
+          srvWin.sideDistribution({ picks: b.picks, totalSlots }, cfg, locked),
+        );
+        expect(server).toBeCloseTo(client, 9);
+      }
+    }
+  });
+
+  it('uses the same loss reference as the P/L color scale', () => {
+    for (const [worst, risk] of [[0, 100], [12, 100], [80, 100], [30, 0], [5, 400]]) {
+      expect(srvWin.lossReference(worst, risk)).toBe(scaleReference(worst, risk));
     }
   });
 });

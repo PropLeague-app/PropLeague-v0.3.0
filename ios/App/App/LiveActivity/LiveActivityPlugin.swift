@@ -15,6 +15,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "sync", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlColorScale", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -50,6 +51,20 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             if let url = call.getString("supabaseUrl"), let key = call.getString("anonKey") {
                 LiveActivityManager.shared.configure(supabaseUrl: url, anonKey: key)
             }
+        }
+        #endif
+        call.resolve()
+    }
+
+    /// "classic" or "scaled": which P/L colors the person chose in the app. Saved where the widget can
+    /// read it, then every showing activity is nudged so it redraws in the new colors.
+    @objc func setPlColorScale(_ call: CAPPluginCall) {
+        let scale = call.getString("scale") == "scaled" ? "scaled" : "classic"
+        let changed = SharedPrefs.plColorScale != scale
+        SharedPrefs.plColorScale = scale
+        #if canImport(ActivityKit)
+        if changed, #available(iOS 16.2, *) {
+            Task { await LiveActivityManager.shared.nudgeAll() }
         }
         #endif
         call.resolve()

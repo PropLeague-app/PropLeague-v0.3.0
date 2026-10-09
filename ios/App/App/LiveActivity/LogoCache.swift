@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import UIKit
 
 /// Team logos for the Live Activity. A widget cannot download images, so the app saves them into a
@@ -21,7 +22,7 @@ enum LogoCache {
     static func fileName(for url: String) -> String {
         var hash: UInt64 = 5381
         for byte in url.utf8 { hash = (hash &* 33) &+ UInt64(byte) }
-        return String(hash, radix: 16) + ".img"
+        return String(hash, radix: 16) + ".v2.img"
     }
 
     static func fileURL(for url: String) -> URL? {
@@ -32,6 +33,21 @@ enum LogoCache {
     static func image(for url: String) -> UIImage? {
         guard !url.isEmpty, let path = fileURL(for: url)?.path else { return nil }
         return UIImage(contentsOfFile: path)
+    }
+
+    /// A small PNG copy of the image. A widget has a tight memory limit, and drawing a full-size
+    /// upload (a few thousand pixels square) can fail silently and leave a blank circle, so only a
+    /// 192px version is saved (a 44pt badge at 3x is 132px).
+    static func downsampled(_ data: Data, maxPixel: Int = 192) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg).pngData()
     }
 
     /// Downloads any logo not cached yet, or cached more than a day ago (a re-uploaded logo keeps
@@ -50,8 +66,8 @@ enum LogoCache {
             }
             do {
                 let (data, response) = try await URLSession.shared.data(from: remote)
-                guard (response as? HTTPURLResponse)?.statusCode == 200, UIImage(data: data) != nil else { continue }
-                try data.write(to: local, options: .atomic)
+                guard (response as? HTTPURLResponse)?.statusCode == 200, let small = downsampled(data) else { continue }
+                try small.write(to: local, options: .atomic)
                 wroteAny = true
             } catch {
                 continue

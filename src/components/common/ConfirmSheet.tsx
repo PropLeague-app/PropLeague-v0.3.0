@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SOFT_LOSS_BTN } from './buttonStyles';
 
 /** Generic "are you sure" bottom sheet for a destructive action (see chat, Sept
  * 2026: confirm-before-delete for chat/announcements, confirm-before-remove for
@@ -59,7 +60,7 @@ export function ConfirmSheet({
         <button
           onClick={handleConfirm}
           disabled={busy}
-          className="w-full bg-loss/10 text-loss border border-loss/40 font-semibold py-3 rounded-xl disabled:opacity-50"
+          className={`w-full py-3 rounded-xl ${SOFT_LOSS_BTN}`}
         >
           {busy ? (confirmingLabel ?? `${confirmLabel}…`) : confirmLabel}
         </button>

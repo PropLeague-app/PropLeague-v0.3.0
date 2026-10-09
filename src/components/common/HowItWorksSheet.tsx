@@ -227,7 +227,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
   const commissioner: Topic[] = [
     {
       title: 'Who can change what',
-      body: ['Only the commissioner edits league settings. Everyone else sees the same screen read-only, with a banner naming the commissioner.'],
+      body: ['League settings live on their own page: open Profile, then League Settings. Only the commissioner edits them. Everyone else sees the same page read-only, with a banner naming the commissioner.'],
     },
     {
       title: 'Changing settings mid-week',
