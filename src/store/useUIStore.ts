@@ -8,9 +8,15 @@ import { create } from 'zustand';
 interface UIState {
   hasUnsavedChanges: boolean;
   setHasUnsavedChanges: (value: boolean) => void;
+  /** Void requests waiting on this commissioner in the current league. Drives the "!" on the
+   * Profile tab, so a request does not sit unseen. Zero for everyone who is not the commissioner. */
+  pendingVoidRequests: number;
+  setPendingVoidRequests: (count: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   hasUnsavedChanges: false,
   setHasUnsavedChanges: (value) => set({ hasUnsavedChanges: value }),
+  pendingVoidRequests: 0,
+  setPendingVoidRequests: (count) => set({ pendingVoidRequests: count }),
 }));

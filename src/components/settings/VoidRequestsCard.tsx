@@ -5,6 +5,7 @@ import { CollapsibleSection } from './SettingsPrimitives';
 import { MARKET_SHORT_LABELS } from '../../data/propsGenerator';
 import { CompactInput } from '../common/CompactInput';
 import { useAppStore } from '../../store/useAppStore';
+import { useUIStore } from '../../store/useUIStore';
 import { SOFT_LOSS_BTN, SOFT_PRIMARY_BTN } from '../common/buttonStyles';
 import { nflTeamFromPlayerId, teamAccent } from '../../engine/teamColors';
 import type { MarketKey, WeekId } from '../../types';
@@ -190,7 +191,11 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
       fetchVoidRequests(leagueId, weekStr),
       isCommissioner ? fetchVoidCandidates(leagueId, weekStr) : fetchVoidSearch(leagueId, weekStr),
     ]);
-    if (reqRes.ok) setRequests(reqRes.rows);
+    if (reqRes.ok) {
+      setRequests(reqRes.rows);
+      // Keep the Profile tab's "!" in step with what this card shows (commissioner only).
+      if (isCommissioner) useUIStore.getState().setPendingVoidRequests(reqRes.rows.filter((r) => r.status === 'pending').length);
+    }
     // Until migration 0032 is run the request calls fail; keep the commissioner flow usable on its own.
     if (isCommissioner) {
       const res = extraRes as Awaited<ReturnType<typeof fetchVoidCandidates>>;
@@ -299,7 +304,7 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
         actionLabel={isCommissioner ? 'Review' : 'Request'}
         icon={<UserX size={16} />}
         help={isCommissioner ? ['commissioner', 'Void Requests'] : ['scoring', 'Void requests']}
-        badge={isCommissioner && pending.length > 0 ? `${pending.length} pending` : undefined}
+        attention={isCommissioner && pending.length > 0}
         summary={summary}
       >
         <p className="flex items-start gap-1.5 text-[11px] text-text-muted">

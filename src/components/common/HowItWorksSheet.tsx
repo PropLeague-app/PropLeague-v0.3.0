@@ -60,6 +60,19 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       ],
     },
     {
+      title: 'Your leagues',
+      body: [
+        'Tap the league name at the top of Home to open Your Leagues and jump between them. Each row shows the week and team count, a CURRENT tag on the one you are in, and a red Lineup needed tag when that league\'s lineup is not finished.',
+        'The star makes a league your favorite, which goes first on your lock screen and Dynamic Island. The bell mutes a league: no lineup reminders, no void request alerts and no live scores for it until you unmute it. The league still works normally in the app, and a muted league is marked Muted. A league is never both, so muting your favorite clears the star. Close the list with the X.',
+      ],
+    },
+    {
+      title: 'Red ! badges',
+      body: [
+        'A red ! on the Lineup tab means this week\'s lineup is not finished yet. If you are a commissioner, a red ! on the Profile tab means void requests are waiting for you. Both clear on their own once the work is done.',
+      ],
+    },
+    {
       title: 'Weekly credits',
       body: [
         `You get ${money(credits)} each week${generic ? ' by default (your commissioner can change it)' : ''} to spread across your slots. Nothing carries over. Spend all of it: credits you leave unspent count as a loss. Credits are virtual and have no cash value.`,
@@ -119,6 +132,13 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Weekly score',
       body: ['Your score is the total profit or loss of every pick, plus any penalties. Higher score wins the matchup, and matchups drive the win-loss standings. Win probability on a matchup is an estimate built from the odds on each side\'s picks and the results so far.'],
+    },
+    {
+      title: 'Matchup screen: Simple and Advanced',
+      body: [
+        'Simple shows each pick as a compact cell. Advanced adds the stake and the stat line behind a result. Tap the Advanced button at the top to switch every pick at once, and your choice is remembered on this device.',
+        'To look closer at just one pick, tap it: that cell opens to the Advanced view, and tapping it again closes it. This works on either team\'s visible picks, in either mode. Empty and hidden picks do not respond. Opened cells reset when you leave the screen, swipe to another matchup, or press the Advanced button.',
+      ],
     },
     {
       title: 'Results',
@@ -214,8 +234,18 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Notifications',
       body: [
-        'Choose what you get in Profile & Settings. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Settled-bet alerts tell you when a pick is graded, and Week results ready tells you when the week closes.',
-        'Live scores on lock screen shows your matchup as a Live Activity and in the Dynamic Island on iOS 16.2 and later.',
+        'Choose what you get in Profile & Settings. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Void request alerts reach the commissioner when a request comes in, and the member when it is answered.',
+        'Settled-bet alerts and Week results ready are switches for alerts that are still on the way. They are saved, but nothing is sent for them yet.',
+        'Live scores on lock screen turns on the Live Activity for your matchup. More on that in the next topic.',
+        'To favorite or mute a single league, see Your leagues under Basics & Lineup.',
+      ],
+    },
+    {
+      title: 'Lock screen and Dynamic Island',
+      body: [
+        'About 90 minutes before a slate kicks off, a lineup card appears with a ring counting down to kickoff, how many picks are in, and what is still missing. Once games start, it becomes your matchup: both scores, each side\'s record and how many picks are still live, and a bar showing your estimated chance to win. The bar is hidden while picks are hidden before game start, and it is an estimate, so it can trail the app a bit mid-game.',
+        'On iOS 17 and later, the card also has a lineup scroller. Tap the arrows to step through your slots and see the position, player, line, stake and status of each. Scores use your Loss colors setting, so Scaled shows up here too.',
+        'In the Dynamic Island, press and hold to expand. If you are in more than one league at the same time, the island shows one matchup at a time. Your favorite league goes first and wears a small gold star by its logo, and with no favorite the most urgent one goes first. Tap the league name pill to bring in the next league\'s matchup. It stays until the next slate, when your favorite takes the front again. Turn all of this off with Live scores on lock screen in Profile & Settings. Needs iOS 16.2 or later.',
       ],
     },
     {
@@ -258,7 +288,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Void Requests',
       body: [
-        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. You get a push and a pending badge. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
+        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. The commissioner gets a push, a red Review button, and a red ! on the Profile tab until every request is answered. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
         'Your own requests skip the queue. Un-flagging restores the picks, and approving or flagging posts a short League Update.',
       ],
     },

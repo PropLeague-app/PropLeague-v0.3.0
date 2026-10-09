@@ -36,6 +36,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
+import { leagueMuted } from '../_shared/leaguePrefs.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const REMINDER_WINDOW_MIN_MS = 45 * 60 * 1000; // remind once kickoff is this close...
@@ -190,6 +191,7 @@ Deno.serve(async (req) => {
         if (!profileId) continue;
         const prefs = prefsByProfile.get(profileId);
         if (!remindersEnabled(prefs)) continue;
+        if (leagueMuted(prefs, leagueId)) continue; // muted from the league switcher
         const mode = slateModeFrom(prefs);
 
         // ---- roster state, from the roster itself (not the `submitted` flag)

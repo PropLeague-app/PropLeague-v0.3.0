@@ -14,6 +14,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { profileMutedLeague } from '../_shared/leaguePrefs.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -81,6 +82,8 @@ Deno.serve(async (req: Request) => {
   if (event === 'new') {
     if (callerId !== reqRow.requested_by || reqRow.status !== 'pending') return json({ ok: false, error: 'forbidden' }, 403);
     if (!commissionerProfileId || commissionerProfileId === callerId) return json({ ok: true, sent: 0 });
+    // A league muted from the switcher stays quiet. The request still waits in the app's own list.
+    if (await profileMutedLeague(supabase, commissionerProfileId, reqRow.league_id as string)) return json({ ok: true, sent: 0 });
     if (!(await claimNotification(supabase, `void-req:${requestId}:new`))) return json({ ok: true, sent: 0 });
     const r = await sendPushToProfile(supabase, commissionerProfileId, {
       title: 'Void request',
@@ -93,6 +96,7 @@ Deno.serve(async (req: Request) => {
   // 'resolved': only the commissioner may trigger it, and only once the request is answered.
   if (callerId !== commissionerProfileId || reqRow.status === 'pending') return json({ ok: false, error: 'forbidden' }, 403);
   if (reqRow.requested_by === callerId) return json({ ok: true, sent: 0 });
+  if (await profileMutedLeague(supabase, reqRow.requested_by as string, reqRow.league_id as string)) return json({ ok: true, sent: 0 });
   if (!(await claimNotification(supabase, `void-req:${requestId}:resolved`))) return json({ ok: true, sent: 0 });
   const approved = reqRow.status === 'approved';
   const r = await sendPushToProfile(supabase, reqRow.requested_by as string, {

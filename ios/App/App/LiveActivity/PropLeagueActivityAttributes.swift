@@ -42,6 +42,8 @@ struct PropLeagueActivityAttributes: ActivityAttributes {
         var nudge: Int?
         /// How many leagues have a live score activity right now; the island shows a switch button above 1.
         var liveLeagues: Int?
+        /// True when this league is the person's favorite: a small star sits by the league logo.
+        var favorite: Bool?
     }
 
     var kind: String

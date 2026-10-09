@@ -4,6 +4,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
 import { validateLineup } from '../../engine/validation';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
+import { usePendingVoidRequests } from '../../hooks/usePendingVoidRequests';
 
 // Simple, uniform line icons rather than emoji -- lucide-react has no
 // dedicated American football icon, so NFL Slate uses a calendar instead,
@@ -43,6 +44,11 @@ export function BottomTabBar() {
       : undefined;
   const lineupIncomplete = !!(roster && league && !validateLineup(roster, league.settings).valid);
 
+  // A commissioner with void requests waiting gets the same "!" on the Profile tab, since that is
+  // where the Void Requests card lives and nothing else would bring them there.
+  usePendingVoidRequests();
+  const voidWaiting = useUIStore((s) => s.pendingVoidRequests) > 0;
+
   // Discard-on-leave confirm for the identity/logo editors (manual v0.1.1 §2 #4) — the
   // app has no data-router set up (plain <Routes>), so react-router's navigation
   // blockers aren't available; intercepting the tab bar itself covers the actual way
@@ -77,7 +83,7 @@ export function BottomTabBar() {
         >
           <span className="relative">
             <tab.Icon size={22} strokeWidth={2} />
-            {tab.to === '/lineup' && lineupIncomplete && (
+            {((tab.to === '/lineup' && lineupIncomplete) || (tab.to === '/settings' && voidWaiting)) && (
               <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
                 !
               </span>

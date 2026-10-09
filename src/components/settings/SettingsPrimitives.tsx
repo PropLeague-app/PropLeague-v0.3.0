@@ -41,6 +41,7 @@ export function CollapsibleSection({
   help,
   variant = 'default',
   actionLabel,
+  attention = false,
   children,
 }: {
   title: string;
@@ -55,6 +56,8 @@ export function CollapsibleSection({
   variant?: 'default' | 'action';
   /** The pill's word while closed in the 'action' variant ("Review", "Request"); it says "Close" when open. */
   actionLabel?: string;
+  /** 'action' variant: something is waiting. The pill turns red and gets a "!" while the card is closed. */
+  attention?: boolean;
   /** [help category id, topic title]: draws a small help icon that opens the help sheet there. */
   help?: [string, string];
   children: ReactNode;
@@ -88,7 +91,8 @@ export function CollapsibleSection({
                   <span className="text-[10px] text-accent font-semibold shrink-0">{badge}</span>
                 ))}
             </span>
-            {summary && !open && <span className="block text-[11px] text-text-muted truncate">{summary}</span>}
+            {/* The action card keeps its summary line open or closed, so the header never changes height. */}
+            {summary && (action || !open) && <span className="block text-[11px] text-text-muted truncate">{summary}</span>}
           </span>
         </button>
         {help && openHelp && (
@@ -108,7 +112,15 @@ export function CollapsibleSection({
           className="pl-1 pr-3 py-2.5 shrink-0"
         >
           {action ? (
-            <span className="inline-block rounded-full border border-accent/40 bg-accent/15 text-accent text-[11px] font-semibold px-2.5 py-1">
+            // One fixed width for every word the pill can show, so the help icon beside it holds still.
+            <span
+              className={`inline-flex items-center justify-center gap-1 w-[78px] rounded-full border text-[11px] font-semibold py-1 ${
+                attention && !open ? 'border-loss/50 bg-loss/15 text-loss' : 'border-accent/40 bg-accent/15 text-accent'
+              }`}
+            >
+              {attention && !open && (
+                <span className="w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] font-bold leading-none flex items-center justify-center">!</span>
+              )}
               {open ? 'Close' : (actionLabel ?? 'Open')}
             </span>
           ) : (

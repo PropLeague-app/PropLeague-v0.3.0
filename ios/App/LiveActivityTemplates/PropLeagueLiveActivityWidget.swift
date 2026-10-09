@@ -26,7 +26,7 @@ struct PropLeagueLiveActivityWidget: Widget {
                         IslandSide(side: .mine, attributes: a, state: s)
                     } else {
                         VStack(spacing: 2) {
-                            TeamBadge(side: .mine, attributes: a, size: 34)
+                            TeamBadge(side: .mine, attributes: a, size: 40)
                             Text(a.myAbbrev).font(.caption2.weight(.bold)).foregroundColor(.white.opacity(0.8))
                         }
                     }
@@ -35,7 +35,7 @@ struct PropLeagueLiveActivityWidget: Widget {
                     if isScore {
                         IslandSide(side: .opponent, attributes: a, state: s)
                     } else {
-                        LineupRing(attributes: a, state: s, size: 52)
+                        LineupRing(attributes: a, state: s, size: 56)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -47,11 +47,18 @@ struct PropLeagueLiveActivityWidget: Widget {
                                 .font(.subheadline.weight(.bold))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
-                                .foregroundColor(.white)
-                            Text(a.leagueName)
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.65))
-                                .lineLimit(1)
+                                .foregroundColor(PL.lineupTint(s.phase))
+                            HStack(spacing: 3) {
+                                if s.favorite == true {
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundColor(PL.gold)
+                                }
+                                Text(a.leagueName)
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.65))
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -59,7 +66,10 @@ struct PropLeagueLiveActivityWidget: Widget {
                     if isScore {
                         IslandScoreBottom(attributes: a, state: s, activityID: context.activityID)
                     } else {
-                        LineupFooter(state: s)
+                        VStack(spacing: 4) {
+                            LineupPips(state: s)
+                            LineupFooter(state: s)
+                        }
                     }
                 }
             } compactLeading: {
@@ -69,8 +79,7 @@ struct PropLeagueLiveActivityWidget: Widget {
                         CompactScore(value: s.myScore, dimmed: s.oppScore > s.myScore, lossRef: s.lossRef)
                     }
                 } else {
-                    Image(systemName: PL.lineupIcon(s.phase))
-                        .foregroundColor(PL.lineupTint(s.phase))
+                    LineupMiniRing(attributes: a, state: s, size: 22)
                 }
             } compactTrailing: {
                 if isScore {
@@ -79,7 +88,7 @@ struct PropLeagueLiveActivityWidget: Widget {
                         TeamBadge(side: .opponent, attributes: a, size: 20)
                     }
                 } else {
-                    LineupCountdown(attributes: a, state: s, font: .caption.weight(.bold))
+                    LineupCountdown(attributes: a, state: s, font: .system(.caption, design: .rounded).weight(.bold))
                         .frame(maxWidth: 52)
                 }
             } minimal: {
@@ -97,11 +106,10 @@ struct PropLeagueLiveActivityWidget: Widget {
                             .zIndex(mineFront ? 1 : 0)
                     }
                 } else {
-                    Image(systemName: PL.lineupIcon(s.phase))
-                        .foregroundColor(PL.lineupTint(s.phase))
+                    LineupMiniRing(attributes: a, state: s, size: 22)
                 }
             }
-            .keylineTint(isScore ? (PL.leadColor(mine: s.myScore, opp: s.oppScore) ?? PL.accent) : PL.accent)
+            .keylineTint(isScore ? (PL.leadColor(mine: s.myScore, opp: s.oppScore) ?? PL.accent) : PL.lineupTint(s.phase))
         }
     }
 }
@@ -133,7 +141,7 @@ struct LockScreenView: View {
                             .fixedSize()
                     }
                     HStack(spacing: 6) {
-                        LeagueBadge(attributes: attributes, size: 20)
+                        LeagueBadge(attributes: attributes, size: 20, favorite: state.favorite == true)
                         Text(attributes.leagueName)
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.white.opacity(0.8))
@@ -143,7 +151,7 @@ struct LockScreenView: View {
                 }
             } else {
                 HStack(spacing: 6) {
-                    LeagueBadge(attributes: attributes, size: 18)
+                    LeagueBadge(attributes: attributes, size: 18, favorite: state.favorite == true)
                     Text(attributes.leagueName)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.white.opacity(0.7))
@@ -524,26 +532,27 @@ struct IslandSide: View {
     }
 }
 
-/// Island middle row when several leagues are live: tapping it brings the next league's matchup in.
+/// Island league line when several leagues are live: the league name as a pill, tapping it brings the
+/// next league's matchup in. Kept apart from the window label so it reads as a league control.
 @available(iOS 17.0, *)
 struct LeagueSwitchButton: View {
     let attributes: PropLeagueActivityAttributes
-    let label: String
 
     var body: some View {
         Button(intent: SwitchLeagueIntent()) {
             HStack(spacing: 4) {
-                LeagueBadge(attributes: attributes, size: 16)
-                Text(label)
-                    .font(.caption.weight(.bold))
-                    .foregroundColor(.white.opacity(0.9))
+                Text(attributes.leagueName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: 96)
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.white.opacity(0.6))
             }
             .padding(.horizontal, 7)
-            .padding(.vertical, 3)
+            .padding(.vertical, 2)
             .background(Capsule().fill(Color.white.opacity(0.12)))
         }
         .buttonStyle(.plain)
@@ -562,22 +571,22 @@ struct IslandScoreCenter: View {
         let label = isFinal ? "FINAL" : PL.shortTitle(attributes.title)
         let multi = (state.liveLeagues ?? 0) > 1
         VStack(spacing: 3) {
-            if #available(iOS 17.0, *), multi {
-                LeagueSwitchButton(attributes: attributes, label: label)
-            } else {
-                HStack(spacing: 4) {
-                    LeagueBadge(attributes: attributes, size: 16)
-                    Text(label)
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(1)
-                }
+            HStack(spacing: 4) {
+                LeagueBadge(attributes: attributes, size: 16, favorite: state.favorite == true)
+                Text(label)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(1)
             }
             if multi {
-                Text(attributes.leagueName)
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.55))
-                    .lineLimit(1)
+                if #available(iOS 17.0, *) {
+                    LeagueSwitchButton(attributes: attributes)
+                } else {
+                    Text(attributes.leagueName)
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
             }
             if let p = state.winProb, !isFinal {
                 WinBar(probability: p, mine: attributes.myColor, opponent: attributes.oppColor)
@@ -691,6 +700,52 @@ struct LineupRing: View {
     }
 }
 
+/// A small ring for the compact and minimal island: drains toward kickoff, with the status icon inside.
+struct LineupMiniRing: View {
+    let attributes: PropLeagueActivityAttributes
+    let state: PropLeagueActivityAttributes.ContentState
+    let size: CGFloat
+
+    var body: some View {
+        let kickoff = Date(timeIntervalSince1970: attributes.kickoff)
+        let now = Date()
+        ZStack {
+            if state.phase == "open" && kickoff > now {
+                let start = min(now, kickoff.addingTimeInterval(-PL.leadSeconds))
+                ProgressView(timerInterval: start...kickoff, countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.circular)
+                .tint(PL.warn)
+            } else {
+                Circle().stroke(PL.lineupTint(state.phase).opacity(0.3), lineWidth: 2.5)
+            }
+            Image(systemName: PL.lineupIcon(state.phase))
+                .font(.system(size: size * 0.42, weight: .bold))
+                .foregroundColor(PL.lineupTint(state.phase))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// One small capsule per roster slot, filled for each pick that is in.
+struct LineupPips: View {
+    let state: PropLeagueActivityAttributes.ContentState
+
+    var body: some View {
+        let total = max(state.totalSlots, 1)
+        HStack(spacing: 3) {
+            ForEach(0..<min(total, 12), id: \.self) { i in
+                Capsule()
+                    .fill(i < state.picksIn ? PL.lineupTint(state.phase) : Color.white.opacity(0.18))
+                    .frame(height: 4)
+            }
+        }
+    }
+}
+
 /// A round logo: the uploaded image if it has been cached, else an emoji, else initials, on the
 /// team's (or league's) color.
 struct LogoBadge: View {
@@ -746,6 +801,8 @@ struct TeamBadge: View {
 struct LeagueBadge: View {
     let attributes: PropLeagueActivityAttributes
     let size: CGFloat
+    /// The person's favorite league gets a small gold star just left of the badge.
+    var favorite: Bool = false
 
     private var initials: String {
         let letters = attributes.leagueName.split(separator: " ").compactMap { $0.first }.prefix(2)
@@ -753,14 +810,22 @@ struct LeagueBadge: View {
     }
 
     var body: some View {
-        LogoBadge(
-            mode: attributes.leagueLogoMode ?? "initials",
-            emoji: attributes.leagueEmoji ?? "",
-            colorHex: attributes.leagueColor ?? "#4C8DF5",
-            logoUrl: attributes.leagueLogoUrl ?? "",
-            fallback: initials,
-            size: size
-        )
+        HStack(spacing: 3) {
+            // A plain gold star (a system symbol, not an emoji) to the left of the logo.
+            if favorite {
+                Image(systemName: "star.fill")
+                    .font(.system(size: max(7, size * 0.42), weight: .bold))
+                    .foregroundColor(PL.gold)
+            }
+            LogoBadge(
+                mode: attributes.leagueLogoMode ?? "initials",
+                emoji: attributes.leagueEmoji ?? "",
+                colorHex: attributes.leagueColor ?? "#4C8DF5",
+                logoUrl: attributes.leagueLogoUrl ?? "",
+                fallback: initials,
+                size: size
+            )
+        }
     }
 }
 
@@ -770,6 +835,7 @@ enum PL {
     static let background = Color(hex: "#15171C")
     static let accent = Color(hex: "#34D399")
     static let warn = Color(hex: "#F59E0B")
+    static let gold = Color(hex: "#F4C542")
     static let win = Color(hex: "#34D399")
     static let loss = Color(hex: "#F87171")
 

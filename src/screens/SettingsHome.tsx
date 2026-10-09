@@ -692,6 +692,9 @@ export function SettingsHome() {
               <p className="text-[11px] text-text-muted">
                 Your matchup score and lineup countdown on the lock screen and Dynamic Island. iPhone with iOS 16.2 or later.
               </p>
+              <p className="text-[11px] text-text-muted">
+                To favorite or mute a single league, tap the league name at the top of Home.
+              </p>
             </div>
           </CollapsibleSection>
         </section>

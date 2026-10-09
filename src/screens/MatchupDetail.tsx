@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -47,6 +47,16 @@ export function MatchupDetail() {
   const matchupDetailMode = useAppStore((s) => s.profile?.matchupDetailMode ?? 'simple');
   const setMatchupDetailMode = useAppStore((s) => s.setMatchupDetailMode);
   const advanced = matchupDetailMode === 'advanced';
+  // Tapping a pick opens or closes just that one slot, on top of the Simple/Advanced setting.
+  // Keyed by team side and slot. Never saved: it clears when you leave the screen, swipe to
+  // another matchup, or press the Advanced button (which then means "all" again).
+  const [slotOverrides, setSlotOverrides] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setSlotOverrides({});
+  }, [matchupId, matchupDetailMode]);
+  function toggleSlot(key: string) {
+    setSlotOverrides((prev) => ({ ...prev, [key]: !(prev[key] ?? advanced) }));
+  }
 
   const matchup = league ? Object.values(league.matchupsByWeek).flat().find((m) => m.id === matchupId) : undefined;
 
@@ -304,7 +314,8 @@ export function MatchupDetail() {
                   hideEmpty={hideEmptyA}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
-                  advanced={advanced}
+                  advanced={slotOverrides[`a:${slotA.slotId}`] ?? advanced}
+                  onToggle={() => toggleSlot(`a:${slotA.slotId}`)}
                 />
                 <div className="flex items-center justify-center px-1">
                   <PositionBadge position={slotA.position} />
@@ -317,7 +328,8 @@ export function MatchupDetail() {
                   hideEmpty={hideEmptyB}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
-                  advanced={advanced}
+                  advanced={slotOverrides[`b:${slotA.slotId}`] ?? advanced}
+                  onToggle={() => toggleSlot(`b:${slotA.slotId}`)}
                   reverse
                 />
               </div>
@@ -453,6 +465,7 @@ function SlotMini({
   realGamesById,
   realPlayerStats,
   advanced,
+  onToggle,
   reverse,
 }: {
   slot: RosterSlotState;
@@ -463,7 +476,10 @@ function SlotMini({
   hideEmpty: boolean;
   realGamesById: Record<string, ReturnType<typeof getGame>>;
   realPlayerStats?: Record<string, RealPlayerStatLine>;
+  /** Whether this cell shows the detailed layout: the Advanced setting, unless this one was tapped. */
   advanced: boolean;
+  /** Tap on a visible pick: open or close just this cell. */
+  onToggle: () => void;
   reverse?: boolean;
 }) {
   if (!slot.wager) {
@@ -495,6 +511,19 @@ function SlotMini({
   }
 
   const wager = slot.wager;
+  // A visible pick is a button: tapping opens or closes just this cell.
+  const tap = {
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-expanded': advanced,
+    onClick: onToggle,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onToggle();
+      }
+    },
+  };
   // Once a pick is settled (won/lost/push/voided), it's history -- dim the name/line
   // text a bit so a still-pending or live pick reads as the thing to actually pay
   // attention to. The status pill itself is deliberately left at full color/opacity
@@ -515,7 +544,7 @@ function SlotMini({
     // mode's pill (that one was always a sibling of the dimmed text, never
     // inside it) (see chat, Sept 2026).
     return (
-      <div className={`border border-border rounded-lg px-2 py-1.5 ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
+      <div {...tap} className={`border border-border rounded-lg px-2 py-1.5 cursor-pointer active:bg-bg-raised ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
         <p className={`text-[11px] font-semibold truncate ${settled ? 'opacity-60' : ''}`}>{wager.playerName ?? wager.side}</p>
         <div className={`mt-0.5 flex items-center gap-1 ${reverse ? 'flex-row-reverse' : ''}`}>
           <span className={`text-[10px] text-text-muted truncate min-w-0 flex-1 ${reverse ? 'text-right' : ''} ${settled ? 'opacity-60' : ''}`}>
@@ -569,7 +598,7 @@ function SlotMini({
   const stakeSpan = <span className="text-[10px] text-text-muted whitespace-nowrap shrink-0">${wager.stake.toFixed(2)}</span>;
 
   return (
-    <div className={`border border-border rounded-lg p-2 ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
+    <div {...tap} className={`border border-border rounded-lg p-2 cursor-pointer active:bg-bg-raised ${settled ? 'bg-bg-card/60' : 'bg-bg-card'} ${reverse ? 'text-right' : ''}`}>
       <div className={settled ? 'opacity-60' : ''}>
         <p className="text-[11px] font-semibold truncate">{wager.playerName ?? wager.side}</p>
         <p className="text-[10px] text-text-muted truncate mt-0.5">{wagerLineDescription(wager)}</p>

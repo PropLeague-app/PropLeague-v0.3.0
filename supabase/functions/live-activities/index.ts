@@ -31,6 +31,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
+import { favoriteLeagueId, leagueMuted } from '../_shared/leaguePrefs.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
 
@@ -79,6 +80,8 @@ function settingsSliceFrom(raw: unknown) {
     emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
   };
 }
+/** Above any league's own ranking (at most 95) and below the island switch's 100. */
+const FAVORITE_RELEVANCE = 98;
 const prefsAllow = (raw: unknown, key: 'lineupReminders' | 'liveActivities') =>
   !(raw && typeof raw === 'object' && (raw as Record<string, unknown>)[key] === false);
 
@@ -364,6 +367,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
       if (!profileId || !profileIds.includes(profileId)) continue;
       const prefs = prefsByProfile.get(profileId);
       if (!prefsAllow(prefs, 'liveActivities')) continue;
+      if (leagueMuted(prefs, leagueId)) continue; // muted from the league switcher: no activity, and any open one is closed
 
       const wagers = wagersByTeamWeek.get(`${team.id}|${week}`) ?? [];
       const mu = matchupByTeamWeek.get(`${team.id}|${week}`);
@@ -512,6 +516,12 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
   }
   for (const d of out) {
     if (d.kind === 'score') d.state = { ...d.state, liveLeagues: liveByProfile.get(d.profileId)?.size ?? 0 };
+    // The favorite league leads the island by default. The island's switch button (is_front, 100)
+    // still wins when the person picks another league for now.
+    if (favoriteLeagueId(prefsByProfile.get(d.profileId)) === d.leagueId) {
+      d.relevance = Math.max(d.relevance, FAVORITE_RELEVANCE);
+      d.state = { ...d.state, favorite: true }; // the card draws a small star by the league logo
+    }
   }
   return out;
 }
@@ -602,15 +612,17 @@ Deno.serve(async (req: Request) => {
   const openByKey = new Map<string, Record<string, unknown>>((openRows ?? []).map((r: Record<string, unknown>) => [keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string }), r]));
   const everByKey = new Set<string>((allRows ?? []).map((r: Record<string, unknown>) => keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string })));
 
-  // Rows the server closed because a push to the activity failed (the phone dropped it): candidates for one restart.
-  const closedByKey = new Map<string, { id: string; meta: Record<string, unknown>; restarts: number }>();
+  // Rows the server closed because a push to the activity failed (the phone dropped it): candidates for
+  // one restart. Rows closed because the league was muted restart whenever it is unmuted again.
+  const closedByKey = new Map<string, { id: string; meta: Record<string, unknown>; restarts: number; muted: boolean }>();
   for (const r of allRows ?? []) {
     const meta = ((r as Record<string, unknown>).meta as Record<string, unknown> | null) ?? {};
-    if (r.ended_at && meta.endedBy === 'push_failed') {
+    if (r.ended_at && (meta.endedBy === 'push_failed' || meta.endedBy === 'muted')) {
       closedByKey.set(keyOf({ profileId: r.profile_id as string, leagueId: r.league_id as string, week: r.week as string, kind: r.kind as string, windowKey: r.window_key as string }), {
         id: r.id as string,
         meta,
         restarts: typeof meta.restarts === 'number' ? meta.restarts : 0,
+        muted: meta.endedBy === 'muted',
       });
     }
   }
@@ -625,13 +637,16 @@ Deno.serve(async (req: Request) => {
   const log: Record<string, unknown>[] = [];
   const seen = new Set<string>();
 
-  const endActivity = async (row: Record<string, unknown>, state: Record<string, unknown>, dismissAfterSec: number) => {
+  const endActivity = async (row: Record<string, unknown>, state: Record<string, unknown>, dismissAfterSec: number, mutedEnd = false) => {
     const rowKey = row.id as string;
     if (!dry && row.push_token) {
       const r = await sendLiveActivityPush(row.push_token as string, { event: 'end', contentState: state, dismissalDate: Math.floor(now / 1000) + dismissAfterSec, priority: 10 });
       if (!r.ok) log.push({ end: rowKey, failure: r.failure.reason });
     }
-    if (!dry) await supabase.from('live_activities').update({ ended_at: new Date(now).toISOString(), last_state: state }).eq('id', rowKey);
+    if (!dry) {
+      const meta = { ...(row.meta as Record<string, unknown> | null), endedBy: mutedEnd ? 'muted' : null };
+      await supabase.from('live_activities').update({ ended_at: new Date(now).toISOString(), last_state: state, meta }).eq('id', rowKey);
+    }
     log.push({ ended: rowKey, kind: row.kind, window: row.window_key });
   };
 
@@ -646,7 +661,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // An activity the phone ended on its own (the app was force-quit) gets one fresh start while its window is still open.
-    const restartable = !row && everByKey.has(key) && closedByKey.get(key) != null && closedByKey.get(key)!.restarts < MAX_RESTARTS;
+    const restartable = !row && everByKey.has(key) && closedByKey.get(key) != null && (closedByKey.get(key)!.muted || closedByKey.get(key)!.restarts < MAX_RESTARTS);
     if (!row && restartable) {
       const startToken = startTokenByProfile.get(d.profileId);
       if (!startToken) continue;
@@ -660,7 +675,7 @@ Deno.serve(async (req: Request) => {
         }
         await supabase.from('live_activities').update({
           ended_at: null, push_token: null, activity_id: null, started_at: new Date(now).toISOString(), last_pushed_at: new Date(now).toISOString(),
-          last_state: d.state, meta: { ...prev.meta, endedBy: null, restarts: prev.restarts + 1 },
+          last_state: d.state, meta: { ...prev.meta, endedBy: null, restarts: prev.muted ? prev.restarts : prev.restarts + 1 },
         }).eq('id', prev.id);
       }
       log.push({ restarted_after_end: key });
@@ -727,10 +742,18 @@ Deno.serve(async (req: Request) => {
   }
 
   // Anything still showing that nothing asks for any more (week moved on, league ended): close it.
-  for (const [key, row] of openByKey) {
-    if (seen.has(key)) continue;
+  // A league the person just muted is cleared right away instead of lingering as "final" for minutes.
+  const stale = [...openByKey].filter(([key]) => !seen.has(key));
+  const mutedPrefs = new Map<string, unknown>();
+  if (stale.length > 0) {
+    const ids = [...new Set(stale.map(([, row]) => row.profile_id as string))];
+    const { data: prefRows } = await supabase.from('profiles').select('id, notification_prefs').in('id', ids);
+    for (const p of prefRows ?? []) mutedPrefs.set(p.id as string, p.notification_prefs);
+  }
+  for (const [, row] of stale) {
     const last = (row.last_state as Record<string, unknown>) ?? { ...zeroState };
-    await endActivity(row, { ...last, phase: row.kind === 'score' ? 'final' : 'locked' }, 5 * 60);
+    const muted = leagueMuted(mutedPrefs.get(row.profile_id as string), row.league_id as string);
+    await endActivity(row, { ...last, phase: row.kind === 'score' ? 'final' : 'locked' }, muted ? 1 : 5 * 60, muted);
   }
 
   return json({ ok: true, dry, desired: desired.length, log }, 200);
