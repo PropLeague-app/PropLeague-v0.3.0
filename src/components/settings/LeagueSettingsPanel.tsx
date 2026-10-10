@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import {
   Activity,
   Banknote,
@@ -26,7 +26,10 @@ import type { League, LeagueSettings, LeagueTeam, MomentCategory, PlayoffFieldSi
 import { MOMENT_CATEGORIES, MOMENT_CATEGORY_LABELS, DEFAULT_MOMENT_DISPLAY_NAMES } from '../../types';
 import { Toggle, ToggleRow } from '../common/Toggle';
 import { NameInput } from '../common/NameInput';
-import { IdentityPicker } from '../common/IdentityPicker';
+import { lazyNamed } from '../../lazyLoad';
+
+// The logo picker carries the full emoji set, so it loads on first use (lazyLoad.ts).
+const IdentityPicker = lazyNamed(() => import('../common/IdentityPicker'), 'IdentityPicker');
 import { TeamLogo } from '../common/TeamLogo';
 import { initialsFromLeagueName } from '../common/LeagueLogo';
 import { uploadLeagueLogo } from '../../services/supabaseLogo';
@@ -264,29 +267,31 @@ export function LeagueSettingsPanel({
           summary={`${settings.leagueName || league.name} · ${league.targetTeamCount} teams · ${settings.isPublic ? 'Public' : 'Private'}`}
         >
           <div>
-            <IdentityPicker
-              key={`league-${league.id}`}
-              bare
-              title="League Logo"
-              value={league}
-              initials={initialsFromLeagueName(league.name)}
-              onSave={async (next, file) => {
-                if (!isCommissioner) return;
-                updateLeagueLogoStore(league.id, next);
-                if (!file) return;
-                setLogoUploadError(null);
-                const result = await uploadLeagueLogo(league.id, file);
-                if (!result.ok) {
-                  setLogoUploadError(result.error);
-                  return;
-                }
-                updateLeagueLogoStore(league.id, { logoDataUrl: result.publicUrl });
-              }}
-              onDirtyChange={(dirty) => {
-                setIdentityDirty(dirty);
-                onIdentityDirtyChange(dirty);
-              }}
-            />
+            <Suspense fallback={null}>
+              <IdentityPicker
+                key={`league-${league.id}`}
+                bare
+                title="League Logo"
+                value={league}
+                initials={initialsFromLeagueName(league.name)}
+                onSave={async (next, file) => {
+                  if (!isCommissioner) return;
+                  updateLeagueLogoStore(league.id, next);
+                  if (!file) return;
+                  setLogoUploadError(null);
+                  const result = await uploadLeagueLogo(league.id, file);
+                  if (!result.ok) {
+                    setLogoUploadError(result.error);
+                    return;
+                  }
+                  updateLeagueLogoStore(league.id, { logoDataUrl: result.publicUrl });
+                }}
+                onDirtyChange={(dirty) => {
+                  setIdentityDirty(dirty);
+                  onIdentityDirtyChange(dirty);
+                }}
+              />
+            </Suspense>
             {logoUploadError && <p className="text-loss text-xs mt-1">{logoUploadError}</p>}
           </div>
           <SubSection title="League details">

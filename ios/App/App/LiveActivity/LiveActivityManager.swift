@@ -11,6 +11,29 @@ import ActivityKit
 ///
 /// Activities only exist on iOS 16.2 and later. The app still installs and runs on older iOS; every
 /// entry point is behind an availability check, and older devices simply get the normal pushes.
+/// One background task id, handed out once (see register(activity:pushToken:)): whichever of "work finished" and
+/// "iOS says time is up" comes first ends the task, and the other finds nothing to end. If iOS
+/// expires it before the id is stored, the id is stored afterwards and the normal path ends it.
+private final class BackgroundTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var id: UIBackgroundTaskIdentifier = .invalid
+
+    func set(_ newId: UIBackgroundTaskIdentifier) {
+        lock.lock()
+        id = newId
+        lock.unlock()
+    }
+
+    func take() -> UIBackgroundTaskIdentifier? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard id != .invalid else { return nil }
+        let taken = id
+        id = .invalid
+        return taken
+    }
+}
+
 @available(iOS 16.2, *)
 final class LiveActivityManager {
     static let shared = LiveActivityManager()
@@ -125,17 +148,21 @@ final class LiveActivityManager {
             ]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-            var bgTask = UIBackgroundTaskIdentifier.invalid
-            bgTask = await UIApplication.shared.beginBackgroundTask(withName: "register-live-activity") {
-                UIApplication.shared.endBackgroundTask(bgTask)
+            // The task id lives in a small locked box instead of a captured `var` (that was the
+            // "mutated after capture" warning), and the box hands it out once, so the task is ended
+            // exactly once whether the request finishes or iOS's expiration handler fires first.
+            let bgTask = BackgroundTaskBox()
+            let taskId = await UIApplication.shared.beginBackgroundTask(withName: "register-live-activity") {
+                if let id = bgTask.take() { UIApplication.shared.endBackgroundTask(id) }
             }
+            bgTask.set(taskId)
             let ok: Bool
             if let (_, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse {
                 ok = (200..<300).contains(http.statusCode)
             } else {
                 ok = false
             }
-            await UIApplication.shared.endBackgroundTask(bgTask)
+            if let id = bgTask.take() { await UIApplication.shared.endBackgroundTask(id) }
             if ok { return }
         }
 

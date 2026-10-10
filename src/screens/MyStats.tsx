@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DAY_SLOT_ORDER, DAY_SLOT_SHORT } from '../engine/dayWindows';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronRight, Flame, TrendingUp } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -300,7 +301,8 @@ export function MyStats() {
   const marketItems: Rec[] = marketRows.map(([key, rec]) => ({ label: MARKET_LABELS[key], rec }));
   const slotItems: Rec[] = (['QB', 'RB', 'WR', 'TE', 'K', 'ML'] as const).map((pos) => ({ label: pos, rec: stats.byPosition[pos] }));
   const oddsItems: Rec[] = ODDS_BUCKETS.map((b) => ({ label: ODDS_BUCKET_NAMES[b], rec: stats.byOddsBucket[b] }));
-  const daySlotItems: Rec[] = (['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'] as const).map((slot) => ({ label: slot.replace('_', ' '), rec: stats.byDaySlot[slot] }));
+  // Every window, Wednesday and Saturday included; a window with no picks has no record and drops out.
+  const daySlotItems: Rec[] = DAY_SLOT_ORDER.map((slot) => ({ label: DAY_SLOT_SHORT[slot], rec: stats.byDaySlot[slot] }));
   const byProfit = (items: Rec[]) => [...items].sort((a, b) => (b.rec?.pl ?? 0) - (a.rec?.pl ?? 0));
   const tabBlocks = (): TabBlock[] => {
     if (activeTab === 'markets') {
@@ -622,8 +624,8 @@ export function MyStats() {
             <Card>
               <p className="text-xs text-text-muted mb-1">By day slot</p>
               <ColHeads chevron={false} />
-              {(['TNF', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'] as const).map(
-                (slot) => stats.byDaySlot[slot] && <StatRow key={slot} label={slot.replace('_', ' ')} rec={stats.byDaySlot[slot]!} />,
+              {DAY_SLOT_ORDER.map(
+                (slot) => stats.byDaySlot[slot] && <StatRow key={slot} label={DAY_SLOT_SHORT[slot]} rec={stats.byDaySlot[slot]!} />,
               )}
             </Card>
 

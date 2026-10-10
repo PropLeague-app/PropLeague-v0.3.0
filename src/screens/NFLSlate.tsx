@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarClock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import type { DaySlot, WeekId } from '../types';
+import type { WeekId } from '../types';
 import { WeekSelector } from '../components/slate/WeekSelector';
 import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
@@ -9,18 +9,11 @@ import { EmptyState } from '../components/common/EmptyState';
 import { useOddsRefresh } from '../hooks/useOddsRefresh';
 import { useOddsFreshness, oddsFreshnessMessage } from '../hooks/useOddsFreshness';
 import { useLiveGamePolling, anyGameLive } from '../hooks/useLiveGamePolling';
+import { DAY_SLOT_LONG, DAY_SLOT_ORDER } from '../engine/dayWindows';
 
-const DAY_LABELS: Record<DaySlot, string> = {
-  WED: 'Wednesday',
-  TNF: 'Thursday Night',
-  SAT: 'Saturday',
-  SUN_EARLY: 'Sunday Early',
-  SUN_LATE: 'Sunday Late',
-  SNF: 'Sunday Night',
-  MNF: 'Monday Night',
-};
-
-const DAY_ORDER: DaySlot[] = ['WED', 'TNF', 'SAT', 'SUN_EARLY', 'SUN_LATE', 'SNF', 'MNF'];
+// Window names and order live in engine/dayWindows.ts.
+const DAY_LABELS = DAY_SLOT_LONG;
+const DAY_ORDER = DAY_SLOT_ORDER;
 
 export function NFLSlate() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);

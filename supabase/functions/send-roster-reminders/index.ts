@@ -38,21 +38,14 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
 import { notifAllowed } from '../_shared/leaguePrefs.ts';
+import { daySlotLong } from '../_shared/dayWindows.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const REMINDER_WINDOW_MIN_MS = 45 * 60 * 1000; // remind once kickoff is this close...
 const REMINDER_WINDOW_MAX_MS = 75 * 60 * 1000; // ...but not yet this close (still "about an hour out")
 
-const DAY_SLOT_LABELS: Record<string, string> = {
-  WED: 'Wednesday',
-  TNF: 'Thursday Night',
-  SAT: 'Saturday',
-  SUN_EARLY: 'Sunday early',
-  SUN_LATE: 'Sunday late',
-  SNF: 'Sunday Night',
-  MNF: 'Monday Night',
-};
-const slotLabel = (slot: string) => DAY_SLOT_LABELS[slot] ?? slot;
+// Window names come from _shared/dayWindows.ts (one table for the app and every function).
+const slotLabel = daySlotLong;
 
 type SlateMode = 'needs_work' | 'trailing' | 'every_slate';
 function slateModeFrom(rawPrefs: unknown): SlateMode {

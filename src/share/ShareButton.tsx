@@ -1,6 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { Suspense, useState, type ReactNode } from 'react';
 import { Share as ShareIcon } from 'lucide-react';
-import { ShareSheet } from './ShareSheet';
+import { lazyNamed } from '../lazyLoad';
+
+// The sheet pulls in the image renderer (html-to-image), so it loads on first use (lazyLoad.ts).
+const ShareSheet = lazyNamed(() => import('./ShareSheet'), 'ShareSheet');
 
 /** A small round share icon. The card is only built once the sheet opens (renderCard is a function
  * for that reason), so screens pay nothing for it until someone taps. */
@@ -31,9 +34,11 @@ export function ShareButton({
         <ShareIcon size={size === 'sm' ? 12 : 15} />
       </button>
       {open && (
-        <ShareSheet title={title} onClose={() => setOpen(false)}>
-          {renderCard()}
-        </ShareSheet>
+        <Suspense fallback={null}>
+          <ShareSheet title={title} onClose={() => setOpen(false)}>
+            {renderCard()}
+          </ShareSheet>
+        </Suspense>
       )}
     </>
   );

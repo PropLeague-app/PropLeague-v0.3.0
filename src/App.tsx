@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
@@ -10,14 +10,17 @@ import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
 import { PushRouter } from './components/layout/PushRouter';
 
-import { Welcome } from './screens/onboarding/Welcome';
-import { HowItWorks } from './screens/onboarding/HowItWorks';
-import { Auth } from './screens/onboarding/Auth';
-import { ResetPassword } from './screens/onboarding/ResetPassword';
-import { ProfileSetup } from './screens/onboarding/ProfileSetup';
-import { CreateLeague } from './screens/onboarding/CreateLeague';
-import { InviteScreen } from './screens/onboarding/InviteScreen';
-import { JoinLeague } from './screens/onboarding/JoinLeague';
+import { lazyNamed, prefetchLazyChunks } from './lazyLoad';
+
+// Onboarding is only seen once (or after signing out), so it loads on demand (see lazyLoad.ts).
+const Welcome = lazyNamed(() => import('./screens/onboarding/Welcome'), 'Welcome');
+const HowItWorks = lazyNamed(() => import('./screens/onboarding/HowItWorks'), 'HowItWorks');
+const Auth = lazyNamed(() => import('./screens/onboarding/Auth'), 'Auth');
+const ResetPassword = lazyNamed(() => import('./screens/onboarding/ResetPassword'), 'ResetPassword');
+const ProfileSetup = lazyNamed(() => import('./screens/onboarding/ProfileSetup'), 'ProfileSetup');
+const CreateLeague = lazyNamed(() => import('./screens/onboarding/CreateLeague'), 'CreateLeague');
+const InviteScreen = lazyNamed(() => import('./screens/onboarding/InviteScreen'), 'InviteScreen');
+const JoinLeague = lazyNamed(() => import('./screens/onboarding/JoinLeague'), 'JoinLeague');
 
 import { LeagueHome } from './screens/LeagueHome';
 import { MatchupDetail } from './screens/MatchupDetail';
@@ -26,16 +29,18 @@ import { MarketBrowser } from './screens/MarketBrowser';
 import { NFLSlate } from './screens/NFLSlate';
 import { GameDetail } from './screens/GameDetail';
 import { SettingsHome } from './screens/SettingsHome';
-import { LeagueSettingsScreen } from './screens/LeagueSettingsScreen';
-import { FullStandings } from './screens/FullStandings';
-import { ScheduleView } from './screens/ScheduleView';
-import { WeekMatchups } from './screens/WeekMatchups';
-import { LeagueMembers } from './screens/LeagueMembers';
-import { PlayoffBracket } from './screens/PlayoffBracket';
-import { BetHistory } from './screens/BetHistory';
-import { PrizePool } from './screens/PrizePool';
-import { MyStats } from './screens/MyStats';
-import { Leaderboards } from './screens/Leaderboards';
+// The four tabs, Matchup, the market list and Game Details stay in the main bundle. These deeper
+// screens load on first visit (and are prefetched right after launch, so the tap is still instant).
+const LeagueSettingsScreen = lazyNamed(() => import('./screens/LeagueSettingsScreen'), 'LeagueSettingsScreen');
+const FullStandings = lazyNamed(() => import('./screens/FullStandings'), 'FullStandings');
+const ScheduleView = lazyNamed(() => import('./screens/ScheduleView'), 'ScheduleView');
+const WeekMatchups = lazyNamed(() => import('./screens/WeekMatchups'), 'WeekMatchups');
+const LeagueMembers = lazyNamed(() => import('./screens/LeagueMembers'), 'LeagueMembers');
+const PlayoffBracket = lazyNamed(() => import('./screens/PlayoffBracket'), 'PlayoffBracket');
+const BetHistory = lazyNamed(() => import('./screens/BetHistory'), 'BetHistory');
+const PrizePool = lazyNamed(() => import('./screens/PrizePool'), 'PrizePool');
+const MyStats = lazyNamed(() => import('./screens/MyStats'), 'MyStats');
+const Leaderboards = lazyNamed(() => import('./screens/Leaderboards'), 'Leaderboards');
 import { BootLoader } from './components/common/BootLoader';
 
 /** manual v0.2.0 §6 #15: the Welcome splash only ever appears when no profile exists
@@ -114,7 +119,11 @@ function RootRedirect() {
 function AppShellLayout() {
   return (
     <MobileShell>
-      <Outlet />
+      {/* A deeper screen that has not loaded yet shows nothing for a moment (normally it is already
+          prefetched); the tab bar and shell stay put. */}
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
       {/* Mounted once for the whole app shell, not per-screen, so a decided matchup
           gets its Tuesday reveal popup no matter which screen the user happens to
           open the app to (see chat, Sept 2026 -- same "lives at the shell level"
@@ -129,6 +138,7 @@ function AppShellLayout() {
 function App() {
   useEffect(() => {
     useAuthStore.getState().init();
+    prefetchLazyChunks(); // quietly loads the on-demand screens once launch work is done
   }, []);
 
   // Registers this device for push once there's a real, fully-onboarded
@@ -171,6 +181,8 @@ function App() {
   }, [themeMode]);
 
   return (
+    // Onboarding screens load on demand; the boot loader covers that first moment.
+    <Suspense fallback={<BootLoader />}>
     <Routes>
       <Route path="/" element={<RootRedirect />} />
 
@@ -205,6 +217,7 @@ function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 

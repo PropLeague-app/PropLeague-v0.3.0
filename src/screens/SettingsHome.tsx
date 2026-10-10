@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
@@ -6,7 +6,10 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { NameInput } from '../components/common/NameInput';
 import { ToggleRow } from '../components/common/Toggle';
-import { IdentityPicker } from '../components/common/IdentityPicker';
+import { lazyNamed } from '../lazyLoad';
+
+// The logo picker carries the full emoji set, so it loads on first use (lazyLoad.ts).
+const IdentityPicker = lazyNamed(() => import('../components/common/IdentityPicker'), 'IdentityPicker');
 import { uploadTeamLogo } from '../services/supabaseLogo';
 import { abbrevFromName } from '../data/simulatedTeamNames';
 import { HowItWorksSheet } from '../components/common/HowItWorksSheet';
@@ -570,27 +573,29 @@ export function SettingsHome() {
 
               {league && userTeam && (
                 <div className="pt-3 border-t border-border">
-                  <IdentityPicker
-                    key={`team-${userTeam.id}`}
-                    bare
-                    title="Team Logo"
-                    value={userTeam}
-                    initials={userTeam.abbrev.slice(0, 2)}
-                    colorLabel="Team color"
-                    onSave={async (next, file) => {
-                      updateUserTeam(league.id, next);
-                      if (!file) return;
-                      setLogoUploadError(null);
-                      const result = await uploadTeamLogo(userTeam.id, file);
-                      if (!result.ok) {
-                        setLogoUploadError(result.error);
-                        return;
-                      }
-                      // Swap the local base64 preview for the real, now-shared public URL.
-                      updateUserTeam(league.id, { logoDataUrl: result.publicUrl });
-                    }}
-                    onDirtyChange={setTeamIdentityDirty}
-                  />
+                  <Suspense fallback={null}>
+                    <IdentityPicker
+                      key={`team-${userTeam.id}`}
+                      bare
+                      title="Team Logo"
+                      value={userTeam}
+                      initials={userTeam.abbrev.slice(0, 2)}
+                      colorLabel="Team color"
+                      onSave={async (next, file) => {
+                        updateUserTeam(league.id, next);
+                        if (!file) return;
+                        setLogoUploadError(null);
+                        const result = await uploadTeamLogo(userTeam.id, file);
+                        if (!result.ok) {
+                          setLogoUploadError(result.error);
+                          return;
+                        }
+                        // Swap the local base64 preview for the real, now-shared public URL.
+                        updateUserTeam(league.id, { logoDataUrl: result.publicUrl });
+                      }}
+                      onDirtyChange={setTeamIdentityDirty}
+                    />
+                  </Suspense>
                   {logoUploadError && <p className="text-loss text-xs mt-1">{logoUploadError}</p>}
                 </div>
               )}

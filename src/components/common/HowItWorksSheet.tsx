@@ -221,7 +221,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'My Stats',
       body: [
-        'Pick any team, or the whole league, at the top. Overview has ROI, P/L, record and breakdowns by position, odds range and stake size. Odds ranges are shown in your odds format (American or decimal). Markets splits results by prop type. Trends shows weekly P/L and your best and worst players. Matchups (single team) shows your head-to-head history.',
+        'Pick any team, or the whole league, at the top. Overview has ROI, P/L, record and breakdowns by position, odds range and stake size, plus by kickoff window (Wed, TNF, Sat, Sun Early, Sun Late, SNF, MNF; a window shows once you have picks in it). Odds ranges are shown in your odds format (American or decimal). Markets splits results by prop type. Trends shows weekly P/L and your best and worst players. Matchups (single team) shows your head-to-head history.',
         'Tap most rows to open the bets behind them. Pushes and voids stay in those lists so every pick the lineup held is counted.',
       ],
     },

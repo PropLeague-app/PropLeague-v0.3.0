@@ -197,7 +197,10 @@ interface StatRow {
   long_rushing?: number; long_reception?: number; extra_points_made?: number;
 }
 
-const STAT_FIELD: Partial<Record<MarketKey, keyof StatRow>> = {
+// Only the numeric stat columns (player_name is the row's key, not a stat). Typed this way so a
+// lookup is always a number, never the name: a typing fix only, grading is unchanged.
+type NumericStatField = Exclude<keyof StatRow, 'player_name'>;
+const STAT_FIELD: Partial<Record<MarketKey, NumericStatField>> = {
   player_pass_yds: 'passing_yards',
   player_pass_tds: 'passing_tds',
   player_pass_interceptions: 'passing_interceptions',

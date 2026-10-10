@@ -32,6 +32,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
 import { favoriteLeagueId, leagueMuted, notifAllowed } from '../_shared/leaguePrefs.ts';
+import { daySlotLong, WINDOW_LONG, WINDOW_OF_SLOT } from '../_shared/dayWindows.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
 
@@ -51,19 +52,9 @@ const START_RETRY_MS = 10 * MIN; // resend a start that never produced a push to
 const PROBE_MS = 10 * MIN; // push an unchanged state this often, so a dead activity (app force-quit) is noticed
 const MAX_RESTARTS = 1; // a dead activity is started again once; a second death (swiped away on purpose) stays gone
 
-const SLOT_LABEL: Record<string, string> = {
-  WED: 'Wednesday',
-  TNF: 'Thursday Night',
-  SAT: 'Saturday',
-  SUN_EARLY: 'Sunday early',
-  SUN_LATE: 'Sunday late',
-  SNF: 'Sunday Night',
-  MNF: 'Monday Night',
-};
-// Sunday early and late share one score activity (about 7 hours, inside Apple's 8 hour limit);
-// Sunday night starts a fresh one.
-const WINDOW_OF_SLOT: Record<string, string> = { WED: 'WED', TNF: 'TNF', SAT: 'SAT', SUN_EARLY: 'SUN', SUN_LATE: 'SUN', SNF: 'SNF', MNF: 'MNF' };
-const WINDOW_LABEL: Record<string, string> = { WED: 'Wednesday', TNF: 'Thursday Night', SAT: 'Saturday', SUN: 'Sunday', SNF: 'Sunday Night', MNF: 'Monday Night' };
+// Window names come from _shared/dayWindows.ts (one table for the app and every function). Sunday
+// early and late share one score activity (about 7 hours, inside Apple's 8 hour limit); Sunday
+// night starts a fresh one.
 const LINEUP_SLOTS = ['TNF', 'SAT', 'SUN_EARLY', 'MNF'];
 
 const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, ML: 1 };
@@ -424,12 +415,12 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
             week,
             kind: 'lineup',
             windowKey: slot,
-            attributes: { ...baseAttrs, kind: 'lineup', windowKey: slot, title: SLOT_LABEL[slot] ?? slot, kickoff: Math.floor(k / 1000) },
+            attributes: { ...baseAttrs, kind: 'lineup', windowKey: slot, title: daySlotLong(slot), kickoff: Math.floor(k / 1000) },
             state: { ...zeroState, phase: locked ? 'locked' : needsWork ? 'open' : 'ready', picksIn, totalSlots, unspent, hint },
             ending,
             relevance: locked ? 20 : needsWork ? 90 : 40,
             staleDate: Math.floor(k / 1000),
-            alert: { title: `${SLOT_LABEL[slot] ?? slot} kicks off soon`, body: hint || 'Your lineup needs work.' },
+            alert: { title: `${daySlotLong(slot)} kicks off soon`, body: hint || 'Your lineup needs work.' },
           });
         }
       }
@@ -475,7 +466,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
             week,
             kind: 'score',
             windowKey,
-            attributes: { ...baseAttrs, kind: 'score', windowKey, title: WINDOW_LABEL[windowKey] ?? windowKey, kickoff: Math.floor(w.first / 1000) },
+            attributes: { ...baseAttrs, kind: 'score', windowKey, title: WINDOW_LONG[windowKey] ?? windowKey, kickoff: Math.floor(w.first / 1000) },
             state: {
               ...zeroState,
               phase: finished ? 'final' : 'live',

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin, Plus } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
@@ -17,7 +17,10 @@ import { teamAccent } from '../../engine/teamColors';
 import { MAX_PINNED_ANNOUNCEMENTS, parseRichText, pinnedAnnouncementCount } from '../../engine/richText';
 import { useResolvedTheme } from '../../hooks/useResolvedTheme';
 import { AnchoredPopover } from '../common/AnchoredPopover';
-import { ReactionPicker } from './ReactionPicker';
+import { lazyNamed } from '../../lazyLoad';
+
+// The full emoji picker carries every emoji category, so it loads on first use (lazyLoad.ts).
+const ReactionPicker = lazyNamed(() => import('./ReactionPicker'), 'ReactionPicker');
 import { haptic } from '../../services/haptics';
 import { CHIP_LOGOS, CHIP_ROW_GAP, QUICK_REACTIONS, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
 
@@ -157,13 +160,15 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
 
       {popup?.kind === 'picker' && (
         <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={352} maxHeight={400}>
-          <ReactionPicker
-            current={item.myReaction}
-            onPick={(emoji) => {
-              onReact(item.id, emoji);
-              closePopup();
-            }}
-          />
+          <Suspense fallback={null}>
+            <ReactionPicker
+              current={item.myReaction}
+              onPick={(emoji) => {
+                onReact(item.id, emoji);
+                closePopup();
+              }}
+            />
+          </Suspense>
         </AnchoredPopover>
       )}
       {popup?.kind === 'who' && whoGroup && (
