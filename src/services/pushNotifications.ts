@@ -10,6 +10,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '../lib/supabaseClient';
+import { parsePushRoute, setPendingPushRoute } from './pushRoute';
 
 let registrationStarted = false;
 
@@ -42,6 +43,12 @@ export async function registerForPushNotifications(profileId: string): Promise<v
   });
   await PushNotifications.addListener('registrationError', (err) => {
     console.error('[push] registration error:', err.error);
+  });
+  // A tapped push: park where it points (league and screen) for PushRouter to follow. Capacitor
+  // holds the tap that launched the app until this listener exists, so a cold launch is covered.
+  await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+    const route = parsePushRoute(action.notification?.data);
+    if (route) setPendingPushRoute(route);
   });
 
   const current = await PushNotifications.checkPermissions();

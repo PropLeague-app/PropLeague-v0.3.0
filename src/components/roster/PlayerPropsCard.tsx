@@ -3,6 +3,7 @@ import { nflTeamById } from '../../data/nflTeams';
 import { MARKET_LABELS } from '../../data/propsGenerator';
 import { TeamMark } from '../common/TeamMark';
 import { MarketRow, type ClaimStatus } from './MarketRow';
+import type { HeldTagInfo } from './HeldTag';
 
 function isOverUnderMarket(market: OddsMarket): boolean {
   return market.outcomes.length === 2 && market.outcomes.some((o) => o.name === 'Over');
@@ -26,12 +27,15 @@ export function PlayerPropsCard({
   onSelect,
   checkBlocked,
   checkClaimStatus,
+  heldFor,
 }: {
   group: PlayerPropGroup;
   altLinesEnabled?: boolean;
   onSelect: (market: OddsMarket, outcome: OddsOutcome) => void;
   checkBlocked?: (market: OddsMarket, outcome: OddsOutcome) => string | null;
   checkClaimStatus?: (market: OddsMarket, outcome: OddsOutcome) => ClaimStatus | null;
+  /** While swapping: the "Yours" tag for the held pick's box. */
+  heldFor?: (market: OddsMarket, outcome: OddsOutcome) => HeldTagInfo | null;
 }) {
   const team = nflTeamById(group.teamId);
   const overUnderMarkets = group.markets.filter(isOverUnderMarket);
@@ -47,6 +51,7 @@ export function PlayerPropsCard({
         hideOutcomeNames={hideOutcomeNames}
         checkBlocked={checkBlocked ? (outcome) => checkBlocked(market, outcome) : undefined}
         checkClaimStatus={checkClaimStatus ? (outcome) => checkClaimStatus(market, outcome) : undefined}
+        heldFor={heldFor ? (outcome) => heldFor(market, outcome) : undefined}
         onSelect={(outcome) => onSelect(market, outcome)}
       />
     );

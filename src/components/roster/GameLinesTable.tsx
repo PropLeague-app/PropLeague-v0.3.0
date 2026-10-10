@@ -5,6 +5,7 @@ import { getGameMarkets, findTeamOutcome } from '../../services/oddsService';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { TeamMark } from '../common/TeamMark';
 import { ClaimBanner, type ClaimStatus } from './MarketRow';
+import { HeldTag, heldBoxBorder, type HeldTagInfo } from './HeldTag';
 
 function formatSpreadPoint(point: number | undefined): string {
   if (point == null) return '—';
@@ -16,6 +17,7 @@ function LineCell({
   price,
   blocked,
   claim,
+  held,
   onSelect,
 }: {
   point: string;
@@ -23,6 +25,8 @@ function LineCell({
   blocked?: string | null;
   /** Claim banner under the box (duplicate limit progress). */
   claim?: ClaimStatus | null;
+  /** While swapping: marks the pick already held. */
+  held?: HeldTagInfo | null;
   onSelect?: () => void;
 }) {
   if (price == null) {
@@ -39,8 +43,8 @@ function LineCell({
       <button
         onClick={onSelect}
         disabled={!onSelect}
-        className={`w-full min-h-11 flex flex-col items-center justify-center py-1.5 border ${claim ? 'rounded-t-lg' : 'rounded-lg'} ${
-          blocked ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
+        className={`w-full min-h-11 flex flex-col items-center justify-center py-1.5 border ${claim || held ? 'rounded-t-lg' : 'rounded-lg'} ${
+          blocked ? 'bg-loss/10 border-loss/40' : held ? `bg-bg-raised ${heldBoxBorder(held)}` : 'bg-bg-raised border-border'
         } disabled:opacity-60`}
       >
         {hasPoint && <span className={`text-xs font-semibold ${blocked ? 'line-through text-loss' : ''}`}>{point}</span>}
@@ -49,7 +53,8 @@ function LineCell({
           className={`${hasPoint ? 'text-[11px]' : 'text-xs font-medium'} ${blocked ? 'text-loss' : 'text-primary'}`}
         />
       </button>
-      {claim && <ClaimBanner status={claim} wide={false} />}
+      {claim && <ClaimBanner status={claim} wide={false} attachedBelow={!!held} />}
+      {held && <HeldTag info={held} />}
     </div>
   );
 }
@@ -73,6 +78,7 @@ export function GameLinesTable({
   showTotal = false,
   checkBlocked,
   checkClaimStatus,
+  heldFor,
 }: {
   game: NFLGame;
   onSelectSpread?: (outcome: OddsOutcome) => void;
@@ -80,6 +86,8 @@ export function GameLinesTable({
   showTotal?: boolean;
   checkBlocked?: (marketKey: 'spreads' | 'h2h', outcome: OddsOutcome) => string | null;
   checkClaimStatus?: (marketKey: 'spreads' | 'h2h', outcome: OddsOutcome) => ClaimStatus | null;
+  /** While swapping: the "Yours" tag for the held pick's box. */
+  heldFor?: (marketKey: 'spreads' | 'h2h', outcome: OddsOutcome) => HeldTagInfo | null;
 }) {
   const [tappedReason, setTappedReason] = useState<string | null>(null);
   const { h2h, spreads, totals } = getGameMarkets(game);
@@ -126,6 +134,7 @@ export function GameLinesTable({
             price={awaySpread?.price}
             blocked={awaySpread ? checkBlocked?.('spreads', awaySpread) : null}
             claim={awaySpread ? (checkClaimStatus?.('spreads', awaySpread) ?? null) : null}
+            held={awaySpread ? (heldFor?.('spreads', awaySpread) ?? null) : null}
             onSelect={() => select('spreads', awaySpread, onSelectSpread)}
           />
           {showTotal && <LineCell point={overTotal?.point != null ? `O ${overTotal.point}` : ''} price={overTotal?.price} />}
@@ -134,6 +143,7 @@ export function GameLinesTable({
             price={awayMl?.price}
             blocked={awayMl ? checkBlocked?.('h2h', awayMl) : null}
             claim={awayMl ? (checkClaimStatus?.('h2h', awayMl) ?? null) : null}
+            held={awayMl ? (heldFor?.('h2h', awayMl) ?? null) : null}
             onSelect={() => select('h2h', awayMl, onSelectMoneyline)}
           />
         </div>
@@ -150,6 +160,7 @@ export function GameLinesTable({
             price={homeSpread?.price}
             blocked={homeSpread ? checkBlocked?.('spreads', homeSpread) : null}
             claim={homeSpread ? (checkClaimStatus?.('spreads', homeSpread) ?? null) : null}
+            held={homeSpread ? (heldFor?.('spreads', homeSpread) ?? null) : null}
             onSelect={() => select('spreads', homeSpread, onSelectSpread)}
           />
           {showTotal && <LineCell point={underTotal?.point != null ? `U ${underTotal.point}` : ''} price={underTotal?.price} />}
@@ -158,6 +169,7 @@ export function GameLinesTable({
             price={homeMl?.price}
             blocked={homeMl ? checkBlocked?.('h2h', homeMl) : null}
             claim={homeMl ? (checkClaimStatus?.('h2h', homeMl) ?? null) : null}
+            held={homeMl ? (heldFor?.('h2h', homeMl) ?? null) : null}
             onSelect={() => select('h2h', homeMl, onSelectMoneyline)}
           />
         </div>

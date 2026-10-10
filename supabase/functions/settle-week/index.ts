@@ -5,6 +5,13 @@
 // commissioner button, no client action of any kind. A `week`/`season` body
 // still works for manual/testing invocation, same as before.
 //
+// Pushes (1.2.10): right after matchup scores are written, a Settled-bet alert
+// goes to each team owner for the picks that settled in this run (one push per
+// team, with the score gap), and the run that closes a week sends Week results
+// (score, record, standing). Both follow _shared/leaguePrefs.ts's notifAllowed
+// (global switch, per-league override, mute), are claimed once in
+// notification_dedup, and never stop settlement if APNs fails.
+//
 // Per league, per pass:
 //   1. Grade every pending wager whose game is now final (unchanged from the
 //      previous version of this file).
@@ -60,6 +67,9 @@ import {
 } from '../_shared/momentsReal.ts';
 import { encodePerfectWeek, signedMoney } from '../_shared/perfectAnnouncement.ts';
 import { encodeSkunkedWeek, isSkunkedWagers } from '../_shared/skunkedAnnouncement.ts';
+import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
+import { notifAllowed } from '../_shared/leaguePrefs.ts';
+import { buildSettledAlert, buildWeekResult, type SettledPick } from '../_shared/settleAlerts.ts';
 import { checkRosterRules, effectiveEmptyFloor, type CorrelationRuleReal, type PenaltyPickReal } from '../_shared/rosterPenalties.ts';
 import {
   type PlayoffFieldSize,
@@ -542,7 +552,7 @@ Deno.serve(async (req) => {
     // fire from an explicit manual call.
     let leaguesQuery = supabase
       .from('leagues')
-      .select('id, current_week, season_phase, bracket, settings, pending_settings, prize_pool, target_team_count, season_start_week');
+      .select('id, name, current_week, season_phase, bracket, settings, pending_settings, prize_pool, target_team_count, season_start_week');
     // strayIds: leagues one week ahead of weekStr, included here so a wager left
     // pending on weekStr after its league already advanced still gets a grading
     // pass (see strayWeekLeagueIds above). The season-advancement write near the
@@ -590,7 +600,7 @@ Deno.serve(async (req) => {
       // Fetched up-front (not just later for standings) so a team that placed
       // zero picks all week -- and thus has no weekly_rosters row at all -- can
       // still be caught by the incomplete-lineup penalty below.
-      const { data: teams } = await supabase.from('teams').select('id, conference_id, team_name, is_simulated').eq('league_id', leagueId);
+      const { data: teams } = await supabase.from('teams').select('id, conference_id, team_name, abbrev, membership_id, is_simulated').eq('league_id', leagueId);
       const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
 
       const { data: rosterRows } = await supabase
@@ -616,6 +626,9 @@ Deno.serve(async (req) => {
       const wagersThisWeekByTeam = new Map<string, WagerRow[]>();
       const lostDistanceByWagerId = new Map<string, { raw: number; ratio: number } | null>();
       let gradedCount = 0;
+      // Wagers this run moved to a final status (graded, voided, or a lost pick voided by a game-exit
+      // flag), for the Settled-bet alerts sent once the matchup scores below are written.
+      const settledThisRun = new Set<string>();
       // Previously this RPC call's result was never checked -- gradedCount and
       // teamTotal got incremented unconditionally, so a failing write (RLS,
       // a signature mismatch, settle_wager not existing at all -- this repo's
@@ -675,6 +688,7 @@ Deno.serve(async (req) => {
               skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'voided-game-exit-flag' });
               wager.status = 'voided';
               wager.settled_profit = 0;
+              settledThisRun.add(wager.id);
               continue; // voided = $0, nothing to add to teamTotal
             }
           }
@@ -754,6 +768,7 @@ Deno.serve(async (req) => {
             skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: 'voided-no-stat' });
             wager.status = 'voided';
             wager.settled_profit = 0;
+            settledThisRun.add(wager.id);
             continue; // profit is 0 either way, nothing to add to teamTotal
           }
           const { status, profit } = gradeWager(wager, game, stat);
@@ -768,6 +783,7 @@ Deno.serve(async (req) => {
           skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: `graded-${status}` });
           wager.status = status;
           wager.settled_profit = profit;
+          settledThisRun.add(wager.id);
           if (status === 'lost') lostDistanceByWagerId.set(wager.id, lostBetDistance(wager, game, stat));
         }
         // Incomplete-lineup penalty, ported from engine/scoring.ts's
@@ -876,6 +892,82 @@ Deno.serve(async (req) => {
 
       }
 
+      // --- Push alerts (1.2.10). Owners and their notification prefs are loaded once per league, and
+      // only if an alert might go out. AI teams have no owner and are skipped. A push is a courtesy:
+      // any failure here (APNs secrets missing, a dead token) is logged and never stops settlement.
+      const leagueName = ((league as any).name as string | null) ?? 'your league';
+      const teamLabel = (teamId: string) => {
+        const t = (teams ?? []).find((x: any) => x.id === teamId) as any;
+        return String(t?.abbrev ?? t?.team_name ?? 'your opponent');
+      };
+      const oppByTeam = new Map<string, string>();
+      for (const m of weekMatchups ?? []) {
+        oppByTeam.set(m.team_a_id, m.team_b_id);
+        oppByTeam.set(m.team_b_id, m.team_a_id);
+      }
+      let ownerCache: Map<string, { profileId: string; prefs: unknown }> | null = null;
+      const ownersByTeam = async () => {
+        if (ownerCache) return ownerCache;
+        const owners = new Map<string, { profileId: string; prefs: unknown }>();
+        ownerCache = owners;
+        const human = (teams ?? []).filter((t: any) => !t.is_simulated && t.membership_id) as any[];
+        if (human.length === 0) return owners;
+        const { data: mems } = await supabase.from('league_memberships').select('id, profile_id').in('id', human.map((t) => t.membership_id));
+        const profileByMembership = new Map((mems ?? []).map((m: any) => [m.id as string, m.profile_id as string]));
+        const profileIds = [...new Set(profileByMembership.values())];
+        if (profileIds.length === 0) return owners;
+        const { data: profs } = await supabase.from('profiles').select('id, notification_prefs').in('id', profileIds);
+        const prefsById = new Map((profs ?? []).map((p: any) => [p.id as string, p.notification_prefs as unknown]));
+        for (const t of human) {
+          const pid = profileByMembership.get(t.membership_id as string);
+          if (pid) owners.set(t.id as string, { profileId: pid, prefs: prefsById.get(pid) });
+        }
+        return owners;
+      };
+      const pushSafely = async (profileId: string, label: string, message: Parameters<typeof sendPushToProfile>[2]) => {
+        try {
+          await sendPushToProfile(supabase, profileId, message);
+        } catch (pushErr) {
+          errors.push(`${label}: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`);
+        }
+      };
+
+      // Settled-bet alerts: one push per team for the picks that settled in THIS run, with where the
+      // matchup stands now (the score gap only, so a hide-picks league leaks nothing). Each pick is
+      // claimed once per final status, so a rerun never repeats it, and a lost pick a game-exit flag
+      // later voids gets its own short "voided" alert.
+      if (settledThisRun.size > 0) {
+        const owners = await ownersByTeam();
+        for (const [teamId, ws] of wagersThisWeekByTeam) {
+          const owner = owners.get(teamId);
+          if (!owner || !notifAllowed(owner.prefs, leagueId, 'wagerSettled')) continue;
+          const fresh: SettledPick[] = [];
+          for (const w of ws) {
+            if (!settledThisRun.has(w.id)) continue;
+            try {
+              if (!(await claimNotification(supabase, `settled:${w.id}:${w.status}`))) continue;
+            } catch (claimErr) {
+              errors.push(`settled alert ${w.id}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+              continue;
+            }
+            fresh.push(w as SettledPick);
+          }
+          if (fresh.length === 0) continue;
+          const oppId = oppByTeam.get(teamId);
+          const mine = weeklyScoreByTeam.get(teamId);
+          const theirs = oppId ? weeklyScoreByTeam.get(oppId) : undefined;
+          const matchup = seasonStarted && oppId && mine != null && theirs != null ? { mine, theirs, oppName: teamLabel(oppId) } : null;
+          const { title, body } = buildSettledAlert(fresh, matchup);
+          await pushSafely(owner.profileId, `settled alert ${teamId}`, {
+            title,
+            subtitle: leagueName,
+            body,
+            threadId: leagueId,
+            data: { screen: 'matchup', leagueId, week: weekStr, teamId },
+          });
+        }
+      }
+
       // Recompute standings from scratch across the whole season.
       // (teams was already fetched above, before the roster-grading loop.)
       const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
@@ -942,6 +1034,17 @@ Deno.serve(async (req) => {
       // RLS) rather than through post_system_activity, which requires auth.uid() to
       // resolve a commissioner -- there is none under this function's service-role
       // key (confirmed via pg_get_functiondef before writing this, see chat). -----
+      // Same test as src/engine/perfectWeek.ts's isPerfectWeek (also used by the week-results push).
+      const isPerfectWeekFor = (teamId: string): boolean => {
+        const ws = wagersThisWeekByTeam.get(teamId) ?? [];
+        if (ws.length === 0 || ws.length < totalSlots || penalizedTeamIds.has(teamId)) return false;
+        if (ws.some((w) => w.status === 'pending' || w.status === 'lost')) return false;
+        if (!ws.some((w) => w.status === 'won')) return false;
+        const staked = ws.reduce((sum, w) => sum + (w.stake ?? 0), 0);
+        if (Math.abs(staked - settings.weeklyCredits) > 0.01) return false;
+        return new Set(ws.map((w) => w.game_id)).size >= (settings.minGamesPerRoster ?? 2);
+      };
+
       if (weekComplete) {
         const rawSettings = (league.settings && typeof league.settings === 'object') ? (league.settings as Record<string, unknown>) : {};
         const momentSettings: MomentSettingsReal =
@@ -1016,12 +1119,7 @@ Deno.serve(async (req) => {
           for (const t of teams ?? []) {
             const teamId = (t as any).id as string;
             const ws = wagersThisWeekByTeam.get(teamId) ?? [];
-            if (ws.length === 0 || ws.length < totalSlots || penalizedTeamIds.has(teamId)) continue;
-            if (ws.some((w) => w.status === 'pending' || w.status === 'lost')) continue;
-            if (!ws.some((w) => w.status === 'won')) continue;
-            const staked = ws.reduce((sum, w) => sum + (w.stake ?? 0), 0);
-            if (Math.abs(staked - settings.weeklyCredits) > 0.01) continue;
-            if (new Set(ws.map((w) => w.game_id)).size < (settings.minGamesPerRoster ?? 2)) continue;
+            if (!isPerfectWeekFor(teamId)) continue;
             const dedupKey = `perfect:${leagueId}:${weekStr}:${teamId}`;
             let claimed: boolean;
             try {
@@ -1198,13 +1296,55 @@ Deno.serve(async (req) => {
             leagueUpdate.pending_settings = null;
           }
         }
-        const { error: updateErr } = await supabase
+        const { data: advancedRows, error: updateErr } = await supabase
           .from('leagues')
           .update(leagueUpdate)
           .eq('id', leagueId)
           .eq('current_week', weekStr)
-          .eq('season_phase', league.season_phase);
+          .eq('season_phase', league.season_phase)
+          .select('id');
         advancement = { from: `${league.season_phase} ${weekStr}`, to: `${newPhase} ${newWeek}`, updateErr: updateErr?.message ?? null };
+
+        // Week results push: only from the run that actually closed the week (the guarded update
+        // above matched a row), so a forced rerun of an old week or the stray-week pass never sends
+        // one. Claimed per team as well, in case two runs overlap.
+        if (!updateErr && (advancedRows ?? []).length > 0 && seasonStarted) {
+          const owners = await ownersByTeam();
+          const weekText = /^[0-9]+$/.test(weekStr) ? `Week ${weekStr}` : weekStr;
+          const regular = league.season_phase === 'regular';
+          for (const [teamId, owner] of owners) {
+            if (!notifAllowed(owner.prefs, leagueId, 'weekResults')) continue;
+            const oppId = oppByTeam.get(teamId);
+            const mine = weeklyScoreByTeam.get(teamId);
+            const theirs = oppId ? weeklyScoreByTeam.get(oppId) : undefined;
+            if (!oppId || mine == null || theirs == null) continue; // no matchup this week (a playoff bye or elimination)
+            try {
+              if (!(await claimNotification(supabase, `week-results:${leagueId}:${weekStr}:${teamId}`))) continue;
+            } catch (claimErr) {
+              errors.push(`week results ${teamId}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+              continue;
+            }
+            const line = standingsMap.get(teamId);
+            const rank = sorted.findIndex((s) => s.teamId === teamId) + 1;
+            const { title, body } = buildWeekResult({
+              weekLabel: weekText,
+              mine,
+              theirs,
+              oppName: teamLabel(oppId),
+              standing: regular && line && rank > 0 ? { wins: line.wins, losses: line.losses, ties: line.ties, rank, teamCount: sorted.length } : null,
+              perfect: isPerfectWeekFor(teamId),
+              skunked: isSkunkedWagers(wagersThisWeekByTeam.get(teamId) ?? [], totalSlots),
+            });
+            await pushSafely(owner.profileId, `week results ${teamId}`, {
+              title,
+              subtitle: leagueName,
+              body,
+              threadId: leagueId,
+              collapseId: `week-${leagueId.slice(0, 8)}-${weekStr}-${teamId.slice(0, 8)}`,
+              data: { screen: 'matchup', leagueId, week: weekStr, teamId },
+            });
+          }
+        }
       }
 
       summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement, errors, skipped });

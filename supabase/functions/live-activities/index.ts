@@ -31,7 +31,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
-import { favoriteLeagueId, leagueMuted } from '../_shared/leaguePrefs.ts';
+import { favoriteLeagueId, leagueMuted, notifAllowed } from '../_shared/leaguePrefs.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
 
@@ -82,8 +82,6 @@ function settingsSliceFrom(raw: unknown) {
 }
 /** Above any league's own ranking (at most 95) and below the island switch's 100. */
 const FAVORITE_RELEVANCE = 98;
-const prefsAllow = (raw: unknown, key: 'lineupReminders' | 'liveActivities') =>
-  !(raw && typeof raw === 'object' && (raw as Record<string, unknown>)[key] === false);
 
 type Kind = 'lineup' | 'score';
 interface Desired {
@@ -366,8 +364,9 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
       const profileId = profileByMembership.get(team.membership_id as string);
       if (!profileId || !profileIds.includes(profileId)) continue;
       const prefs = prefsByProfile.get(profileId);
-      if (!prefsAllow(prefs, 'liveActivities')) continue;
-      if (leagueMuted(prefs, leagueId)) continue; // muted from the league switcher: no activity, and any open one is closed
+      // Global switch, the league's own choice (League notifications) and mute in one check. When
+      // it says no, nothing is desired here, so any open activity for this league is closed below.
+      if (!notifAllowed(prefs, leagueId, 'liveActivities')) continue;
 
       const wagers = wagersByTeamWeek.get(`${team.id}|${week}`) ?? [];
       const mu = matchupByTeamWeek.get(`${team.id}|${week}`);
@@ -384,7 +383,7 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
       };
 
       // ---- lineup activity
-      if (prefsAllow(prefs, 'lineupReminders')) {
+      if (notifAllowed(prefs, leagueId, 'lineupReminders')) {
         const picksIn = wagers.length;
         const allocated = wagers.reduce((s, w) => s + (w.stake ?? 0), 0);
         const distinctGames = new Set(wagers.map((w) => w.game_id).filter(Boolean)).size;
@@ -752,7 +751,14 @@ Deno.serve(async (req: Request) => {
   }
   for (const [, row] of stale) {
     const last = (row.last_state as Record<string, unknown>) ?? { ...zeroState };
-    const muted = leagueMuted(mutedPrefs.get(row.profile_id as string), row.league_id as string);
+    // Muted, or turned off for this league (live scores, or lineup reminders for the lineup island):
+    // clear it right away instead of lingering, and let it start again once turned back on.
+    const rowPrefs = mutedPrefs.get(row.profile_id as string);
+    const rowLeague = row.league_id as string;
+    const muted =
+      leagueMuted(rowPrefs, rowLeague) ||
+      !notifAllowed(rowPrefs, rowLeague, 'liveActivities') ||
+      (row.kind === 'lineup' && !notifAllowed(rowPrefs, rowLeague, 'lineupReminders'));
     await endActivity(row, { ...last, phase: row.kind === 'score' ? 'final' : 'locked' }, muted ? 1 : 5 * 60, muted);
   }
 

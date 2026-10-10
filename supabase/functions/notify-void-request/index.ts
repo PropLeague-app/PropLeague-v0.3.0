@@ -14,7 +14,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
-import { profileMutedLeague } from '../_shared/leaguePrefs.ts';
+import { profileMutedLeague, profileNotifAllowed } from '../_shared/leaguePrefs.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,13 +82,16 @@ Deno.serve(async (req: Request) => {
   if (event === 'new') {
     if (callerId !== reqRow.requested_by || reqRow.status !== 'pending') return json({ ok: false, error: 'forbidden' }, 403);
     if (!commissionerProfileId || commissionerProfileId === callerId) return json({ ok: true, sent: 0 });
-    // A league muted from the switcher stays quiet. The request still waits in the app's own list.
-    if (await profileMutedLeague(supabase, commissionerProfileId, reqRow.league_id as string)) return json({ ok: true, sent: 0 });
+    // A league muted from the switcher, or with Void requests turned off in its League notifications,
+    // stays quiet. The request still waits in the app's own list.
+    if (!(await profileNotifAllowed(supabase, commissionerProfileId, reqRow.league_id as string, 'voidRequests'))) return json({ ok: true, sent: 0 });
     if (!(await claimNotification(supabase, `void-req:${requestId}:new`))) return json({ ok: true, sent: 0 });
     const r = await sendPushToProfile(supabase, commissionerProfileId, {
       title: 'Void request',
       subtitle: leagueName,
       body: `Void ${player}'s picks for ${weekLabel}? Review in Settings.`,
+      threadId: reqRow.league_id as string,
+      data: { screen: 'void-requests', leagueId: reqRow.league_id as string },
     });
     return json({ ok: true, sent: r.sent });
   }
@@ -105,6 +108,8 @@ Deno.serve(async (req: Request) => {
     body: approved
       ? `${player}'s missed Over and Anytime TD picks (${weekLabel}) are being voided.`
       : `Your void request for ${player} (${weekLabel}) was denied.`,
+    threadId: reqRow.league_id as string,
+    data: { screen: 'void-requests', leagueId: reqRow.league_id as string },
   });
   return json({ ok: true, sent: r.sent });
 });

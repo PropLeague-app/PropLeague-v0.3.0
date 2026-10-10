@@ -8,6 +8,7 @@ import { applyThemeMode } from './services/theme';
 import { watchSystemAppearance } from './hooks/useResolvedTheme';
 import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
+import { PushRouter } from './components/layout/PushRouter';
 
 import { Welcome } from './screens/onboarding/Welcome';
 import { HowItWorks } from './screens/onboarding/HowItWorks';
@@ -119,6 +120,8 @@ function AppShellLayout() {
           open the app to (see chat, Sept 2026 -- same "lives at the shell level"
           reasoning as push-notification registration in App() below). */}
       <WeeklyResultReveal />
+      {/* Follows a tapped push to its league and screen (services/pushRoute.ts). */}
+      <PushRouter />
     </MobileShell>
   );
 }

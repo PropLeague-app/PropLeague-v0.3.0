@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_NOTIFICATION_PREFS, applyLeaguePrefChange } from '../notificationPrefs';
-import { favoriteLeagueId, leagueMuted } from '../../../supabase/functions/_shared/leaguePrefs';
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  applyLeagueChoicesToAll,
+  applyLeagueOverride,
+  applyLeaguePrefChange,
+  leagueHasOverrides,
+  notificationAllowed,
+  type LeagueNotifType,
+  type NotificationPrefs,
+} from '../notificationPrefs';
+import { favoriteLeagueId, leagueMuted, notifAllowed } from '../../../supabase/functions/_shared/leaguePrefs';
 
 const base = DEFAULT_NOTIFICATION_PREFS;
 
@@ -60,6 +69,76 @@ describe('server league prefs readers', () => {
     for (const raw of [null, undefined, {}, 'x', { mutedLeagueIds: 'A', favoriteLeagueId: 5 }]) {
       expect(favoriteLeagueId(raw)).toBeNull();
       expect(leagueMuted(raw, 'A')).toBe(false);
+    }
+  });
+});
+
+const TYPES: LeagueNotifType[] = ['lineupReminders', 'wagerSettled', 'weekResults', 'liveActivities', 'voidRequests'];
+
+describe('per-league notification overrides', () => {
+  it('a league follows the global switches until it is changed', () => {
+    const p: NotificationPrefs = { ...base, wagerSettled: false };
+    expect(notificationAllowed(p, 'A', 'wagerSettled')).toBe(false);
+    expect(notificationAllowed(p, 'A', 'weekResults')).toBe(true);
+    expect(notificationAllowed(p, 'A', 'voidRequests')).toBe(true);
+    expect(leagueHasOverrides(p, 'A')).toBe(false);
+  });
+
+  it('stores only differences from the global switch', () => {
+    let p = applyLeagueOverride(base, 'A', 'weekResults', false);
+    expect(p.leagueOverrides).toEqual({ A: { weekResults: false } });
+    expect(notificationAllowed(p, 'A', 'weekResults')).toBe(false);
+    expect(notificationAllowed(p, 'B', 'weekResults')).toBe(true);
+    expect(leagueHasOverrides(p, 'A')).toBe(true);
+    p = applyLeagueOverride(p, 'A', 'weekResults', true); // back to the default: nothing stored
+    expect(p.leagueOverrides).toEqual({});
+  });
+
+  it('mute wins over any league choice', () => {
+    let p = applyLeagueOverride({ ...base, liveActivities: false }, 'A', 'liveActivities', true);
+    expect(notificationAllowed(p, 'A', 'liveActivities')).toBe(true);
+    p = applyLeaguePrefChange(p, 'A', { muted: true });
+    for (const t of TYPES) expect(notificationAllowed(p, 'A', t)).toBe(false);
+  });
+
+  it('use for all: this league becomes the default, other overrides clear, void requests and mutes stay', () => {
+    let p: NotificationPrefs = { ...base, mutedLeagueIds: ['C'], favoriteLeagueId: 'B' };
+    p = applyLeagueOverride(p, 'A', 'wagerSettled', false);
+    p = applyLeagueOverride(p, 'A', 'voidRequests', false);
+    p = applyLeagueOverride(p, 'B', 'lineupReminders', false);
+    p = applyLeagueOverride(p, 'B', 'voidRequests', false);
+    const all = applyLeagueChoicesToAll(p, 'A');
+    expect(all.wagerSettled).toBe(false);
+    expect(all.lineupReminders).toBe(true);
+    expect(all.leagueOverrides).toEqual({ A: { voidRequests: false }, B: { voidRequests: false } });
+    expect(all.mutedLeagueIds).toEqual(['C']);
+    expect(all.favoriteLeagueId).toBe('B');
+    for (const t of TYPES.filter((x) => x !== 'voidRequests')) {
+      expect(notificationAllowed(all, 'A', t)).toBe(notificationAllowed(p, 'A', t));
+      expect(notificationAllowed(all, 'B', t)).toBe(notificationAllowed(all, 'A', t));
+    }
+  });
+
+  it('the server reads saved prefs the same way the app does', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const pickBool = () => (rnd() < 0.5);
+    for (let i = 0; i < 300; i++) {
+      let p: NotificationPrefs = {
+        ...base,
+        lineupReminders: pickBool(),
+        wagerSettled: pickBool(),
+        weekResults: pickBool(),
+        liveActivities: pickBool(),
+        mutedLeagueIds: rnd() < 0.3 ? ['A'] : [],
+      };
+      for (const t of TYPES) if (rnd() < 0.4) p = applyLeagueOverride(p, rnd() < 0.5 ? 'A' : 'B', t, pickBool());
+      const saved = JSON.parse(JSON.stringify(p));
+      for (const league of ['A', 'B', 'C']) for (const t of TYPES) expect(notifAllowed(saved, league, t)).toBe(notificationAllowed(p, league, t));
+    }
+    // Old or missing prefs: everything on.
+    for (const raw of [null, undefined, {}, { leagueOverrides: 'x' }, { leagueOverrides: { A: 'x' } }]) {
+      for (const t of TYPES) expect(notifAllowed(raw, 'A', t)).toBe(true);
     }
   });
 });

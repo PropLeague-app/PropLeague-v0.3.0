@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock } from 'lucide-react';
+import { ArrowLeftRight, Lock } from 'lucide-react';
 import type { LeagueSettings, NFLGame, PrizePool, RosterSlotState, SlotValidation, WeekId, Wager } from '../../types';
 import { nflTeamById } from '../../data/nflTeams';
 import { PositionBadge, positionFillClasses } from '../common/PositionBadge';
@@ -151,7 +151,21 @@ export function RosterSlotCard({
           {locked ? (
             <span title="Locked" className="text-text-muted"><Lock size={14} /></span>
           ) : (
-            <button onClick={onRemove} className="text-text-muted text-xs">✕</button>
+            <>
+              {/* ⇄ swap: browse this slot's markets without losing the pick. It is only replaced once a
+                  new pick is confirmed on the bet slip (see engine/pickSwap.ts). */}
+              {wager.status === 'pending' && (
+                <button
+                  onClick={() => navigate(`/lineup/market/${slot.slotId}`)}
+                  aria-label="Swap pick"
+                  title="Swap pick"
+                  className="text-text-muted px-0.5"
+                >
+                  <ArrowLeftRight size={14} />
+                </button>
+              )}
+              <button onClick={onRemove} aria-label="Remove pick" className="text-text-muted text-xs">✕</button>
+            </>
           )}
         </div>
       </div>

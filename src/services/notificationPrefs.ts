@@ -11,6 +11,14 @@ import { supabase } from '../lib/supabaseClient';
  * value means 'needs_work', the original behavior. */
 export type SlateUpdates = 'needs_work' | 'trailing' | 'every_slate';
 
+/** The kinds of notification a league can set for itself (League notifications, in the league
+ * switcher). The first four follow the global switches unless a league overrides them. */
+export type LeagueNotifType = 'lineupReminders' | 'wagerSettled' | 'weekResults' | 'liveActivities' | 'voidRequests';
+/** The four that also have a global switch, so "Use for all my leagues" can carry them over. */
+export const GLOBAL_NOTIF_TYPES = ['lineupReminders', 'wagerSettled', 'weekResults', 'liveActivities'] as const;
+export type GlobalNotifType = (typeof GLOBAL_NOTIF_TYPES)[number];
+export type LeagueOverride = Partial<Record<LeagueNotifType, boolean>>;
+
 export interface NotificationPrefs {
   lineupReminders: boolean;
   slateUpdates: SlateUpdates;
@@ -22,11 +30,14 @@ export interface NotificationPrefs {
   favoriteLeagueId: string | null;
   /** Leagues muted from the league switcher: no pushes and no Live Activities for them. */
   mutedLeagueIds: string[];
+  /** Per-league choices that differ from the global switches (only differences are stored).
+   * Void requests are always per league: on unless a league turns them off. */
+  leagueOverrides: Record<string, LeagueOverride>;
 }
 
-// Mirrors the server-side default in send-roster-reminders/settle-week's
-// notifPrefsAllow: null/missing prefs (every existing user, until they touch
-// this screen) means every notification type is on.
+// Mirrors the server-side default in _shared/leaguePrefs.ts's notifAllowed
+// (used by every push sender): null/missing prefs (every existing user, until
+// they touch this screen) means every notification type is on.
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   lineupReminders: true,
   slateUpdates: 'needs_work',
@@ -35,6 +46,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   liveActivities: true,
   favoriteLeagueId: null,
   mutedLeagueIds: [],
+  leagueOverrides: {},
 };
 
 /** Keeps the two league fields well formed, whatever an older or odd saved blob holds. */
@@ -44,7 +56,82 @@ function normalize(raw: Partial<NotificationPrefs>): NotificationPrefs {
     ...merged,
     favoriteLeagueId: typeof merged.favoriteLeagueId === 'string' && merged.favoriteLeagueId !== '' ? merged.favoriteLeagueId : null,
     mutedLeagueIds: Array.isArray(merged.mutedLeagueIds) ? merged.mutedLeagueIds.filter((id) => typeof id === 'string') : [],
+    leagueOverrides: normalizeOverrides(merged.leagueOverrides),
   };
+}
+
+const LEAGUE_NOTIF_TYPES: LeagueNotifType[] = [...GLOBAL_NOTIF_TYPES, 'voidRequests'];
+
+function normalizeOverrides(raw: unknown): Record<string, LeagueOverride> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, LeagueOverride> = {};
+  for (const [leagueId, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const clean: LeagueOverride = {};
+    for (const t of LEAGUE_NOTIF_TYPES) {
+      const v = (entry as Record<string, unknown>)[t];
+      if (typeof v === 'boolean') clean[t] = v;
+    }
+    if (Object.keys(clean).length > 0) out[leagueId] = clean;
+  }
+  return out;
+}
+
+/** The global default for a type (void requests have none, they default to on). */
+function globalValue(prefs: NotificationPrefs, type: LeagueNotifType): boolean {
+  return type === 'voidRequests' ? true : prefs[type] !== false;
+}
+
+/**
+ * Does this league get this kind of notification? Mute wins, then the league's own choice, then the
+ * global switch. Mirrors notifAllowed in supabase/functions/_shared/leaguePrefs.ts, which is what
+ * actually decides on the server.
+ */
+export function notificationAllowed(prefs: NotificationPrefs, leagueId: string, type: LeagueNotifType): boolean {
+  if (prefs.mutedLeagueIds.includes(leagueId)) return false;
+  const override = prefs.leagueOverrides[leagueId]?.[type];
+  return typeof override === 'boolean' ? override : globalValue(prefs, type);
+}
+
+/** Does this league differ from the global switches in any way (shown as "Custom" in the switcher)? */
+export function leagueHasOverrides(prefs: NotificationPrefs, leagueId: string): boolean {
+  const entry = prefs.leagueOverrides[leagueId] ?? {};
+  return LEAGUE_NOTIF_TYPES.some((t) => typeof entry[t] === 'boolean' && entry[t] !== globalValue(prefs, t));
+}
+
+/**
+ * Sets one type for one league. A value equal to the global default is stored as "no override", so
+ * the league keeps following the global switch for that type.
+ */
+export function applyLeagueOverride(prefs: NotificationPrefs, leagueId: string, type: LeagueNotifType, value: boolean): NotificationPrefs {
+  const entry: LeagueOverride = { ...prefs.leagueOverrides[leagueId] };
+  if (value === globalValue(prefs, type)) delete entry[type];
+  else entry[type] = value;
+  const leagueOverrides = { ...prefs.leagueOverrides };
+  if (Object.keys(entry).length > 0) leagueOverrides[leagueId] = entry;
+  else delete leagueOverrides[leagueId];
+  return { ...prefs, leagueOverrides };
+}
+
+/**
+ * "Use for all my leagues": this league's choices for the four global types become the global
+ * switches, and every league's overrides for those types are cleared, so every league now matches.
+ * Void requests (always per league), mutes and the favorite are left as they are.
+ */
+export function applyLeagueChoicesToAll(prefs: NotificationPrefs, leagueId: string): NotificationPrefs {
+  const next: NotificationPrefs = { ...prefs };
+  for (const t of GLOBAL_NOTIF_TYPES) {
+    const override = prefs.leagueOverrides[leagueId]?.[t];
+    next[t] = typeof override === 'boolean' ? override : prefs[t] !== false;
+  }
+  const leagueOverrides: Record<string, LeagueOverride> = {};
+  for (const [id, entry] of Object.entries(prefs.leagueOverrides)) {
+    const kept: LeagueOverride = {};
+    if (typeof entry.voidRequests === 'boolean') kept.voidRequests = entry.voidRequests;
+    if (Object.keys(kept).length > 0) leagueOverrides[id] = kept;
+  }
+  next.leagueOverrides = leagueOverrides;
+  return next;
 }
 
 export interface LeaguePrefChange {
@@ -138,6 +225,23 @@ export async function updateLeaguePref(
 ): Promise<{ ok: true; prefs: NotificationPrefs } | { ok: false; error: string }> {
   const current = await fetchNotificationPrefs(profileId);
   const next = applyLeaguePrefChange(current, leagueId, change);
+  const { error } = await supabase.from('profiles').update({ notification_prefs: next }).eq('id', profileId);
+  if (error) return { ok: false, error: error.message };
+  remember(profileId, next);
+  return { ok: true, prefs: next };
+}
+
+/**
+ * Saves a change made on League notifications (one type for one league, or "Use for all my
+ * leagues"). Like updateLeaguePref, it starts from the saved prefs on the server so a change made on
+ * another device is not overwritten, and returns the prefs as saved.
+ */
+export async function updatePrefsWith(
+  profileId: string,
+  change: (prefs: NotificationPrefs) => NotificationPrefs,
+): Promise<{ ok: true; prefs: NotificationPrefs } | { ok: false; error: string }> {
+  const current = await fetchNotificationPrefs(profileId);
+  const next = change(current);
   const { error } = await supabase.from('profiles').update({ notification_prefs: next }).eq('id', profileId);
   if (error) return { ok: false, error: error.message };
   remember(profileId, next);

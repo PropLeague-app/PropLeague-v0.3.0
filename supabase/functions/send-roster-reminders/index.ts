@@ -12,7 +12,8 @@
 //   trailing    -> also when the team is behind in its matchup
 //   every_slate -> before every slate
 // profiles.notification_prefs.lineupReminders === false still silences all of
-// it (master switch).
+// it (master switch), unless a league's own override (leagueOverrides, set from
+// League notifications in the league switcher) says otherwise. See notifAllowed.
 //
 // "Needs work" is judged from the roster itself, NOT the `submitted` flag
 // (any pick edit resets that flag, which is why full rosters used to be
@@ -36,7 +37,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
-import { leagueMuted } from '../_shared/leaguePrefs.ts';
+import { notifAllowed } from '../_shared/leaguePrefs.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
 const REMINDER_WINDOW_MIN_MS = 45 * 60 * 1000; // remind once kickoff is this close...
@@ -57,10 +58,6 @@ type SlateMode = 'needs_work' | 'trailing' | 'every_slate';
 function slateModeFrom(rawPrefs: unknown): SlateMode {
   const v = rawPrefs && typeof rawPrefs === 'object' ? (rawPrefs as Record<string, unknown>).slateUpdates : null;
   return v === 'trailing' || v === 'every_slate' ? v : 'needs_work';
-}
-function remindersEnabled(rawPrefs: unknown): boolean {
-  if (!rawPrefs || typeof rawPrefs !== 'object') return true; // null prefs = every notification on by default
-  return (rawPrefs as Record<string, unknown>).lineupReminders !== false;
 }
 
 // Same shape/defaults as settle-week's SettingsSlice, only the fields this
@@ -190,8 +187,8 @@ Deno.serve(async (req) => {
         const profileId = profileIdByMembership.get(team.membership_id);
         if (!profileId) continue;
         const prefs = prefsByProfile.get(profileId);
-        if (!remindersEnabled(prefs)) continue;
-        if (leagueMuted(prefs, leagueId)) continue; // muted from the league switcher
+        // Global switch, the league's own choice (League notifications) and mute, in one check.
+        if (!notifAllowed(prefs, leagueId, 'lineupReminders')) continue;
         const mode = slateModeFrom(prefs);
 
         // ---- roster state, from the roster itself (not the `submitted` flag)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UserX, ExternalLink, Search, Check, X } from 'lucide-react';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { CollapsibleSection } from './SettingsPrimitives';
@@ -167,7 +167,22 @@ function pickCountText(picks: number, teams: number): string {
  * flag a player directly, which skips the queue. Approving or flagging makes the same flag settle-week
  * already reads: it voids that player's Over / Anytime TD picks that did not hit (Unders and picks that
  * already hit are never touched) and posts a League Update with the reason. */
-export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId: string; week: WeekId; isCommissioner: boolean }) {
+export function VoidRequestsCard({
+  leagueId,
+  week,
+  isCommissioner,
+  openOnMount = false,
+}: {
+  leagueId: string;
+  week: WeekId;
+  isCommissioner: boolean;
+  /** Opened from a void request push: start open and scrolled into view. */
+  openOnMount?: boolean;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (openOnMount) cardRef.current?.scrollIntoView({ block: 'center' });
+  }, [openOnMount]);
   const weekStr = String(week);
   const statsByName = useAppStore((s) => s.realPlayerStatsByWeek[weekStr]);
   const loadStats = useAppStore((s) => s.loadRealPlayerStatsForWeek);
@@ -297,8 +312,9 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
       : 'Ask to void a player who left early';
 
   return (
-    <>
+    <div ref={cardRef}>
       <CollapsibleSection
+        defaultOpen={openOnMount}
         title="Void Requests"
         variant="action"
         actionLabel={isCommissioner ? 'Review' : 'Request'}
@@ -650,6 +666,6 @@ export function VoidRequestsCard({ leagueId, week, isCommissioner }: { leagueId:
           onClose={() => setConfirmOpen(false)}
         />
       )}
-    </>
+    </div>
   );
 }

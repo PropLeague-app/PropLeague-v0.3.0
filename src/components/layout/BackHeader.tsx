@@ -22,6 +22,7 @@ export function BackHeader({
   fallback = '/home',
   right,
   onBack,
+  below,
 }: {
   title: string;
   fallback?: string;
@@ -31,6 +32,8 @@ export function BackHeader({
   right?: ReactNode;
   /** Replaces the default back behavior, e.g. to ask before discarding unsaved edits. */
   onBack?: () => void;
+  /** Hangs just under the header and scrolls with it (it stays in view), e.g. a TopToast. */
+  below?: ReactNode;
 }) {
   const navigate = useNavigate();
   return (
@@ -44,6 +47,7 @@ export function BackHeader({
       </button>
       <h1 className="text-base font-bold truncate flex-1">{title}</h1>
       {right}
+      {below}
     </div>
   );
 }

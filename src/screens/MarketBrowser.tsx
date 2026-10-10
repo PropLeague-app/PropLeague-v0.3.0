@@ -2,7 +2,7 @@ import { activeMarketRules, marketBlockReason, marketSlotCapReason } from '../en
 import { PillSelect } from '../components/common/PillSelect';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { ArrowLeftRight, Lock, Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { getPlayerPropGroups } from '../services/oddsService';
@@ -19,6 +19,11 @@ import { EmptyState } from '../components/common/EmptyState';
 import { goBack } from '../components/layout/BackHeader';
 import { findClaimingTeam, claimBlockReason, claimHolders } from '../engine/duplicatePicks';
 import { activeMultipliers } from '../engine/prizePool';
+import { heldTag } from '../engine/pickSwap';
+import { OddsDisplay } from '../components/common/OddsDisplay';
+import { formatCents } from '../engine/oddsMath';
+import { PositionBadge } from '../components/common/PositionBadge';
+import { pickMarket, pickTitle } from '../components/roster/pickText';
 import type { LeagueTeam, MarketKey, NFLTeam, OddsOutcome } from '../types';
 
 /** Matches a search query against a team's city, nickname, full name, or
@@ -119,6 +124,30 @@ export function MarketBrowser() {
   const remainingBudget =
     league.settings.weeklyCredits - roster.slots.reduce((sum, s) => sum + (s.wager?.stake ?? 0), 0);
 
+  // Swap mode (the ⇄ on a filled slot): the pick stays in the slot until a new one is confirmed on
+  // the bet slip. A pick whose game has started cannot be swapped (the server refuses it too).
+  const held = slot.wager;
+  const heldGame = held ? (realGamesForWeek ?? []).find((g) => g.id === held.gameId) : undefined;
+  const heldLocked = !!held && (held.status !== 'pending' || (!!heldGame && (heldGame.status !== 'upcoming' || new Date(heldGame.kickoff).getTime() <= Date.now())));
+  const heldFor = (gameId: string, marketKey: MarketKey, playerId: string | undefined) => (outcome: OddsOutcome) =>
+    heldTag(held, { gameId, marketKey, playerId, side: outcome.name, point: outcome.point, price: outcome.price });
+
+  if (held && heldLocked) {
+    return (
+      <div className="flex flex-col">
+        <div className="p-4 pb-2 flex items-center gap-2">
+          <button onClick={() => goBack(navigate, '/lineup')} className="text-text-muted flex items-center gap-0.5">
+            <span className="text-xl leading-none">‹</span>
+            <span className="text-sm">Back</span>
+          </button>
+        </div>
+        <div className="px-4 flex items-center gap-2 text-text-muted text-sm">
+          <Lock size={14} /> This pick's game has started, so it is locked in and cannot be swapped.
+        </div>
+      </div>
+    );
+  }
+
   /** Struck-through/red market rows (manual v0.1.1 §3 #7) — checked per-outcome so an
    * alt line the user can still take isn't hidden just because the standard line was
    * claimed by someone else. */
@@ -177,11 +206,15 @@ export function MarketBrowser() {
             <span className="text-xl leading-none">‹</span>
             <span className="text-sm">Back</span>
           </button>
-          <h1 className="text-lg font-bold flex-1">
+          <h1 className="text-lg font-bold flex-1 flex items-center gap-1.5 min-w-0">
             {/* Shorter than "Add ML/Spread Pick" on purpose -- this header row
                 already shares space with the Back button and Refresh Odds
-                button, and "Pick" doesn't add much here (see chat, Sept 2026). */}
-            {slot.position === 'ML' ? 'Add ML/Spread' : `Add ${slot.position} Pick`}
+                button, and "Pick" doesn't add much here (see chat, Sept 2026).
+                Swapping a filled slot shows the ⇄ symbol in place of "Add". */}
+            {held && <ArrowLeftRight size={17} className="shrink-0 text-primary" aria-label="Swap" />}
+            <span className="truncate">
+              {held ? (slot.position === 'ML' ? 'ML/Spread' : `${slot.position} Pick`) : slot.position === 'ML' ? 'Add ML/Spread' : `Add ${slot.position} Pick`}
+            </span>
           </h1>
           <button
             onClick={handleRefreshOdds}
@@ -191,6 +224,26 @@ export function MarketBrowser() {
             {refreshing ? 'Refreshing…' : 'Refresh Odds'}
           </button>
         </div>
+        {held && (
+          // The pick you hold, pinned while you look around: a compact copy of its Lineup card (same
+          // position colors). It is only replaced once a new pick is confirmed on the bet slip; Back
+          // leaves it as is.
+          // Styled like a row of the lineup scroller on the lock screen card: plain card, the
+          // position badge as the only color, the pick on one line and its market and odds under it.
+          <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-bg-card px-2.5 py-1.5">
+            <PositionBadge position={slot.position} />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold leading-tight truncate">{pickTitle(held)}</p>
+              <p className="text-[10px] text-text-muted leading-tight truncate">
+                {pickMarket(held)} · <OddsDisplay odds={held.oddsAtPlacement} />
+              </p>
+            </div>
+            <div className="shrink-0 text-right leading-tight">
+              <span className="block text-xs font-semibold tabular-nums">{formatCents(held.stake)}</span>
+              <span className="block text-[9px] text-text-muted">Your pick</span>
+            </div>
+          </div>
+        )}
         {freshnessMessage && <p className="mb-1.5 text-[11px] text-warning font-medium">{freshnessMessage}</p>}
         {(refreshMessage || refreshErrorDetail) && (
           <div className="mb-2 space-y-0.5">
@@ -250,6 +303,7 @@ export function MarketBrowser() {
                     game={game}
                     checkBlocked={(marketKey, outcome) => checkBlockedFor(game.id, marketKey, undefined)(outcome)}
                     checkClaimStatus={(marketKey, outcome) => checkClaimStatusFor(game.id, marketKey, undefined)(outcome)}
+                    heldFor={held ? (marketKey, outcome) => heldFor(game.id, marketKey, undefined)(outcome) : undefined}
                     onSelectSpread={
                       propTypeOptions.includes('spreads')
                         ? (outcome) =>
@@ -259,6 +313,7 @@ export function MarketBrowser() {
                               week: league.currentWeek,
                               slotId: slot.slotId,
                               slotPosition: slot.position,
+                              offerSwap: !!held,
                               gameId: game.id,
                               marketKey: 'spreads',
                               outcome,
@@ -275,6 +330,7 @@ export function MarketBrowser() {
                               week: league.currentWeek,
                               slotId: slot.slotId,
                               slotPosition: slot.position,
+                              offerSwap: !!held,
                               gameId: game.id,
                               marketKey: 'h2h',
                               outcome,
@@ -311,6 +367,7 @@ export function MarketBrowser() {
                       altLinesEnabled={league.settings.altLinesEnabled}
                       checkBlocked={(market, outcome) => checkBlockedFor(game.id, market.key, group.playerId)(outcome)}
                       checkClaimStatus={(market, outcome) => checkClaimStatusFor(game.id, market.key, group.playerId)(outcome)}
+                      heldFor={held ? (market, outcome) => heldFor(game.id, market.key, group.playerId)(outcome) : undefined}
                       onSelect={(market, outcome) =>
                         setTarget({
                           leagueId: league.id,
@@ -318,6 +375,7 @@ export function MarketBrowser() {
                           week: league.currentWeek,
                           slotId: slot.slotId,
                           slotPosition: slot.position,
+                          offerSwap: !!held,
                           gameId: game.id,
                           marketKey: market.key,
                           outcome,

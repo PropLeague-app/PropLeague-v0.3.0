@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, Star, X } from 'lucide-react';
+import { Bell, BellOff, SlidersHorizontal, Star, X } from 'lucide-react';
 import type { League } from '../../types';
 import { weekLabel } from '../../types';
 import { LeagueLogo } from '../common/LeagueLogo';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { validateLineup } from '../../engine/validation';
 import { useAuthStore } from '../../store/useAuthStore';
+import { LeagueNotificationsSheet } from './LeagueNotificationsSheet';
 import {
   DEFAULT_NOTIFICATION_PREFS,
+  applyLeagueChoicesToAll,
+  applyLeagueOverride,
   applyLeaguePrefChange,
+  leagueHasOverrides,
+  updatePrefsWith,
+  type LeagueNotifType,
   fetchNotificationPrefs,
   getCachedNotificationPrefs,
   updateLeaguePref,
@@ -25,9 +31,10 @@ import { syncLiveActivities } from '../../services/liveActivities';
  * validateLineup the Lineup screen itself runs, so "needs a lineup" always means the
  * same thing everywhere.
  *
- * Each row also carries two per-league notification controls, saved in the person's
- * notification prefs: a star (the favorite leads the Dynamic Island and lock screen) and a
- * bell (muted leagues send no pushes and no Live Activities). */
+ * Each row also carries per-league notification controls, saved in the person's notification
+ * prefs: a star (the favorite leads the Dynamic Island and lock screen), a bell (muted leagues send
+ * no pushes and no Live Activities) and sliders, which open League notifications to set each kind
+ * of alert for that league alone (see LeagueNotificationsSheet). */
 export function LeagueSwitcherSheet({
   leagues,
   currentLeagueId,
@@ -42,6 +49,7 @@ export function LeagueSwitcherSheet({
   const profileId = useAuthStore((s) => s.profile?.id);
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => getCachedNotificationPrefs(profileId) ?? DEFAULT_NOTIFICATION_PREFS);
   const [error, setError] = useState<string | null>(null);
+  const [notifLeagueId, setNotifLeagueId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profileId) return;
@@ -70,6 +78,27 @@ export function LeagueSwitcherSheet({
       void syncLiveActivities(true); // move the island's front league right away
     });
   }
+
+  /** Saves a League notifications change: optimistic, reverted if the save fails. */
+  function changePrefsWith(change: (p: NotificationPrefs) => NotificationPrefs) {
+    if (!profileId) return;
+    const previous = prefs;
+    setError(null);
+    setPrefs(change(prefs));
+    void updatePrefsWith(profileId, change).then((result) => {
+      if (!result.ok) {
+        console.error('[league-switcher] failed to save league notifications:', result.error);
+        setPrefs(previous);
+        setError('Could not save that. Try again.');
+        return;
+      }
+      setPrefs(result.prefs);
+      void syncLiveActivities(true); // start or end this league's live scores right away
+    });
+  }
+
+  const notifLeague = notifLeagueId ? leagues.find((l) => l.id === notifLeagueId) : undefined;
+  const notifUserTeam = notifLeague?.teams.find((t) => t.isUser);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60" onClick={onClose}>
@@ -129,6 +158,11 @@ export function LeagueSwitcherSheet({
                           Muted
                         </span>
                       )}
+                      {!isMuted && leagueHasOverrides(prefs, league.id) && (
+                        <span className="text-[10px] text-text-muted font-semibold border border-border rounded-full px-2 py-0.5">
+                          Custom alerts
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -145,9 +179,16 @@ export function LeagueSwitcherSheet({
                     onClick={() => changeLeaguePref(league.id, { muted: !isMuted })}
                     aria-label={isMuted ? `Unmute ${league.name}` : `Mute ${league.name}`}
                     aria-pressed={isMuted}
-                    className={`py-2 pl-1 pr-2 ${isMuted ? 'text-loss' : 'text-text-muted'}`}
+                    className={`py-2 px-1 ${isMuted ? 'text-loss' : 'text-text-muted'}`}
                   >
                     {isMuted ? <BellOff size={15} /> : <Bell size={15} />}
+                  </button>
+                  <button
+                    onClick={() => setNotifLeagueId(league.id)}
+                    aria-label={`Notifications for ${league.name}`}
+                    className="py-2 pl-1 pr-2 text-text-muted"
+                  >
+                    <SlidersHorizontal size={15} />
                   </button>
                 </div>
               </div>
@@ -156,10 +197,21 @@ export function LeagueSwitcherSheet({
         </div>
 
         <p className="text-[11px] text-text-muted">
-          Star a league to show it first on your lock screen and Dynamic Island. Mute one to stop all of its notifications and live scores.
+          Star a league to show it first on your lock screen and Dynamic Island. Mute one to stop all of its notifications and live scores. Tap the sliders to pick which alerts a league sends.
         </p>
         {error && <p className="text-[11px] text-loss">{error}</p>}
       </div>
+      {notifLeague && (
+        <LeagueNotificationsSheet
+          league={notifLeague}
+          prefs={prefs}
+          isCommissioner={!!notifUserTeam && notifUserTeam.id === notifLeague.commissionerTeamId}
+          onMute={(muted) => changeLeaguePref(notifLeague.id, { muted })}
+          onSet={(type: LeagueNotifType, value: boolean) => changePrefsWith((p) => applyLeagueOverride(p, notifLeague.id, type, value))}
+          onApplyToAll={() => changePrefsWith((p) => applyLeagueChoicesToAll(p, notifLeague.id))}
+          onClose={() => setNotifLeagueId(null)}
+        />
+      )}
     </div>
   );
 }

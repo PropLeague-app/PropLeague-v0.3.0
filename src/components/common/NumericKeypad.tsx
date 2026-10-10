@@ -12,7 +12,9 @@ const ROWS: KeypadKey[][] = [
 /**
  * Our own number pad, so entering an amount never summons the OS keyboard (which shoves the layout
  * around and can't be themed). Compact on purpose: it sits under the pick details and has to fit
- * small phones. Holding backspace repeats. A physical keyboard (Bluetooth, or a Mac running the app)
+ * small phones. Every key, backspace included, is a single tap that fires on release: holding does
+ * not repeat. Callers keep anything that can appear or disappear (errors, notes) ABOVE the pad so a
+ * tap never shifts the keys under the finger. A physical keyboard (Bluetooth, or a Mac running the app)
  * works too: digits and the numpad type, "." or "," is the decimal point, Backspace/Delete deletes,
  * Enter calls `onEnter`, Escape calls `onEscape`.
  */
@@ -36,6 +38,11 @@ export function NumericKeypad({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      // Held hardware keys auto-repeat; ignore those so every key is one press, same as the on-screen pad.
+      if (e.repeat) {
+        if (/^[0-9.,]$/.test(e.key) || e.key === 'Backspace' || e.key === 'Delete') e.preventDefault();
+        return;
+      }
       const h = handlers.current;
       if (/^[0-9]$/.test(e.key)) h.onKey(e.key as KeypadKey);
       else if ((e.key === '.' || e.key === ',') && h.allowDecimal) h.onKey('.');
@@ -50,23 +57,6 @@ export function NumericKeypad({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const holdRef = useRef<{ delay?: number; repeat?: number }>({});
-
-  const stopHold = () => {
-    window.clearTimeout(holdRef.current.delay);
-    window.clearInterval(holdRef.current.repeat);
-    holdRef.current = {};
-  };
-  useEffect(() => stopHold, []);
-
-  const startBackspace = () => {
-    onKey('back');
-    stopHold();
-    holdRef.current.delay = window.setTimeout(() => {
-      holdRef.current.repeat = window.setInterval(() => onKey('back'), 70);
-    }, 400);
-  };
-
   return (
     <div className="grid grid-cols-3 gap-px rounded-xl overflow-hidden bg-border border border-border select-none" role="group" aria-label="Number pad">
       {ROWS.flat().map((k) => {
@@ -78,11 +68,7 @@ export function NumericKeypad({
             type="button"
             disabled={disabled}
             aria-label={isBack ? 'Delete' : k === '.' ? 'Decimal point' : k}
-            onClick={isBack ? undefined : () => onKey(k)}
-            onPointerDown={isBack ? startBackspace : undefined}
-            onPointerUp={isBack ? stopHold : undefined}
-            onPointerLeave={isBack ? stopHold : undefined}
-            onPointerCancel={isBack ? stopHold : undefined}
+            onClick={() => onKey(k)}
             onMouseDown={(e) => e.preventDefault()}
             onContextMenu={(e) => e.preventDefault()}
             className="h-11 flex items-center justify-center bg-bg-card text-xl font-medium text-text active:bg-bg-raised disabled:opacity-30 touch-manipulation"

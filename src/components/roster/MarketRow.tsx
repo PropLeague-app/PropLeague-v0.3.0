@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { LeagueTeam, OddsMarket, OddsOutcome } from '../../types';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { TeamLogo } from '../common/TeamLogo';
+import { HeldTag, heldBoxBorder, type HeldTagInfo } from './HeldTag';
 
 /** Who holds an outcome, for the claim banner under it. `hidden` (Hide Picks on, game not started)
  * means the holders must not be identifiable: the count still shows, the logos do not. */
@@ -26,7 +27,7 @@ export function claimColor(filled: number, cap: number): string {
 /** A thin banner tacked onto the bottom of an outcome box (manual v0.2.0 §3 #4, reworked): dots for the
  * claimed spots out of the cap, colored by how few are left, plus overlapping claimant logos when picks
  * are visible. Same width as the box above, so the row's layout does not change. */
-export function ClaimBanner({ status, wide }: { status: ClaimStatus; wide: boolean }) {
+export function ClaimBanner({ status, wide, attachedBelow = false }: { status: ClaimStatus; wide: boolean; attachedBelow?: boolean }) {
   const { holderCount, holderTeams, cap, hidden } = status;
   const color = claimColor(holderCount, cap);
   const full = holderCount >= cap;
@@ -38,7 +39,7 @@ export function ClaimBanner({ status, wide }: { status: ClaimStatus; wide: boole
   const logos = hidden ? [] : holderTeams.slice(0, Math.min(fit, 4));
   return (
     <div
-      className={`flex items-center justify-center h-[18px] px-1 gap-1 border border-t-0 rounded-b-lg ${
+      className={`flex items-center justify-center h-[18px] px-1 gap-1 border border-t-0 ${attachedBelow ? '' : 'rounded-b-lg'} ${
         full ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
       }`}
     >
@@ -86,6 +87,7 @@ export function MarketRow({
   hideOutcomeNames = false,
   checkBlocked,
   checkClaimStatus,
+  heldFor,
 }: {
   label: string;
   market: OddsMarket;
@@ -102,6 +104,8 @@ export function MarketRow({
   /** Returns the current claimants + cap for the "N of cap claimed" progress
    * indicator (manual v0.2.0 §3 #4), or null when nobody holds this outcome yet. */
   checkClaimStatus?: (outcome: OddsOutcome) => ClaimStatus | null;
+  /** While swapping a pick: the "Yours" tag for the box of the pick already held, else null. */
+  heldFor?: (outcome: OddsOutcome) => HeldTagInfo | null;
 }) {
   const [step, setStep] = useState(0); // -1 = lower alt, 0 = standard, 1 = higher alt
   const [tappedReason, setTappedReason] = useState<string | null>(null);
@@ -134,6 +138,7 @@ export function MarketRow({
           {outcomes.map((outcome) => {
             const reason = checkBlocked?.(outcome) ?? null;
             const claimStatus = checkClaimStatus?.(outcome) ?? null;
+            const held = heldFor?.(outcome) ?? null;
             // A single-outcome market (Anytime TD) doesn't have a second column to
             // sit next to -- right-aligning one w-16 button left it looking like it
             // belonged under "Under" specifically, rather than being its own thing.
@@ -152,8 +157,8 @@ export function MarketRow({
                     setTappedReason(null);
                     onSelect(outcome);
                   }}
-                  className={`flex flex-col items-center border px-1.5 py-1 w-full disabled:opacity-40 ${claimStatus ? 'rounded-t-lg' : 'rounded-lg'} ${
-                    reason ? 'bg-loss/10 border-loss/40' : 'bg-bg-raised border-border'
+                  className={`flex flex-col items-center border px-1.5 py-1 w-full disabled:opacity-40 ${claimStatus || held ? 'rounded-t-lg' : 'rounded-lg'} ${
+                    reason ? 'bg-loss/10 border-loss/40' : held ? `bg-bg-raised ${heldBoxBorder(held)}` : 'bg-bg-raised border-border'
                   }`}
                 >
                   <span className={`text-xs font-semibold ${reason ? 'line-through text-loss' : ''}`}>
@@ -162,7 +167,8 @@ export function MarketRow({
                   </span>
                   <OddsDisplay odds={outcome.price} className={`text-xs ${reason ? 'text-loss' : 'text-primary'}`} />
                 </button>
-                {claimStatus && <ClaimBanner status={claimStatus} wide={outcomes.length === 1} />}
+                {claimStatus && <ClaimBanner status={claimStatus} wide={outcomes.length === 1} attachedBelow={!!held} />}
+                {held && <HeldTag info={held} />}
               </div>
             );
           })}

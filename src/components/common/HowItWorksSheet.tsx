@@ -63,7 +63,8 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Your leagues',
       body: [
         'Tap the league name at the top of Home to open Your Leagues and jump between them. Each row shows the week and team count, a CURRENT tag on the one you are in, and a red Lineup needed tag when that league\'s lineup is not finished.',
-        'The star makes a league your favorite, which goes first on your lock screen and Dynamic Island. The bell mutes a league: no lineup reminders, no void request alerts and no live scores for it until you unmute it. The league still works normally in the app, and a muted league is marked Muted. A league is never both, so muting your favorite clears the star. Close the list with the X.',
+        'The star makes a league your favorite, which goes first on your lock screen and Dynamic Island. The bell mutes a league: no pushes of any kind and no live scores for it until you unmute it. The league still works normally in the app, and a muted league is marked Muted. A league is never both, so muting your favorite clears the star. Close the list with the X.',
+        'The sliders open League notifications for that league alone: mute, Lineup reminders, Settled-bet alerts, Week results and Live scores on lock screen, plus Void requests if you are its commissioner. Every league starts out following your Notifications switches in Profile & Settings. Change a switch here and it applies to this league only, marked Only this league, and the row in Your Leagues shows Custom alerts. Use these for all my leagues makes this league\'s choices your defaults and puts every league back on them. Void requests are always set per league and stay as they are.',
       ],
     },
     {
@@ -87,7 +88,16 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Stakes and games',
       body: [
-        `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
+        `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. Each key is a single tap (holding a key does not repeat), and any message about the stake shows just above the keypad so the keys never shift while you type. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
+      ],
+    },
+    {
+      title: 'Swapping a pick',
+      body: [
+        'Tap ⇄ on a filled slot to look at other picks for that slot without losing yours. Your pick stays pinned at the top, and its box in the list carries a small tag with the odds you hold: green when the board now pays more than your odds, red when it pays less. Back leaves everything as it was.',
+        'Choose a new pick and the bet slip shows what it replaces, struck through, with your old stake already filled in (the first key you press starts a new amount). Replace Pick swaps them in one step: if the new pick is refused for any reason, you keep the old one and its odds.',
+        'The same pick at better odds can be re-locked: only the old odds are crossed out, with a note saying whether the new price is better or worse. At a new line, the old line and odds are crossed out. The exact pick you already hold at the same odds cannot be swapped in, so change its stake on the Lineup screen instead.',
+        'When the position has more than one place to go, the bet slip shows a choice at the top: ⇄ and a name replaces that pick, + Open slot adds the new pick alongside the ones you have. It starts on the slot you came from. A pick from Game Details works the same way. Once a pick\'s game starts it is locked: no ⇄, it is left out of the choice, and the server refuses a swap.',
       ],
     },
     {
@@ -124,6 +134,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'NFL Slate and lines',
       body: [
         'The NFL Slate tab lists the week\'s games and every market on them, with lines from The Odds API. Tap Refresh Odds to pull the latest, and a warning shows when the lines are more than 12 hours old. Your commissioner can turn alt lines and live line movement on or off.',
+        'Tap a game to see its lines and player props, and tap any line to pick it from there. It goes in an open slot for that position if you have one. If not, the bet slip offers to swap it for one of your picks there, with a note such as Replacing your QB pick at the top (see Swapping a pick). Picks you already hold from that game carry the same odds tag, and any problem shows as a one-line note just under the header, wherever you are scrolled.',
       ],
     },
   ];
@@ -234,10 +245,12 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Notifications',
       body: [
-        'Choose what you get in Profile & Settings. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Void request alerts reach the commissioner when a request comes in, and the member when it is answered.',
-        'Settled-bet alerts and Week results ready are switches for alerts that are still on the way. They are saved, but nothing is sent for them yet.',
+        'The switches in Profile & Settings are your defaults for every league. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Void request alerts reach the commissioner when a request comes in, and the member when it is answered.',
+        'Settled-bet alerts tell you when your picks settle, usually within about 15 minutes of a game ending. Picks that settle together come in one push: up to three are listed with their result and profit, more than that as a record and net. Each one ends with where your matchup stands, as the gap only, so hidden picks stay hidden.',
+        'Week results arrives when the week is final (Tuesday morning after Monday night): who won and the score, your record and place in the standings (regular season), and a note for a perfect or skunked week.',
+        'Tap any push to go straight to that league: reminders open your Lineup, settled bets and week results open your Matchup, and void requests open Void Requests in Settings.',
         'Live scores on lock screen turns on the Live Activity for your matchup. More on that in the next topic.',
-        'To favorite or mute a single league, see Your leagues under Basics & Lineup.',
+        'To favorite, mute or change alerts for a single league, see Your leagues under Basics & Lineup.',
       ],
     },
     {
@@ -292,7 +305,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Void Requests',
       body: [
-        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. The commissioner gets a push, a red Review button, and a red ! on the Profile tab until every request is answered. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
+        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. The commissioner gets a push (unless Void requests is turned off in that league\'s League notifications), a red Review button, and a red ! on the Profile tab until every request is answered. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
         'Your own requests skip the queue. Un-flagging restores the picks, and approving or flagging posts a short League Update.',
       ],
     },

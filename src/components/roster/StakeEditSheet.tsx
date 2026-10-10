@@ -102,9 +102,10 @@ export function StakeEditSheet({
             </div>
           </div>
 
-          <NumericKeypad onKey={onKey} onEnter={() => void done()} onEscape={onClose} />
-
+          {/* Above the keypad so the keys never move when the message comes and goes. */}
           {showProblem && <p className="text-loss text-xs">{showProblem}</p>}
+
+          <NumericKeypad onKey={onKey} onEnter={() => void done()} onEscape={onClose} />
 
           <button
             disabled={!valid || saving}

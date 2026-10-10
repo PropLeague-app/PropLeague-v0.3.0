@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { getGame, getPlayerPropGroups } from '../services/oddsService';
@@ -12,7 +12,9 @@ import { StatusPill } from '../components/common/StatusPill';
 import { useLiveGamePolling } from '../hooks/useLiveGamePolling';
 import { TeamMark } from '../components/common/TeamMark';
 import { BackHeader } from '../components/layout/BackHeader';
-import type { OddsMarket, OddsOutcome, Position } from '../types';
+import { TopToast } from '../components/common/TopToast';
+import { heldTagInSlots, swapChoices } from '../engine/pickSwap';
+import type { OddsMarket, OddsOutcome, Position, Wager } from '../types';
 
 const POSITION_TABS: ('All' | Position)[] = ['All', 'QB', 'RB', 'WR', 'TE', 'K'];
 
@@ -25,6 +27,14 @@ export function GameDetail() {
   const loadRealGame = useAppStore((s) => s.loadRealGame);
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
+  /** Shows a one-line message pinned at the top of the screen (TopToast) for a few seconds. */
+  function showNotice(text: string) {
+    window.clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2800);
+  }
   const [positionFilter, setPositionFilter] = useState<'All' | Position>('All');
 
   // Same real-first, simulated-fallback pattern already used in Lineup.tsx --
@@ -66,24 +76,36 @@ export function GameDetail() {
   function tryOpenBetSlip(marketKey: OddsMarket['key'], outcome: OddsOutcome, position: Position | 'ML', playerId?: string, playerName?: string, label?: string) {
     if (!league || !userTeam || !game) return;
     if (game.week !== league.currentWeek || game.status !== 'upcoming') {
-      setNotice('This game has already locked for this season week.');
-      setTimeout(() => setNotice(null), 2500);
+      showNotice('This game is locked for this week.');
       return;
     }
     const roster =
       league.rostersByTeamWeek[rosterKey(userTeam.id, league.currentWeek)] ??
       buildEmptyRoster(userTeam.id, league.currentWeek, league.settings.lineupSlots);
-    const candidates = roster.slots.filter((s) => s.position === position && !s.wager);
-    if (candidates.length === 0) {
-      setNotice(`No open ${position} slot this week — clear one from your Lineup first.`);
-      setTimeout(() => setNotice(null), 2500);
+    // Where it can go: the slot already holding this same pick (re-lock at the new odds), else an
+    // open slot, else a held pick that can still be swapped. The bet slip lets the person switch
+    // between them (offerSwap), the same as ⇄ on the Lineup screen.
+    const choices = swapChoices(
+      roster.slots,
+      position,
+      { gameId: game.id, marketKey, playerId, side: outcome.name },
+      (w: Wager) => {
+        const g = realGamesById[w.gameId];
+        return !!g && (g.status !== 'upcoming' || new Date(g.kickoff).getTime() <= Date.now());
+      },
+    );
+    const slotId = choices.samePickSlotId ?? choices.openSlotId ?? choices.filledSlotIds[0];
+    if (!slotId) {
+      showNotice(`Every ${position} slot is locked for this week.`);
       return;
     }
     setTarget({
       leagueId: league.id,
       teamId: userTeam.id,
       week: league.currentWeek,
-      slotId: candidates[0].slotId,
+      slotId,
+      offerSwap: true,
+      announceReplace: true,
       slotPosition: position,
       gameId: game.id,
       marketKey,
@@ -93,6 +115,13 @@ export function GameDetail() {
       label: label ?? playerName ?? `${away.abbrev} @ ${home.abbrev}`,
     });
   }
+
+  // Picks you already hold from this game get the same "Yours" tag as the swap screen.
+  const heldSlots = league && userTeam ? (league.rostersByTeamWeek[rosterKey(userTeam.id, league.currentWeek)]?.slots ?? []) : [];
+  const heldFor = (marketKey: OddsMarket['key'], outcome: OddsOutcome, playerId?: string) =>
+    heldSlots.length === 0
+      ? null
+      : heldTagInSlots(heldSlots, { gameId: game.id, marketKey, playerId, side: outcome.name, point: outcome.point, price: outcome.price });
 
   const remainingBudget =
     league && userTeam
@@ -105,7 +134,7 @@ export function GameDetail() {
 
   return (
     <div className="flex flex-col">
-      <BackHeader title="Game Details" fallback="/slate" />
+      <BackHeader title="Game Details" fallback="/slate" below={<TopToast message={notice} />} />
       <div className="p-4 space-y-4">
         <div className="flex justify-between items-center gap-2">
           <div className="min-w-0">
@@ -126,7 +155,6 @@ export function GameDetail() {
           <StatusPill status={game.status} />
         </div>
 
-        {notice && <p className="text-xs bg-loss/10 text-loss rounded-lg px-3 py-2">{notice}</p>}
 
         <div className="bg-bg-card border border-border rounded-xl p-3">
           <p className="font-semibold text-sm mb-2">Game Markets</p>
@@ -135,6 +163,7 @@ export function GameDetail() {
             showTotal
             onSelectSpread={(o) => tryOpenBetSlip('spreads', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
             onSelectMoneyline={(o) => tryOpenBetSlip('h2h', o, 'ML', undefined, undefined, `${away.abbrev} @ ${home.abbrev}`)}
+            heldFor={(marketKey, o) => heldFor(marketKey, o)}
           />
         </div>
 
@@ -163,6 +192,7 @@ export function GameDetail() {
                   group={group}
                   altLinesEnabled={league?.settings.altLinesEnabled}
                   onSelect={(market, o) => tryOpenBetSlip(market.key, o, group.position, group.playerId, group.playerName)}
+                  heldFor={(market, o) => heldFor(market.key, o, group.playerId)}
                 />
               ))
             )}

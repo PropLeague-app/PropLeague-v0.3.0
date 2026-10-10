@@ -20,3 +20,11 @@ export function applyStakeKey(text: string, key: KeypadKey): string {
   if (text.length >= MAX_INT_DIGITS) return text;
   return text + key;
 }
+
+/**
+ * A stake carried over from the pick being replaced shows as if selected: the first digit or dot
+ * starts a new amount, and backspace clears it, instead of editing the carried-over number.
+ */
+export function applyStakeKeyToPrefill(key: KeypadKey): string {
+  return key === 'back' ? '' : applyStakeKey('', key);
+}

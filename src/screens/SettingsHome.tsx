@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
 import { useAuthStore } from '../store/useAuthStore';
@@ -347,6 +347,8 @@ export function SettingsHome() {
   const [startSeasonBusy, setStartSeasonBusy] = useState(false);
   const [startSeasonError, setStartSeasonError] = useState<string | null>(null);
   const isCommissioner = !!league && !!userTeam && userTeam.id === league.commissionerTeamId;
+  const [searchParams] = useSearchParams();
+  const openVoidRequests = searchParams.get('open') === 'void-requests';
   const seasonNotStarted = !!league && Object.keys(league.matchupsByWeek).length === 0;
 
   // Members only see the commissioner's settings read-only, and the commissioner needs
@@ -679,7 +681,7 @@ export function SettingsHome() {
               />
               <ToggleRow
                 icon={<CalendarCheck size={15} />}
-                label="Week results ready"
+                label="Week results"
                 value={notificationPrefs.weekResults}
                 onChange={(v) => toggleNotificationPref('weekResults', v)}
               />
@@ -693,7 +695,7 @@ export function SettingsHome() {
                 Your matchup score and lineup countdown on the lock screen and Dynamic Island. iPhone with iOS 16.2 or later.
               </p>
               <p className="text-[11px] text-text-muted">
-                To favorite or mute a single league, tap the league name at the top of Home.
+                These are your defaults for every league. To favorite, mute or change alerts for one league, tap the league name at the top of Home.
               </p>
             </div>
           </CollapsibleSection>
@@ -712,7 +714,17 @@ export function SettingsHome() {
               />
             </div>
           )}
-  {league && userTeam && !seasonNotStarted && <VoidRequestsCard leagueId={league.id} week={league.currentWeek} isCommissioner={isCommissioner} />}
+          {league && userTeam && !seasonNotStarted && (
+            <VoidRequestsCard
+              // A void request push opens Settings with ?open=void-requests: remounting with the card
+              // open (and scrolled to) even if Settings was already on screen.
+              key={openVoidRequests ? 'void-open' : 'void'}
+              openOnMount={openVoidRequests}
+              leagueId={league.id}
+              week={league.currentWeek}
+              isCommissioner={isCommissioner}
+            />
+          )}
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
             <SettingsRow icon={<Plus size={14} />} compact label="Create a League" onClick={() => goTo('/create-league')} />
             <SettingsRow icon={<KeyRound size={14} />} compact label="Join a League" onClick={() => goTo('/join-league')} />
