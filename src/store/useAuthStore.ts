@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 import { useAppStore } from './useAppStore';
-import type { MatchupDetailMode, ThemeMode } from '../types';
+import type { MatchupDetailMode, ThemeMode, UserProfile } from '../types';
 
 export interface AuthProfile {
   id: string;
@@ -91,6 +91,7 @@ function stashLocalState(userId: string) {
       LOCAL_STATE_KEY(userId),
       JSON.stringify({
         themeMode: profile?.themeMode,
+        accentColor: profile?.accentColor,
         matchupDetailMode: profile?.matchupDetailMode,
         plColorScale: profile?.plColorScale,
         lastSeenChatByLeague,
@@ -108,6 +109,7 @@ function restoreLocalState(userId: string) {
     if (!raw) return;
     const saved = JSON.parse(raw) as {
       themeMode?: ThemeMode;
+      accentColor?: UserProfile['accentColor'];
       matchupDetailMode?: MatchupDetailMode;
       plColorScale?: 'classic' | 'scaled';
       lastSeenChatByLeague?: Record<string, string>;
@@ -120,6 +122,7 @@ function restoreLocalState(userId: string) {
         ? {
             ...state.profile,
             themeMode: state.profile.themeMode ?? saved.themeMode,
+            accentColor: state.profile.accentColor ?? saved.accentColor,
             matchupDetailMode: state.profile.matchupDetailMode ?? saved.matchupDetailMode,
             plColorScale: state.profile.plColorScale ?? saved.plColorScale,
           }

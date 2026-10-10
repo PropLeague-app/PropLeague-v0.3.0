@@ -698,8 +698,9 @@ export interface League {
 
 export type OddsFormat = 'american' | 'decimal';
 /** 'dark' is the app's original navy look, shown in Settings as "Midnight" (the key is kept so existing
- * saved profiles need no migration); 'graphite' is the neutral gray/near-black dark theme, shown as "Dark". 'auto' follows the phone's light/dark setting. */
-export type ThemeMode = 'dark' | 'light' | 'graphite' | 'auto';
+ * saved profiles need no migration); 'graphite' is the neutral gray/near-black dark theme, shown as "Dark". 'auto' follows the phone's light/dark setting.
+ * 1.2.10 added Linen (warm light), Stone (soft gray dark), Turf (field green) and Clay (warm brown); see engine/themes.ts. */
+export type ThemeMode = 'dark' | 'light' | 'graphite' | 'linen' | 'stone' | 'turf' | 'clay' | 'auto';
 /** What actually gets painted: 'auto' resolves to light or graphite from the phone's own appearance setting. */
 export type ResolvedTheme = Exclude<ThemeMode, 'auto'>;
 /** Matchup screen's cell density (see chat, Sept 2026 -- the pill/slot visual
@@ -728,6 +729,9 @@ export interface UserProfile {
   /** How negative P/L is colored: 'classic' (any loss is red) or 'scaled' (tinted by how big the
    * loss is against what was at risk). Local per-device like the two above; undefined means classic. */
   plColorScale?: 'classic' | 'scaled';
+  /** Accent color for primary buttons, selected pills and links (engine/themes.ts). Local per-device like
+   * themeMode; undefined means blue, the original. */
+  accentColor?: 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold';
 }
 
 // --- Validation --------------------------------------------------------------

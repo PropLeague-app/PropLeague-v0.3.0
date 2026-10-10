@@ -203,13 +203,13 @@ export function LeagueSettingsPanel({
   return (
     <section className="space-y-2">
       {showHeader && <SectionHeader>League Settings</SectionHeader>}
-      {/* One line, always. Orange for the commissioner, gray for everyone else. */}
+      {/* One line, always. The accent color for the commissioner (follows Settings > Accent), gray for everyone else. */}
       <div
         className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${
-          readOnly ? 'bg-bg-card border-border' : 'bg-warning/10 border-warning/40'
+          readOnly ? 'bg-bg-card border-border' : 'bg-primary/10 border-primary/40'
         }`}
       >
-        <Lock size={14} className={`shrink-0 ${readOnly ? 'text-text-muted' : 'text-warning'}`} />
+        <Lock size={14} className={`shrink-0 ${readOnly ? 'text-text-muted' : 'text-primary'}`} />
         <p className="text-xs text-text-muted truncate min-w-0">
           {readOnly ? (
             <>

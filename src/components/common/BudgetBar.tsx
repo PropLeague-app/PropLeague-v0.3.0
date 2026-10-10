@@ -1,4 +1,5 @@
 import { useResolvedTheme } from '../../hooks/useResolvedTheme';
+import { themeTone } from '../../engine/themes';
 
 /**
  * Bankroll strip for the Lineup screen: a slim, full-width band under the title. The headline is what
@@ -38,7 +39,7 @@ export function BudgetBar({
   // Orange with little allocated, yellow at 50%, green once most of it is in play (see toneHue).
   // Light mode: the same hue scale, but darker so it holds up on a pale background. `tone` colors the
   // bar and `ink` the text and icon (text needs more contrast than a bar does), over a darker gray track.
-  const light = useResolvedTheme() === 'light';
+  const light = themeTone(useResolvedTheme()) === 'light';
   const hue = Math.round(toneHue(share));
   const tone = over
     ? light ? 'hsl(0 72% 48%)' : 'hsl(0 78% 62%)'

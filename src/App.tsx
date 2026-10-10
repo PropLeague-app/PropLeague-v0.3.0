@@ -4,7 +4,7 @@ import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { registerForPushNotifications } from './services/pushNotifications';
 import { setLiveActivityColorScale, startLiveActivities, stopLiveActivities } from './services/liveActivities';
-import { applyThemeMode } from './services/theme';
+import { applyAccent, applyThemeMode } from './services/theme';
 import { watchSystemAppearance } from './hooks/useResolvedTheme';
 import { MobileShell } from './components/layout/MobileShell';
 import { WeeklyResultReveal } from './components/home/WeeklyResultReveal';
@@ -179,6 +179,12 @@ function App() {
     if (themeMode !== 'auto') return;
     return watchSystemAppearance(() => void applyThemeMode('auto'));
   }, [themeMode]);
+
+  // Accent color (Settings > Accent), local to the device like the theme.
+  const accentColor = useAppStore((s) => s.profile?.accentColor);
+  useEffect(() => {
+    applyAccent(accentColor);
+  }, [accentColor]);
 
   return (
     // Onboarding screens load on demand; the boot loader covers that first moment.

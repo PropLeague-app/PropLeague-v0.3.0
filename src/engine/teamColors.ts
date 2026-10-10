@@ -5,10 +5,12 @@
 // toward the theme's text color just far enough to clear a contrast target against the card (3.5:1, enough for bold, large text on a tinted pill), so
 // it still looks like the team but is always legible. The card/text values mirror index.css.
 import type { ResolvedTheme } from '../types';
+import { THEMES } from './themes';
 import { NFL_TEAMS } from '../data/nflTeams';
 
-const CARD: Record<ResolvedTheme, string> = { dark: '#1e2a3d', light: '#fbfcfe', graphite: '#1c1c1f' };
-const TEXT: Record<ResolvedTheme, string> = { dark: '#e8ecf5', light: '#202838', graphite: '#ececee' };
+// Card and text colors per theme come from engine/themes.ts (kept in step with index.css).
+const CARD = Object.fromEntries(THEMES.map((t) => [t.id, t.card])) as Record<ResolvedTheme, string>;
+const TEXT = Object.fromEntries(THEMES.map((t) => [t.id, t.text])) as Record<ResolvedTheme, string>;
 
 type RGB = [number, number, number];
 

@@ -106,7 +106,7 @@ export function WeeklyResultPopup({
           </button>
           <button
             onClick={onViewMatchup}
-            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold ${won ? 'bg-gold text-bg' : 'bg-primary text-white'}`}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold ${won ? 'bg-gold text-bg' : 'bg-primary text-on-primary'}`}
           >
             View matchup
           </button>

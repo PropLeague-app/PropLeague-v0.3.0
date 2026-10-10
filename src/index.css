@@ -22,6 +22,10 @@
   /* Readable "ink" versions of the brand blue and money green, for text sitting on a tinted fill of
      the same color (soft buttons, selected pills). Brighter than the base color on dark, darker on light. */
   --color-primary-ink: #a9c9ff;
+  /* Text on a solid primary fill (white, except on the Gold accent). */
+  --color-on-primary: #ffffff;
+  /* Text on a solid --color-accent fill (white on the default purple, dark on the teal swap). */
+  --color-on-accent: #ffffff;
   --color-profit-ink: #86f2b4;
   --color-loss-ink: #ff9a9a;
   /* Scaled loss colors (engine/plColor.ts): small loss yellow, bigger orange, wipeout red.
@@ -99,10 +103,13 @@
 :root {
   --pl-share-glow: color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
-:root[data-theme='graphite'] {
+:root[data-theme='graphite'],
+:root[data-theme='stone'],
+:root[data-theme='turf'],
+:root[data-theme='clay'] {
   --pl-share-glow: color-mix(in srgb, var(--color-text) 7%, transparent);
 }
-:root[data-theme='light'] {
+:root[data-tone='light'] {
   --pl-share-glow: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
@@ -133,6 +140,36 @@
   --color-text-muted: #9a9aa2;
 }
 
+/* More themes (1.2.10). Each sets only its chrome (page, raised, card, border, text); everything
+   tone-specific comes from the data-tone blocks. Hex values are mirrored in src/engine/themes.ts. */
+:root[data-theme='stone'] {
+  /* A softer, mid charcoal dark, lighter than Dark. */
+  --color-bg: #1f2125;
+  --color-bg-raised: #26282d;
+  --color-bg-card: #2b2e33;
+  --color-border: #3e424a;
+  --color-text: #eceef2;
+  --color-text-muted: #a6abb6;
+}
+:root[data-theme='turf'] {
+  /* Deep field green. */
+  --color-bg: #0c1813;
+  --color-bg-raised: #12221a;
+  --color-bg-card: #162a20;
+  --color-border: #264233;
+  --color-text: #e6f0ea;
+  --color-text-muted: #93ab9e;
+}
+:root[data-theme='clay'] {
+  /* Warm infield clay, a muted brown so losses still read as red. */
+  --color-bg: #1d1512;
+  --color-bg-raised: #261c18;
+  --color-bg-card: #2e221d;
+  --color-border: #47372f;
+  --color-text: #f3eae5;
+  --color-text-muted: #b19f95;
+}
+
 :root[data-theme='light'] {
   /* Retuned from the first pass (#eef1f6/#ffffff/#ffffff/#d7dee8/#1a2233) after
      tester feedback that pure-white cards + near-black text felt like "a wild
@@ -145,6 +182,20 @@
   --color-border: #ccd5e2;
   --color-text: #202838;
   --color-text-muted: #5a6472;
+}
+:root[data-theme='linen'] {
+  /* Warm off-white paper, the light theme's warm sibling. */
+  --color-bg: #ebe5d9;
+  --color-bg-raised: #f6f2ea;
+  --color-bg-card: #fbf8f2;
+  --color-border: #d8cebd;
+  --color-text: #2b251f;
+  --color-text-muted: #675d51;
+}
+
+/* Everything a light theme needs beyond its chrome (Light and Linen share it): darker inks, money,
+   position and flame colors that stay readable on a pale background. */
+:root[data-tone='light'] {
   --color-primary-ink: #1a52c4;
   --color-profit-ink: #0c7a3f;
   --color-loss-ink: #b3261e;
@@ -218,6 +269,71 @@
      closer together (122:107) -- a real hue shift toward yellow-olive rather
      than orange-brown -- while still clearing ~4.3:1 against white. */
   --color-pos-ml: #7a6b00;
+}
+
+/* Accents (1.2.10, Settings > Accent). Blue is the original and needs no block. Each accent sets the
+   primary color and its readable ink, with darker versions for light themes. Green and red are never
+   accents. Values are mirrored in src/engine/themes.ts (ACCENTS). */
+:root[data-accent='teal'] {
+  --color-primary: #2cc5b4;
+  --color-primary-ink: #93efe3;
+  --color-on-primary: #0b1716;
+}
+:root[data-tone='light'][data-accent='teal'] {
+  --color-primary: #0d8f83;
+  --color-primary-ink: #095c55;
+}
+:root[data-accent='indigo'] {
+  --color-primary: #7477f5;
+  --color-primary-ink: #c3c5ff;
+  --color-on-primary: #ffffff;
+  /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
+     changes, voided picks), so those switch to teal. */
+  --color-accent: #2cc5b4;
+  --color-on-accent: #0b1716;
+}
+:root[data-tone='light'][data-accent='indigo'] {
+  --color-primary: #4f46e5;
+  --color-primary-ink: #3b33c4;
+  /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
+     changes, voided picks), so those switch to teal. */
+  --color-accent: #0d8f83;
+  --color-on-accent: #0b1716;
+}
+:root[data-accent='purple'] {
+  --color-primary: #b16cf7;
+  --color-primary-ink: #dfc0ff;
+  --color-on-primary: #ffffff;
+  /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
+     changes, voided picks), so those switch to teal. */
+  --color-accent: #2cc5b4;
+  --color-on-accent: #0b1716;
+}
+:root[data-tone='light'][data-accent='purple'] {
+  --color-primary: #8b3fd9;
+  --color-primary-ink: #6d22b8;
+  /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
+     changes, voided picks), so those switch to teal. */
+  --color-accent: #0d8f83;
+  --color-on-accent: #0b1716;
+}
+:root[data-accent='orange'] {
+  --color-primary: #f7853a;
+  --color-primary-ink: #ffc49c;
+  --color-on-primary: #1c1006;
+}
+:root[data-tone='light'][data-accent='orange'] {
+  --color-primary: #d4600f;
+  --color-primary-ink: #8a3a06;
+}
+:root[data-accent='gold'] {
+  --color-primary: #e8b923;
+  --color-primary-ink: #fbe08a;
+  --color-on-primary: #1d1a12;
+}
+:root[data-tone='light'][data-accent='gold'] {
+  --color-primary: #a67e00;
+  --color-primary-ink: #6b5200;
 }
 
 html,
@@ -352,8 +468,8 @@ body {
   filter: drop-shadow(0 0 5px rgba(255, 120, 30, 0.55));
   animation: pl-flicker 2.4s ease-in-out infinite;
 }
-:root[data-theme='light'] .pl-fire,
-:root[data-theme='light'] .pl-fire-hero {
+:root[data-tone='light'] .pl-fire,
+:root[data-tone='light'] .pl-fire-hero {
   background-image: linear-gradient(180deg, #ff9f1a 0%, #ee5a14 52%, #b92d0c 100%);
   filter: drop-shadow(0 0 4px rgba(238, 90, 20, 0.35));
 }
@@ -363,7 +479,7 @@ body {
   background-size: 100% 200%;
   animation: pl-flicker 2.4s ease-in-out infinite, pl-shimmer 3.6s linear infinite;
 }
-:root[data-theme='light'] .pl-fire-hero {
+:root[data-tone='light'] .pl-fire-hero {
   background-image: linear-gradient(180deg, #ff9f1a 0%, #ee5a14 25%, #b92d0c 50%, #ee5a14 75%, #ff9f1a 100%);
 }
 @keyframes pl-flicker {
@@ -406,7 +522,7 @@ body {
   -webkit-text-fill-color: transparent;
   font-weight: 600;
 }
-:root[data-theme='light'] .pl-fire-name {
+:root[data-tone='light'] .pl-fire-name {
   background-image: linear-gradient(180deg, #d98a0b 0%, #b8590f 100%);
 }
 .pl-gold-text {

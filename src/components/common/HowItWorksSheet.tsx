@@ -267,7 +267,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     },
     {
       title: 'Colors and themes',
-      body: ['Green is profit and red is loss. Each person can switch Loss colors to Scaled in Profile & Team, which tints a loss from yellow to red against the worst loss in view. Theme (Auto, Light, Dark or Midnight) and odds format are personal too and never change for anyone else.'],
+      body: ['Green is profit and red is loss. Each person can switch Loss colors to Scaled in Profile & Team, which tints a loss from yellow to red against the worst loss in view. Theme and odds format are personal too and never change for anyone else.', 'Themes: Auto (Light by day, Dark at night, following your phone), Light and Linen (warm off-white) for a light look, and Stone (soft gray), Dark, Midnight (navy), Turf (field green) and Clay (warm brown) for a dark one. Each tile in Profile & Settings shows the theme before you pick it. Accent changes the color of buttons, selected pills, switches and links: Blue, Teal, Indigo, Purple, Orange or Gold. Green and red are never accents, since they always mean profit and loss. With Indigo or Purple, the purple used for Void Requests, scheduled changes and voided picks turns teal so it still stands out. The commissioner banner in League Settings and the Commissioner tag on League Members take your accent too. Both settings stay on this device.'],
     },
   ];
 

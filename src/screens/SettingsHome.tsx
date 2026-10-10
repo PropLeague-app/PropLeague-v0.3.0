@@ -40,22 +40,19 @@ import {
   BellRing,
   CalendarCheck,
   CircleCheck,
-  Moon,
-  MoonStar,
   Radio,
   Repeat,
   Smartphone,
-  Sun,
   Check,
-  ChevronDown,
   ChevronRight,
-  SunMoon,
   SlidersHorizontal,
   TrendingDown,
   Wrench,
 } from 'lucide-react';
 import { PasswordInput } from '../components/common/PasswordInput';
 import type { ThemeMode } from '../types';
+import { ACCENTS, THEMES, THEME_BY_ID, themeTone, type AccentColor } from '../engine/themes';
+import { useResolvedTheme } from '../hooks/useResolvedTheme';
 
 const MORE_LINKS = [
   { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
@@ -99,59 +96,67 @@ function Seg<T extends string>({
   );
 }
 
-const THEME_OPTIONS: { value: ThemeMode; label: string; hint?: string; icon: ReactNode }[] = [
-  { value: 'auto', label: 'Auto', hint: 'Matches your phone', icon: <SunMoon size={14} /> },
-  { value: 'light', label: 'Light', icon: <Sun size={14} /> },
-  { value: 'graphite', label: 'Dark', icon: <Moon size={14} /> },
-  { value: 'dark', label: 'Midnight', icon: <MoonStar size={14} /> },
-];
-
-/** Theme picker as an app-styled dropdown (four options will not fit in a segmented control beside the
- * label). A small button shows the current choice; tapping it opens a themed menu instead of the native
- * iOS picker. */
-function ThemeMenu({ value, onChange }: { value: ThemeMode; onChange: (v: ThemeMode) => void }) {
-  const [open, setOpen] = useState(false);
-  const current = THEME_OPTIONS.find((o) => o.value === value) ?? THEME_OPTIONS[3];
+/** Theme swatches: one compact row of mini tiles, each painted in its theme's own page, card and
+ * text colors so the choice is visible before it is made (Auto is split light and dark). The chosen
+ * theme's name sits beside the "Theme" label. Tapping applies it right away. */
+function ThemeSwatches({ value, onChange }: { value: ThemeMode; onChange: (v: ThemeMode) => void }) {
+  const tiles: { value: ThemeMode; label: string }[] = [{ value: 'auto', label: 'Auto' }, ...THEMES.map((t) => ({ value: t.id as ThemeMode, label: t.label }))];
+  const light = THEME_BY_ID.light;
+  const dark = THEME_BY_ID.graphite;
+  const split = (a: string, b: string) => `linear-gradient(135deg, ${a} 0 50%, ${b} 50% 100%)`;
   return (
-    <div className="relative shrink-0">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="sel-pill border rounded-lg px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1.5"
-      >
-        {current.icon}
-        {current.label}
-        <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div role="listbox" className="absolute right-0 top-full mt-1.5 z-40 w-48 bg-bg-raised border border-border rounded-xl shadow-2xl p-1">
-            {THEME_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                role="option"
-                aria-selected={value === o.value}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-semibold ${value === o.value ? 'seg-active' : 'text-text'}`}
-              >
-                {o.icon}
-                <span className="flex-1">
-                  {o.label}
-                  {o.hint && <span className="block text-[10px] font-normal text-text-muted">{o.hint}</span>}
-                </span>
-                {value === o.value && <Check size={14} />}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+    <div role="radiogroup" aria-label="Theme" className="grid grid-cols-8 gap-1.5">
+      {tiles.map((tile) => {
+        const selected = value === tile.value;
+        const t = tile.value === 'auto' ? null : THEME_BY_ID[tile.value];
+        return (
+          <button
+            key={tile.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={tile.value === 'auto' ? 'Auto, matches your phone' : tile.label}
+            title={tile.label}
+            onClick={() => onChange(tile.value)}
+            className={`relative h-8 rounded-md overflow-hidden border ${selected ? 'border-transparent ring-2 ring-primary' : 'border-border'}`}
+            style={{ background: t ? t.bg : split(light.bg, dark.bg) }}
+          >
+            {/* A tiny card with one line of "text" in the theme's colors. */}
+            <span
+              className="absolute inset-x-1 inset-y-1.5 rounded-sm flex items-center px-1"
+              style={{ background: t ? t.card : split(light.card, dark.card), boxShadow: `inset 0 0 0 1px ${(t ?? dark).border}` }}
+            >
+              <span className="block h-[3px] w-full rounded-full" style={{ background: t ? t.text : '#7f8794' }} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Accent dots: each in the shade it will actually use on the current theme (darker on light themes). */
+function AccentDots({ value, tone, onChange }: { value: AccentColor; tone: 'light' | 'dark'; onChange: (v: AccentColor) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Accent color" className="flex items-center gap-2.5">
+      {ACCENTS.map((a) => {
+        const selected = value === a.id;
+        const color = a[tone].primary;
+        return (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={a.label}
+            onClick={() => onChange(a.id)}
+            className={`w-7 h-7 rounded-full flex items-center justify-center ${selected ? 'ring-2 ring-offset-2 ring-offset-bg-card' : ''}`}
+            style={{ background: color, ...(selected ? { ['--tw-ring-color' as string]: color } : {}) }}
+          >
+            {selected && <Check size={13} strokeWidth={3} style={{ color: a.onPrimary }} />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -256,6 +261,8 @@ export function SettingsHome() {
   const profile = useAppStore((s) => s.profile);
   const setOddsFormat = useAppStore((s) => s.setOddsFormat);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
+  const setAccentColor = useAppStore((s) => s.setAccentColor);
+  const resolvedTheme = useResolvedTheme();
   const updateProfile = useAppStore((s) => s.updateProfile);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
@@ -621,8 +628,17 @@ export function SettingsHome() {
                     ]}
                   />
                 </PrefRow>
-                <PrefRow label="Theme">
-                  <ThemeMenu value={profile?.themeMode ?? 'dark'} onChange={setThemeMode} />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm">Theme</p>
+                    <span className="text-xs font-semibold text-primary">
+                      {(profile?.themeMode ?? 'dark') === 'auto' ? 'Auto' : THEME_BY_ID[(profile?.themeMode ?? 'dark') as Exclude<ThemeMode, 'auto'>].label}
+                    </span>
+                  </div>
+                  <ThemeSwatches value={profile?.themeMode ?? 'dark'} onChange={setThemeMode} />
+                </div>
+                <PrefRow label="Accent">
+                  <AccentDots value={profile?.accentColor ?? 'blue'} tone={themeTone(resolvedTheme)} onChange={setAccentColor} />
                 </PrefRow>
                 {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
                 <PrefRow label="Loss colors">

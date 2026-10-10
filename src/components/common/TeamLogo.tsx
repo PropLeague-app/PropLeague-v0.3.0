@@ -88,7 +88,7 @@ export function TeamLogo({ team, size = 'md' }: { team: TeamLogoTeam; size?: Log
     <span className="relative inline-block shrink-0 leading-none">
       {badge}
       <span
-        className={`absolute ${AI_BADGE_CLASSES[size]} rounded-full bg-accent text-white font-bold leading-none flex items-center justify-center`}
+        className={`absolute ${AI_BADGE_CLASSES[size]} rounded-full bg-accent text-on-accent font-bold leading-none flex items-center justify-center`}
         aria-label="AI-controlled team"
         title="AI-controlled team"
       >

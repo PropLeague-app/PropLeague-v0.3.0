@@ -86,7 +86,7 @@ export function CollapsibleSection({
               <span className="text-sm font-bold text-text">{title}</span>
               {badge &&
                 (action ? (
-                  <span className="text-[10px] font-bold text-white bg-accent rounded-full px-1.5 py-px shrink-0">{badge}</span>
+                  <span className="text-[10px] font-bold text-on-accent bg-accent rounded-full px-1.5 py-px shrink-0">{badge}</span>
                 ) : (
                   <span className="text-[10px] text-accent font-semibold shrink-0">{badge}</span>
                 ))}

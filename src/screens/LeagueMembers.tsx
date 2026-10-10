@@ -86,7 +86,7 @@ export function LeagueMembers() {
                 </p>
               )}
               {team.id === league.commissionerTeamId && (
-                <span className="text-[10px] font-bold tracking-wide text-warning bg-warning/15 rounded-full px-2 py-0.5">COMMISSIONER</span>
+                <span className="text-[10px] font-bold tracking-wide text-primary-ink bg-primary/15 rounded-full px-2 py-0.5">COMMISSIONER</span>
               )}
               {conferencesOn && (
                 <div className="flex gap-1 flex-wrap justify-center">

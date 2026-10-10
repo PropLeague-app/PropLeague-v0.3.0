@@ -7,6 +7,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import type { ResolvedTheme, ThemeMode } from '../types';
+import { THEME_BY_ID, themeTone, type AccentColor } from '../engine/themes';
 
 /**
  * Style.Dark = light-colored status bar text/icons, for a DARK app background.
@@ -39,33 +40,42 @@ interface AppearancePlugin {
 }
 const Appearance = registerPlugin<AppearancePlugin>('Appearance');
 
-/** Fallbacks for --color-bg, only used if the computed value can't be read. */
-const NATIVE_BG: Record<ResolvedTheme, string> = { dark: '#141c29', graphite: '#0e0e10', light: '#e3e9f1' };
 
 export async function applyThemeMode(chosen: ThemeMode): Promise<void> {
   // For 'auto' the phone has to be told to follow itself again BEFORE its setting is read, otherwise a
   // previously forced light/dark would keep answering the media query.
   if (Capacitor.isNativePlatform() && chosen === 'auto') {
     try {
-      await Appearance.set({ background: NATIVE_BG.graphite, style: 'auto' });
+      await Appearance.set({ background: THEME_BY_ID.graphite.bg, style: 'auto' });
     } catch {
       /* best-effort */
     }
   }
   const mode = resolveTheme(chosen);
+  const tone = themeTone(mode);
   document.documentElement.dataset.theme = mode;
+  // Light or dark family: every light theme shares the light readability fixes in index.css, and the
+  // few components that pick colors in code ask for the tone, not the theme.
+  document.documentElement.dataset.tone = tone;
   if (!Capacitor.isNativePlatform()) return;
   try {
     // The view behind the page and the keyboard take the theme too, so nothing native shows the launch navy.
-    const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || NATIVE_BG[mode];
-    await Appearance.set({ background: bg, style: chosen === 'auto' ? 'auto' : mode === 'light' ? 'light' : 'dark' });
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim() || THEME_BY_ID[mode].bg;
+    await Appearance.set({ background: bg, style: chosen === 'auto' ? 'auto' : tone });
   } catch {
     // Older native build without the plugin, or a failed call: nothing to do.
   }
   try {
-    await StatusBar.setStyle({ style: mode === 'light' ? Style.Light : Style.Dark });
+    await StatusBar.setStyle({ style: tone === 'light' ? Style.Light : Style.Dark });
   } catch {
     // Best-effort -- a failed status bar style change shouldn't be able to break
     // app load, and there's nothing actionable to do about it here.
   }
+}
+
+/** Accent color (Settings > Accent): a data attribute on <html> that index.css reads. Blue, the original,
+ * is the absence of the attribute, so a missing or unknown value always falls back to it. */
+export function applyAccent(accent: AccentColor | undefined): void {
+  if (!accent || accent === 'blue') delete document.documentElement.dataset.accent;
+  else document.documentElement.dataset.accent = accent;
 }

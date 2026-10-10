@@ -92,6 +92,7 @@ interface AppState {
   updateProfile: (partial: Partial<UserProfile>) => void;
   setOddsFormat: (format: OddsFormat) => void;
   setThemeMode: (mode: ThemeMode) => void;
+  setAccentColor: (accent: NonNullable<UserProfile['accentColor']>) => void;
   setMatchupDetailMode: (mode: MatchupDetailMode) => void;
   updateUserTeam: (
     leagueId: string,
@@ -233,6 +234,8 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ profile: state.profile ? { ...state.profile, oddsFormat: format } : state.profile })),
       setThemeMode: (mode) =>
         set((state) => ({ profile: state.profile ? { ...state.profile, themeMode: mode } : state.profile })),
+      setAccentColor: (accent) =>
+        set((state) => ({ profile: state.profile ? { ...state.profile, accentColor: accent } : state.profile })),
       setMatchupDetailMode: (mode) =>
         set((state) => ({ profile: state.profile ? { ...state.profile, matchupDetailMode: mode } : state.profile })),
       // Local set is immediate/optimistic; the remote push is fire-and-forget
