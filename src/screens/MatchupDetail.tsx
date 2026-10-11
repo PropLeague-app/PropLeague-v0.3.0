@@ -48,9 +48,10 @@ export function MatchupDetail() {
   const matchupDetailMode = useAppStore((s) => s.profile?.matchupDetailMode ?? 'simple');
   const setMatchupDetailMode = useAppStore((s) => s.setMatchupDetailMode);
   const advanced = matchupDetailMode === 'advanced';
-  // Tapping a pick opens or closes just that one slot, on top of the Simple/Advanced setting.
-  // Keyed by team side and slot. Never saved: it clears when you leave the screen, swipe to
-  // another matchup, or press the Advanced button (which then means "all" again).
+  // Tapping a pick opens or closes that slot on BOTH sides, on top of the Simple/Advanced setting:
+  // the two cells share a row, so opening one and leaving the other simple left the closed side
+  // rattling around in a tall box. Keyed by slot alone. Never saved: it clears when you leave the
+  // screen, swipe to another matchup, or press the Advanced button (which then means "all" again).
   const [slotOverrides, setSlotOverrides] = useState<Record<string, boolean>>({});
   useEffect(() => {
     setSlotOverrides({});
@@ -315,8 +316,8 @@ export function MatchupDetail() {
                   hideEmpty={hideEmptyA}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
-                  advanced={slotOverrides[`a:${slotA.slotId}`] ?? advanced}
-                  onToggle={() => toggleSlot(`a:${slotA.slotId}`)}
+                  advanced={slotOverrides[slotA.slotId] ?? advanced}
+                  onToggle={() => toggleSlot(slotA.slotId)}
                 />
                 <div className="flex items-center justify-center px-1">
                   <PositionBadge position={slotA.position} />
@@ -329,8 +330,8 @@ export function MatchupDetail() {
                   hideEmpty={hideEmptyB}
                   realGamesById={realGamesById}
                   realPlayerStats={realPlayerStatsByWeek[String(matchup.week)]}
-                  advanced={slotOverrides[`b:${slotA.slotId}`] ?? advanced}
-                  onToggle={() => toggleSlot(`b:${slotA.slotId}`)}
+                  advanced={slotOverrides[slotA.slotId] ?? advanced}
+                  onToggle={() => toggleSlot(slotA.slotId)}
                   reverse
                 />
               </div>

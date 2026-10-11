@@ -219,33 +219,60 @@ async function beginSeason(
   return { updatedLeague, seasonStartWeek: started.ok ? started.seasonStartWeek : null, currentWeek: startWeek ?? league.currentWeek };
 }
 
-// League news for major settings changes (1.2.11): saves are gathered for a few seconds (a slider or
-// several fields in a row make one post), then the change from before the first save to now is posted as
-// one short line, split into what applies now and what starts next week.
-const settingsNewsQueue = new Map<string, { live: LeagueSettings; effective: LeagueSettings; timer: ReturnType<typeof setTimeout> }>();
+// League news for major settings changes (1.2.11): a league gets at most one settings post an hour. Saves
+// in a burst are gathered for a few seconds, and any further change inside the hour rewrites that same
+// post (the old one is deleted and the merged line goes up), measured from where the settings stood when
+// the hour began. Fiddling with a slider for ten minutes leaves one line, and changes that cancel out
+// leave none. The next change after the hour starts a fresh post.
+const NEWS_WINDOW_MS = 60 * 60 * 1000;
 
-function queueSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings) {
-  const entry = settingsNewsQueue.get(leagueId);
-  if (entry) clearTimeout(entry.timer);
-  const live = entry?.live ?? beforeLive;
-  const effective = entry?.effective ?? beforeEffective;
-  const timer = setTimeout(() => void postSettingsNews(leagueId, live, effective), 4000);
-  settingsNewsQueue.set(leagueId, { live, effective, timer });
+interface NewsWindow {
+  /** Live and effective settings as they stood when this hour's post began. */
+  live: LeagueSettings;
+  effective: LeagueSettings;
+  /** The post this window has already put up, so it can be replaced. */
+  itemId: string | null;
+  openedAt: number;
 }
 
-async function postSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings, nowOnly = false) {
-  settingsNewsQueue.delete(leagueId);
+const settingsNewsWindow = new Map<string, NewsWindow>();
+const settingsNewsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function queueSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings) {
+  const open = settingsNewsWindow.get(leagueId);
+  if (!open || Date.now() - open.openedAt > NEWS_WINDOW_MS) {
+    settingsNewsWindow.set(leagueId, { live: beforeLive, effective: beforeEffective, itemId: null, openedAt: Date.now() });
+  }
+  const timer = settingsNewsTimers.get(leagueId);
+  if (timer) clearTimeout(timer);
+  settingsNewsTimers.set(leagueId, setTimeout(() => void postSettingsNews(leagueId), 4000));
+}
+
+async function postSettingsNews(leagueId: string, nowOnly = false) {
+  settingsNewsTimers.delete(leagueId);
+  const win = settingsNewsWindow.get(leagueId);
   const league = useAppStore.getState().leagues[leagueId];
-  if (!league) return;
-  const now = majorSettingsChanges(beforeLive, league.settings);
+  if (!win || !league) return;
+  const now = majorSettingsChanges(win.live, league.settings);
   const later = nowOnly
     ? []
-    : majorSettingsChanges(beforeEffective, effectiveSettings(league.settings, league.pendingSettings)).filter((c) => !now.includes(c));
+    : majorSettingsChanges(win.effective, effectiveSettings(league.settings, league.pendingSettings)).filter((c) => !now.includes(c));
   const message = settingsNewsMessage(now, later, nextWeekLabel(league.currentWeek));
+
+  // This hour's earlier post is replaced, so the feed keeps one line however many saves there were.
+  const previousId = win.itemId;
+  if (previousId) {
+    const gone = await deleteAnnouncementRemote(previousId);
+    if (gone.ok) {
+      win.itemId = null;
+      useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, activity: l.activity.filter((a) => a.id !== previousId) })));
+    }
+  }
   if (!message) return;
   const item: ActivityItem = { id: `settings-${Date.now()}`, ts: new Date().toISOString(), type: 'announcement', message };
   const res = await postSystemActivityRemote(leagueId, item);
   if (!res.ok) return;
+  win.itemId = res.itemId;
   useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, activity: [{ ...item, id: res.itemId }, ...l.activity] })));
 }
 
@@ -503,7 +530,14 @@ export const useAppStore = create<AppState>()(
             return { ...league, settings, pendingSettings: meaningfulPending(settings, res.state.pending), settingsLocked: res.state.locked };
           }),
         );
-        if (beforeLive) void postSettingsNews(leagueId, beforeLive, beforeLive, true);
+        // Applying scheduled changes now: only what just went live is news.
+        if (beforeLive) {
+          queueSettingsNews(leagueId, beforeLive, beforeLive);
+          const t = settingsNewsTimers.get(leagueId);
+          if (t) clearTimeout(t);
+          settingsNewsTimers.delete(leagueId);
+          void postSettingsNews(leagueId, true);
+        }
         return { ok: true };
       },
 

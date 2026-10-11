@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import * as clientPen from '../../penalties';
 import * as clientPerfect from '../../perfectAnnouncement';
 import * as clientSkunked from '../../skunkedAnnouncement';
@@ -361,5 +362,20 @@ describe('win probability: server matches the client', () => {
     for (const [worst, risk] of [[0, 100], [12, 100], [80, 100], [30, 0], [5, 400]]) {
       expect(srvWin.lossReference(worst, risk)).toBe(scaleReference(worst, risk));
     }
+  });
+});
+
+// gradeWager lives inside settle-week/index.ts rather than _shared, so it cannot be imported and
+// run here. The next best thing: hold the server copy to the same moneyline tie rule the client
+// engine is tested on in settlement.test.ts.
+describe('settle-week grades a tied moneyline as a push', () => {
+  it('guards homeMargin === 0 before picking a winner', () => {
+    const src = readFileSync(
+      new URL('../../../../supabase/functions/settle-week/index.ts', import.meta.url),
+      'utf8',
+    );
+    const line = src.split('\n').find((l) => l.includes('? game.home_team : game.away_team'));
+    expect(line).toBeDefined();
+    expect(line).toContain("homeMargin === 0 ? 'push'");
   });
 });

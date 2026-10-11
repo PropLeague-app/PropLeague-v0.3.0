@@ -161,7 +161,9 @@ export function buildRealGameResult(
   let marketResult: MarketResult;
 
   if (wager.marketKey === 'h2h') {
-    marketResult = { marketKey: 'h2h', result: homeMargin > 0 ? game.homeTeam : game.awayTeam, simulatedValue: homeMargin };
+    // A tie pushes a two-way moneyline, the way DraftKings and FanDuel settle it.
+    const winner = homeMargin === 0 ? 'push' : homeMargin > 0 ? game.homeTeam : game.awayTeam;
+    marketResult = { marketKey: 'h2h', result: winner, simulatedValue: homeMargin };
   } else if (wager.marketKey === 'spreads') {
     const sideIsHome = wager.side === game.homeTeam;
     const sideMargin = sideIsHome ? homeMargin : -homeMargin;

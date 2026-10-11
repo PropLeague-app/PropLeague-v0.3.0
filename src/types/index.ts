@@ -55,6 +55,16 @@ export interface OddsOutcome {
   price: number; // American odds
   point?: number; // line, e.g. 84.5
   playerId?: string;
+  /** Deep link to this exact outcome on the book that priced it, from The Odds API's
+   * includeLinks (see supabase/functions/fetch-nfl-odds). The bet slip offers it when the
+   * person turned Open picks at a sportsbook on. Absent on simulated markets and on books
+   * that publish no link. */
+  link?: string;
+  /** Which real book priced this outcome, stamped on while every book is merged into one
+   * synthetic feed (see mergeBookmakersWithFallback). Without it a link would be an
+   * unlabelled button, since the merged book is called Best Available Odds. */
+  bookKey?: string;
+  bookTitle?: string;
 }
 
 /** Odds-API-shaped market. `key` mirrors The Odds API's market key naming. */
@@ -758,6 +768,11 @@ export interface UserProfile {
   /** Accent color for primary buttons, selected pills and links (engine/themes.ts). Local per-device like
    * themeMode; undefined means blue, the original. */
   accentColor?: 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold' | 'mono';
+  /** Shows a link on the bet slip to the same pick at the sportsbook that priced it, so a pick made
+   * here can be placed for real in one tap. Off unless the person turns it on, and PropLeague takes
+   * nothing for it: the link is the one The Odds API already returns with the line (OddsOutcome.link).
+   * Local per-device like the settings above; undefined means off. */
+  sportsbookLinks?: boolean;
 }
 
 // --- Validation --------------------------------------------------------------

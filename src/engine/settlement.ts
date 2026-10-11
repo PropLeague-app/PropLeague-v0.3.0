@@ -64,7 +64,8 @@ export function simulateGameResult(game: NFLGame): GameResult {
       if (market.key === 'h2h') {
         marketResults.push({
           marketKey: 'h2h',
-          result: homeMargin > 0 ? (homeTeamAbbrev ?? 'home') : (awayTeamAbbrev ?? 'away'),
+          // A tie pushes a two-way moneyline, the way DraftKings and FanDuel settle it.
+          result: homeMargin === 0 ? 'push' : homeMargin > 0 ? (homeTeamAbbrev ?? 'home') : (awayTeamAbbrev ?? 'away'),
           simulatedValue: homeMargin,
         });
       } else if (market.key === 'spreads') {

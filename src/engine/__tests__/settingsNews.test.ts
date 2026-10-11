@@ -24,8 +24,16 @@ describe('settings news', () => {
 
   it('builds one short line, split into now and next week', () => {
     expect(settingsNewsMessage(['Buy-in $20 → $50'], ['Max prop bet No max → $25'], 'Week 6')).toBe(
-      '⚙️ Commissioner update: Buy-in $20 → $50. From Week 6: Max prop bet No max → $25.',
+      'Commissioner update: Buy-in $20 → $50. From Week 6: Max prop bet No max → $25.',
     );
     expect(settingsNewsMessage([], [], 'Week 6')).toBeNull();
+  });
+});
+
+describe('no emoji in the text', () => {
+  it('leaves the icon to the feed', () => {
+    const msg = settingsNewsMessage(['Buy-in $20 → $50'], [], 'Week 6') ?? '';
+    expect(msg.startsWith('Commissioner update:')).toBe(true);
+    expect(/\p{Extended_Pictographic}/u.test(msg)).toBe(false);
   });
 });

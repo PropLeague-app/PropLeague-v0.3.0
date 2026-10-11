@@ -37,7 +37,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
-import { notifAllowed } from '../_shared/leaguePrefs.ts';
+import { notifAllowed, slateModeFrom, slateWanted } from '../_shared/leaguePrefs.ts';
 import { daySlotLong } from '../_shared/dayWindows.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 
@@ -46,12 +46,6 @@ const REMINDER_WINDOW_MAX_MS = 75 * 60 * 1000; // ...but not yet this close (sti
 
 // Window names come from _shared/dayWindows.ts (one table for the app and every function).
 const slotLabel = daySlotLong;
-
-type SlateMode = 'needs_work' | 'trailing' | 'every_slate';
-function slateModeFrom(rawPrefs: unknown): SlateMode {
-  const v = rawPrefs && typeof rawPrefs === 'object' ? (rawPrefs as Record<string, unknown>).slateUpdates : null;
-  return v === 'trailing' || v === 'every_slate' ? v : 'needs_work';
-}
 
 // Same shape/defaults as settle-week's SettingsSlice, only the fields this
 // function needs (see that file's header on why these are duplicated).
@@ -199,7 +193,7 @@ Deno.serve(async (req) => {
         const hasScore = !!mu && (mu.mine !== 0 || mu.theirs !== 0);
         const trailing = !!mu && mu.mine < mu.theirs;
 
-        const shouldSend = needsWork || mode === 'every_slate' || (mode === 'trailing' && trailing);
+        const shouldSend = slateWanted(mode, needsWork, trailing);
         if (!shouldSend) continue;
 
         // ---- message

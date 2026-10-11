@@ -43,6 +43,7 @@ import {
   Radio,
   Repeat,
   Smartphone,
+  ExternalLink,
   Check,
   ChevronRight,
   SlidersHorizontal,
@@ -657,6 +658,15 @@ export function SettingsHome() {
                     ]}
                   />
                 </PrefRow>
+                {/* Off unless asked for: a link out to a real sportsbook is not something to put in
+                    front of someone who never wanted it. PropLeague takes nothing for the tap. */}
+                <ToggleRow
+                  icon={<ExternalLink size={15} />}
+                  label="Open picks at a sportsbook"
+                  value={profile?.sportsbookLinks ?? false}
+                  onChange={(v) => updateProfile({ sportsbookLinks: v })}
+                  note="A link from the bet slip to the book that priced the pick. PropLeague earns nothing from it."
+                />
                 <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-1.5 text-xs font-semibold tabular-nums">
                   {[20, -5, -30, -75].map((amount) => {
                     const scale = profile?.plColorScale ?? 'classic';

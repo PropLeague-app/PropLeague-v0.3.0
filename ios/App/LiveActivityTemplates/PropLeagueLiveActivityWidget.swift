@@ -3,6 +3,26 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+/// Where tapping this card lands in the app. A score card opens that league's matchup for the week,
+/// a lineup countdown opens that league's Lineup screen. SceneDelegate catches the URL and hands it
+/// to the web view (see ios/App/App/LiveActivity/LiveActivityPlugin.swift, src/services/pushRoute.ts).
+@available(iOS 16.1, *)
+func plCardLink(_ a: PropLeagueActivityAttributes) -> URL? {
+    var parts = URLComponents()
+    parts.scheme = "propleague"
+    parts.host = "open"
+    var query = [URLQueryItem(name: "leagueId", value: a.leagueId)]
+    if a.kind == "score" {
+        query.append(URLQueryItem(name: "screen", value: "matchup"))
+        query.append(URLQueryItem(name: "week", value: a.week))
+        query.append(URLQueryItem(name: "teamId", value: a.teamId))
+    } else {
+        query.append(URLQueryItem(name: "screen", value: "lineup"))
+    }
+    parts.queryItems = query
+    return parts.url
+}
+
 // MARK: - Widget
 
 /// Lock screen banner + Dynamic Island for both kinds of PropLeague Live Activity:
@@ -14,6 +34,7 @@ struct PropLeagueLiveActivityWidget: Widget {
             LockScreenView(attributes: context.attributes, state: context.state, activityID: context.activityID)
                 .activityBackgroundTint(PL.background)
                 .activitySystemActionForegroundColor(.white)
+                .widgetURL(plCardLink(context.attributes))
         } dynamicIsland: { context in
             let a = context.attributes
             let s = context.state
@@ -109,6 +130,7 @@ struct PropLeagueLiveActivityWidget: Widget {
                     LineupMiniRing(attributes: a, state: s, size: 22)
                 }
             }
+            .widgetURL(plCardLink(a))
             .keylineTint(isScore ? (PL.leadColor(mine: s.myScore, opp: s.oppScore) ?? PL.accent) : PL.lineupTint(s.phase))
         }
     }
@@ -173,7 +195,7 @@ struct LockScreenView: View {
             if attributes.kind == "score" {
                 ScoreBoard(attributes: attributes, state: state)
                 if #available(iOS 17.0, *), let slots = state.slots, !slots.isEmpty, !activityID.isEmpty {
-                    SlotScroller(activityID: activityID, slots: slots)
+                    LineupPanel(activityID: activityID, slots: slots)
                 }
             } else {
                 HStack(alignment: .center, spacing: 12) {
@@ -335,26 +357,64 @@ struct TeamColumn: View {
     }
 }
 
-/// DraftKings style leg scroller for my lineup: arrows step through the slots, each showing the
-/// position pill, the pick, its status and the stake. The arrows run an App Intent (iOS 17+).
+/// My lineup on the card, without stepping through it one pick at a time. Collapsed it shows the
+/// pick worth looking at (the one live now, else the next one still open) over a strip of pips, one
+/// per slot, so the whole lineup reads at a glance. The chevron opens the picks that are on right
+/// now, at most four, since the lock screen has no room for a whole roster. Settled and upcoming
+/// picks stay in the pips, with the week's record already on the scoreboard above. The chevron runs
+/// an App Intent (iOS 17+).
 @available(iOS 17.0, *)
-struct SlotScroller: View {
+struct LineupPanel: View {
     let activityID: String
     let slots: [SlotLine]
+    /// The island has no room for the grid, so it shows the collapsed panel only.
+    var expandable: Bool = true
+
+    private static let listMax = 4
 
     var body: some View {
-        let index = SharedPrefs.slotIndex(activityID, count: slots.count)
-        let slot = slots[index]
-        HStack(spacing: 6) {
-            arrow("chevron.left", delta: -1)
-            // Same look as the app's position badge: tinted fill, colored border and text.
-            Text(slot.pos)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(PL.positionColor(slot.pos))
-                .frame(minWidth: 32)
-                .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 4).fill(PL.positionColor(slot.pos).opacity(0.15)))
-                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(PL.positionColor(slot.pos), lineWidth: 1))
+        // Nothing left to name once every pick has settled: the pips and the record say it all.
+        let canOpen = expandable && !activityID.isEmpty && !pool.isEmpty
+        let expanded = canOpen && SharedPrefs.lineupExpanded(activityID)
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                if expanded {
+                    grid
+                } else {
+                    featuredRow
+                }
+                if canOpen {
+                    Button(intent: ToggleLineupExpandedIntent(activityId: activityID)) {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 22, height: expanded ? 30 : 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            SlotPips(slots: slots)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.07)))
+    }
+
+    // MARK: collapsed
+
+    private var featured: SlotLine {
+        slots.first { $0.status == "live" }
+            ?? slots.first { $0.status == "pending" }
+            ?? slots.first { $0.status == "empty" }
+            ?? slots.max(by: { $0.stake < $1.stake })
+            ?? slots[0]
+    }
+
+    private var featuredRow: some View {
+        let slot = featured
+        return HStack(spacing: 6) {
+            posPill(slot.pos, size: 11, minWidth: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text(primary(slot))
                     .font(.system(size: 12, weight: .semibold))
@@ -368,21 +428,89 @@ struct SlotScroller: View {
                 }
             }
             Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(slot.status == "empty" ? "-" : PL.stake(slot.stake))
-                    .font(.system(size: 12, weight: .bold).monospacedDigit())
-                    .foregroundColor(.white)
-                Text("\(index + 1)/\(slots.count)")
+            Text(slot.status == "empty" ? "-" : PL.stake(slot.stake))
+                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .foregroundColor(.white)
+            StatusMark(status: slot.status)
+        }
+        .frame(height: 32)
+    }
+
+    // MARK: expanded
+
+    /// Picks whose game is on right now: the only ones worth naming while the card is this small.
+    private var onNow: [SlotLine] {
+        slots.filter { $0.status == "live" }
+    }
+
+    /// Nothing is on yet, so name what is coming instead.
+    private var upNext: [SlotLine] {
+        slots.filter { $0.status == "pending" || $0.status == "empty" }
+    }
+
+    private var pool: [SlotLine] {
+        onNow.isEmpty ? upNext : onNow
+    }
+
+    private var listed: [SlotLine] {
+        Array(pool.prefix(Self.listMax))
+    }
+
+    private var hiddenCount: Int {
+        max(0, pool.count - Self.listMax)
+    }
+
+    /// One column for a pick or two, two columns for three or four. Four is the ceiling: past that
+    /// the card grows into its own header and iOS clips the top of it.
+    private var grid: some View {
+        let perRow = listed.count > 2 ? 2 : 1
+        let rows = stride(from: 0, to: listed.count, by: perRow).map { Array(listed[$0 ..< min($0 + perRow, listed.count)]) }
+        return VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, pair in
+                HStack(spacing: 8) {
+                    ForEach(Array(pair.enumerated()), id: \.offset) { _, slot in
+                        cell(slot)
+                    }
+                    if pair.count < perRow { Color.clear.frame(maxWidth: .infinity) }
+                }
+            }
+            if hiddenCount > 0 {
+                Text("+\(hiddenCount) more in the app")
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.45))
             }
-            .frame(minWidth: 34, alignment: .trailing)
-            StatusMark(status: slot.status)
-            arrow("chevron.right", delta: 1)
         }
-        .padding(.horizontal, 2)
-        .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.07)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func cell(_ slot: SlotLine) -> some View {
+        HStack(spacing: 4) {
+            posPill(slot.pos, size: 9, minWidth: 26)
+            Text(primary(slot))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(slot.status == "empty" ? .white.opacity(0.5) : .white)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            Text(slot.status == "empty" ? "-" : PL.stake(slot.stake))
+                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                .foregroundColor(.white.opacity(0.85))
+            StatusMark(status: slot.status)
+                .scaleEffect(0.8)
+                .frame(width: 12, height: 12)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: pieces
+
+    private func posPill(_ pos: String, size: CGFloat, minWidth: CGFloat) -> some View {
+        Text(pos)
+            .font(.system(size: size, weight: .bold))
+            .foregroundColor(PL.positionColor(pos))
+            .frame(minWidth: minWidth)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 4).fill(PL.positionColor(pos).opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(PL.positionColor(pos), lineWidth: 1))
     }
 
     private func primary(_ s: SlotLine) -> String {
@@ -393,16 +521,32 @@ struct SlotScroller: View {
     private func secondary(_ s: SlotLine) -> String {
         s.status == "empty" || s.name.isEmpty ? "" : s.line
     }
+}
 
-    private func arrow(_ symbol: String, delta: Int) -> some View {
-        Button(intent: StepLineupSlotIntent(activityId: activityID, delta: delta, count: slots.count)) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.white.opacity(0.7))
-                .frame(width: 22, height: 36)
-                .contentShape(Rectangle())
+/// One pip per slot, in lineup order: the whole week at a glance, settled picks included.
+struct SlotPips: View {
+    let slots: [SlotLine]
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(slots.enumerated()), id: \.offset) { _, slot in
+                pip(slot.status)
+            }
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .frame(height: 6)
+    }
+
+    @ViewBuilder
+    private func pip(_ status: String) -> some View {
+        switch status {
+        case "won": Circle().fill(PL.win).frame(width: 6, height: 6)
+        case "lost": Circle().fill(PL.loss).frame(width: 6, height: 6)
+        case "push": Circle().fill(Color.white.opacity(0.45)).frame(width: 6, height: 6)
+        case "live": Circle().fill(PL.accent).frame(width: 6, height: 6)
+        case "empty": Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1).frame(width: 6, height: 6)
+        default: Circle().fill(PL.warn.opacity(0.8)).frame(width: 6, height: 6)
+        }
     }
 }
 
@@ -603,7 +747,7 @@ struct IslandScoreCenter: View {
     }
 }
 
-/// Expanded island, bottom: the lineup scroller (iOS 17+), or the league name on older iOS.
+/// Expanded island, bottom: the lineup panel, collapsed (iOS 17+), or the league name on older iOS.
 struct IslandScoreBottom: View {
     let attributes: PropLeagueActivityAttributes
     let state: PropLeagueActivityAttributes.ContentState
@@ -611,7 +755,7 @@ struct IslandScoreBottom: View {
 
     var body: some View {
         if #available(iOS 17.0, *), let slots = state.slots, !slots.isEmpty, !activityID.isEmpty {
-            SlotScroller(activityID: activityID, slots: slots)
+            LineupPanel(activityID: activityID, slots: slots, expandable: false)
         } else {
             Text(attributes.leagueName)
                 .font(.caption)

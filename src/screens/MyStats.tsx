@@ -20,8 +20,10 @@ import { bestAndWorstWeek, matchupStats, playerHighlights, playerRecords, unspen
 import { MARKET_LABELS } from '../data/propsGenerator';
 import { TeamLogo } from '../components/common/TeamLogo';
 import { ShareButton } from '../share/ShareButton';
-import { StatsShareCard, type StatsCardData } from '../share/cards/StatsShareCard';
+import { StatsShareCard, type StatsCardData, type StatTile } from '../share/cards/StatsShareCard';
 import { StatsTabShareCard, type Highlight, type ShareCell, type TabBlock, type TableRow } from '../share/cards/StatsTabShareCard';
+import { poolHighlights, teamWeeklyImpact } from '../engine/poolView';
+import { poolTeamCount } from '../engine/prizePool';
 
 function pct(n: number): string {
   return `${n >= 0 ? '+' : ''}${(n * 100).toFixed(1)}%`;
@@ -228,6 +230,19 @@ export function MyStats() {
   const breakEven = stats.avgWin + stats.avgLoss > 0 ? stats.avgLoss / (stats.avgWin + stats.avgLoss) : 0;
   const teamName = (id: string) => league.teams.find((t) => t.id === id);
 
+  const wkLabel = (w: WeekId) => (typeof w === 'number' ? `WK ${w}` : weekLabel(w).toUpperCase());
+  // Prize pool (1.2.11): how this team (or the league) has moved the tracked pool. Only once buy-ins are
+  // on and the pool carries per-team detail, so it never shows an empty block.
+  const pool = league.settings.buyInEnabled ? league.prizePool : null;
+  const poolWeeks = !isLeagueView && viewedTeam ? teamWeeklyImpact(pool, viewedTeam.id) : [];
+  const poolTotal = poolWeeks.reduce((sum, w) => sum + w.impact, 0);
+  const poolAvgMult = poolWeeks.length > 0 ? poolWeeks.reduce((sum, w) => sum + w.multiplier, 0) / poolWeeks.length : 1;
+  const poolBest = poolWeeks.reduce<(typeof poolWeeks)[number] | null>((b, w) => (!b || w.impact > b.impact ? w : b), null);
+  const poolWorst = poolWeeks.reduce<(typeof poolWeeks)[number] | null>((b, w) => (!b || w.impact < b.impact ? w : b), null);
+  const poolShare = pool && poolWeeks.length > 0 ? pool.current / Math.max(1, poolTeamCount(league)) : 0;
+  const leagueMarks = isLeagueView ? poolHighlights(pool) : null;
+  const showPool = !!pool && (poolWeeks.length > 0 || (isLeagueView && (pool.history.length > 0)));
+
   // Share: the numbers on this screen as one picture (a fixed-size card, not a screenshot).
   const perfectCount = !isLeagueView && viewedTeam ? perfectWeeksForTeam(league, viewedTeam.id).length : null;
   const shareData: StatsCardData = {
@@ -340,6 +355,28 @@ export function MyStats() {
               title: 'Profit by week',
               weeks: weekly.map((w) => ({ label: typeof w.week === 'number' ? String(w.week) : weekLabel(w.week).slice(0, 3), pl: w.pl })),
             },
+        !showPool
+          ? null
+          : {
+              kind: 'tiles',
+              cols: 2,
+              tiles: isLeagueView
+                ? compact<StatTile>([
+                    { label: 'POOL NOW', value: formatCents(pool!.current) },
+                    { label: 'FROM THE BUY-INS', value: formatCents(pool!.current - pool!.initial), amount: pool!.current - pool!.initial },
+                    leagueMarks?.best ? { label: `BEST WEEK · ${wkLabel(leagueMarks.best.week)}`, value: formatCents(leagueMarks.best.netRealPL), amount: leagueMarks.best.netRealPL } : null,
+                    leagueMarks?.worst ? { label: `WORST WEEK · ${wkLabel(leagueMarks.worst.week)}`, value: formatCents(leagueMarks.worst.netRealPL), amount: leagueMarks.worst.netRealPL } : null,
+                  ])
+                : compact<StatTile>([
+                    { label: 'MOVED THE POOL', value: `${poolTotal >= 0 ? '+' : ''}${formatCents(poolTotal)}`, amount: poolTotal },
+                    { label: 'AVG MULTIPLIER', value: `${poolAvgMult.toFixed(2)}x` },
+                    poolBest ? { label: `BEST WEEK · ${wkLabel(poolBest.week)}`, value: `+${formatCents(poolBest.impact)}`, amount: poolBest.impact } : null,
+                    poolWorst ? { label: `WORST WEEK · ${wkLabel(poolWorst.week)}`, value: formatCents(poolWorst.impact), amount: poolWorst.impact } : null,
+                  ]),
+            },
+        !showPool || isLeagueView || poolWeeks.length === 0
+          ? null
+          : { kind: 'bars', title: 'Pool impact by week', weeks: poolWeeks.map((w) => ({ label: typeof w.week === 'number' ? String(w.week) : weekLabel(w.week).slice(0, 3), pl: w.impact })) },
         recTable('By day slot', daySlotItems),
         recTable(
           'By stake size',
@@ -612,6 +649,90 @@ export function MyStats() {
                 </div>
               )}
             </Card>
+
+            {showPool && (
+              <Card className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-text-muted">Prize pool impact</p>
+                  <button type="button" onClick={() => navigate('/prize-pool')} className="text-[11px] font-semibold text-primary">
+                    Prize pool →
+                  </button>
+                </div>
+                {isLeagueView ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] text-text-muted">Pool now</p>
+                      <p className="text-sm font-bold tabular-nums">{formatCents(pool!.current)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-text-muted">From the buy-ins</p>
+                      <p
+                        className={`text-sm font-bold tabular-nums ${pool!.current - pool!.initial >= 0 ? 'text-profit' : 'text-loss'}`}
+                        style={plStyle(pool!.current - pool!.initial, Math.max(1, pool!.initial))}
+                      >
+                        {formatCents(pool!.current - pool!.initial)}
+                      </p>
+                    </div>
+                    {leagueMarks?.best && (
+                      <div>
+                        <p className="text-[10px] text-text-muted">Best week · {weekLabel(leagueMarks.best.week)}</p>
+                        <p className="text-sm font-bold text-profit tabular-nums">{formatCents(leagueMarks.best.netRealPL)}</p>
+                      </div>
+                    )}
+                    {leagueMarks?.worst && (
+                      <div>
+                        <p className="text-[10px] text-text-muted">Worst week · {weekLabel(leagueMarks.worst.week)}</p>
+                        <p
+                          className="text-sm font-bold text-loss tabular-nums"
+                          style={plStyle(leagueMarks.worst.netRealPL, Math.max(1, pool!.initial))}
+                        >
+                          {formatCents(leagueMarks.worst.netRealPL)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] text-text-muted">Moved the pool</p>
+                        <p
+                          className={`text-sm font-bold tabular-nums ${poolTotal >= 0 ? 'text-profit' : 'text-loss'}`}
+                          style={plStyle(poolTotal, Math.max(1, pool!.initial))}
+                        >
+                          {poolTotal >= 0 ? '+' : ''}
+                          {formatCents(poolTotal)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-text-muted">Average multiplier</p>
+                        <p className={`text-sm font-bold tabular-nums ${poolAvgMult >= 1 ? 'text-profit' : 'text-loss'}`}>{poolAvgMult.toFixed(2)}x</p>
+                      </div>
+                      {poolBest && (
+                        <div>
+                          <p className="text-[10px] text-text-muted">Best week · {weekLabel(poolBest.week)}</p>
+                          <p className="text-sm font-bold text-profit tabular-nums">
+                            {poolBest.impact >= 0 ? '+' : ''}
+                            {formatCents(poolBest.impact)}
+                          </p>
+                        </div>
+                      )}
+                      {poolWorst && (
+                        <div>
+                          <p className="text-[10px] text-text-muted">Worst week · {weekLabel(poolWorst.week)}</p>
+                          <p className="text-sm font-bold text-loss tabular-nums" style={plStyle(poolWorst.impact, Math.max(1, pool!.initial))}>
+                            {formatCents(poolWorst.impact)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-text-muted">
+                      An even share of the pool today is {formatCents(poolShare)}. Virtual tracking only.
+                    </p>
+                  </>
+                )}
+              </Card>
+            )}
 
             <Card>
               <p className="text-xs text-text-muted mb-1">By stake size</p>

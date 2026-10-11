@@ -426,12 +426,18 @@ function orderTeamsForMultiplier(standings: StandingLine[], basis: MultiplierBas
   if (basis === 'seasonPL') {
     rows.sort((a, b) => b.totalPL - a.totalPL || a.teamId.localeCompare(b.teamId));
   } else {
+    // Win-loss, then season P/L, then bet record (1.2.11): teams on the same record used to fall back to
+    // their team id, which put the bigger multiplier on the worse season often enough to look broken.
     rows.sort((a, b) => {
       const gamesA = a.wins + a.losses + a.ties;
       const gamesB = b.wins + b.losses + b.ties;
       const pctA = gamesA > 0 ? (a.wins + a.ties * 0.5) / gamesA : 0;
       const pctB = gamesB > 0 ? (b.wins + b.ties * 0.5) / gamesB : 0;
-      return pctB - pctA || a.teamId.localeCompare(b.teamId);
+      if (Math.abs(pctA - pctB) > 1e-9) return pctB - pctA;
+      if (a.totalPL !== b.totalPL) return b.totalPL - a.totalPL;
+      const recA = a.betsWon - a.betsLost;
+      const recB = b.betsWon - b.betsLost;
+      return recB - recA || a.teamId.localeCompare(b.teamId);
     });
   }
   return rows.map((r) => r.teamId);

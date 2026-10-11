@@ -18,6 +18,7 @@ import { applyStakeKey, applyStakeKeyToPrefill, type KeypadKey } from '../../eng
 import { compareOdds, swapChoices, swapKind } from '../../engine/pickSwap';
 import { pickMarket, pickTitle } from './pickText';
 import { haptic } from '../../services/haptics';
+import { SportsbookChip, SportsbookPrompt } from './SportsbookLink';
 
 /** "G. Smith" for a player prop, "Buccaneers" for a team pick: the short name on a slot choice. */
 function heldName(w: Wager): string {
@@ -72,6 +73,9 @@ export function BetSlipSheet({
   onConfirmed: () => void;
 }) {
   const placeWager = useAppStore((s) => s.placeWager);
+  const sportsbookLinks = useAppStore((s) => s.profile?.sportsbookLinks ?? false);
+  // Tapping the book chip swaps the keypad for the hand-off panel until Back or the link itself.
+  const [bookPrompt, setBookPrompt] = useState(false);
   const league = useAppStore((s) => s.leagues[target.leagueId]);
   const isML = target.slotPosition === 'ML';
   const minOdds = isML ? settings.mlBetOverride?.minOdds ?? null : settings.propBetOverride?.minOdds ?? settings.minOdds;
@@ -406,20 +410,32 @@ export function BetSlipSheet({
               under the finger mid-tap (delete, then the 9 lands). */}
           {reasons.length > 0 && <p className="text-loss text-xs">{reasons[0]}</p>}
 
-          <NumericKeypad onKey={onKey} onEnter={() => void confirm()} onEscape={onClose} />
+          {/* The sportsbook hand-off borrows the keypad's space rather than adding height: the sheet
+              is already as tall as it can be, and someone reading the notice is not typing a stake. */}
+          {bookPrompt ? (
+            <SportsbookPrompt outcome={target.outcome} onBack={() => setBookPrompt(false)} />
+          ) : (
+            <>
+              <NumericKeypad onKey={onKey} onEnter={() => void confirm()} onEscape={onClose} />
 
-          <button
-            disabled={!valid || submitting}
-            onClick={confirm}
-            className={`w-full h-[54px] flex flex-col items-center justify-center rounded-xl leading-tight ${SOFT_PRIMARY_BTN}`}
-          >
-            <span className="block text-base">
-              {submitting ? (replacing ? 'Replacing…' : 'Adding…') : !hasStake ? 'Enter Stake' : replacing ? 'Replace Pick' : 'Add to Roster'}
-            </span>
-            <span className="block text-xs font-medium opacity-80 mt-0.5 tabular-nums">
-              Potential Profit: {hasStake ? formatCents(potentialProfit) : '$–'}
-            </span>
-          </button>
+              <div className="flex items-stretch gap-2">
+                {/* Left of Add to Roster, share-button sized: a side door, never the main one. */}
+                <SportsbookChip outcome={target.outcome} enabled={sportsbookLinks} onPress={() => setBookPrompt(true)} />
+                <button
+                  disabled={!valid || submitting}
+                  onClick={confirm}
+                  className={`flex-1 h-[54px] flex flex-col items-center justify-center rounded-xl leading-tight ${SOFT_PRIMARY_BTN}`}
+                >
+                  <span className="block text-base">
+                    {submitting ? (replacing ? 'Replacing…' : 'Adding…') : !hasStake ? 'Enter Stake' : replacing ? 'Replace Pick' : 'Add to Roster'}
+                  </span>
+                  <span className="block text-xs font-medium opacity-80 mt-0.5 tabular-nums">
+                    Potential Profit: {hasStake ? formatCents(potentialProfit) : '$–'}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

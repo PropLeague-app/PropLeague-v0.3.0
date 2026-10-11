@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { CircleHelp, DollarSign, Lock, Medal, Trophy } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { ChevronLeft, ChevronRight, CircleHelp, DollarSign, Lock, Medal, Trophy } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { activeMultipliers, championAndRunnerUp, computePayouts, poolTeamCount } from '../engine/prizePool';
-import { biggestSwing, findWeek, poolHasDetail, seasonImpacts, weekImpacts, type PoolImpactRow } from '../engine/poolView';
+import { findWeek, poolHasDetail, poolHighlights, seasonImpacts, weekImpacts, type PoolImpactRow } from '../engine/poolView';
 import { weekLabel, type League, type PoolWeekEntry, type PrizePool as Pool, type WeekId } from '../types';
 import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
@@ -15,6 +15,12 @@ import { ShareButton } from '../share/ShareButton';
 import { PoolShareCard } from '../share/cards/PoolShareCard';
 
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${formatCents(n)}`;
+/** Green or red first, so a gain is colored in every P/L mode; the scaled and mono styles layer on top. */
+const plClass = (n: number) => (n >= 0 ? 'text-profit' : 'text-loss');
+
+/** What the screen is looking at: the whole season (null), the pool as created ('start'), or one week. */
+type PoolPoint = WeekId | 'start' | null;
+const samePoint = (a: PoolPoint, b: PoolPoint) => a != null && b != null && String(a) === String(b);
 
 function placeLabel(place: number): ReactNode {
   if (place === 1)
@@ -58,13 +64,17 @@ function PoolChart({
   onSelect,
 }: {
   pool: Pool;
-  selected: WeekId | null;
-  onSelect: (week: WeekId | null) => void;
+  /** 'start' is the pool as it was created, before any week settled. */
+  selected: PoolPoint;
+  onSelect: (point: PoolPoint) => void;
 }) {
   const W = 320;
   const H = 110;
-  const PAD = 8;
-  const points = [{ week: null as WeekId | null, value: pool.initial }, ...pool.history.map((h) => ({ week: h.week, value: h.poolAfter }))];
+  const PAD = 10;
+  const points: { key: PoolPoint; value: number }[] = [
+    { key: 'start', value: pool.initial },
+    ...pool.history.map((h) => ({ key: h.week as PoolPoint, value: h.poolAfter })),
+  ];
   const values = points.map((p) => p.value);
   const hi = Math.max(...values, pool.initial);
   const lo = Math.min(...values, pool.initial);
@@ -76,6 +86,7 @@ function PoolChart({
   const baseY = y(pool.initial);
   const up = pool.current >= pool.initial;
   const stroke = up ? 'var(--color-profit)' : 'var(--color-loss)';
+  const band = (W - PAD * 2) / Math.max(points.length - 1, 1);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28" role="img" aria-label="Prize pool over the season">
@@ -90,21 +101,29 @@ function PoolChart({
       <line x1={PAD} y1={baseY} x2={W - PAD} y2={baseY} stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
       <polyline points={line} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {points.map((p, i) => {
-        const on = p.week != null && String(p.week) === String(selected);
+        const on = samePoint(p.key, selected);
         return (
-          <g key={i}>
-            <circle cx={x(i)} cy={y(p.value)} r={on ? 5 : 2.5} fill={on ? 'var(--color-primary)' : stroke} />
-            {p.week != null && (
-              <rect
-                x={x(i) - (W - PAD * 2) / Math.max(points.length - 1, 1) / 2}
-                y={0}
-                width={(W - PAD * 2) / Math.max(points.length - 1, 1)}
-                height={H}
-                fill="transparent"
-                onClick={() => onSelect(on ? null : p.week)}
-                style={{ cursor: 'pointer' }}
-              />
-            )}
+          <g key={String(p.key)}>
+            {/* The picked point gets a dropline and a halo, so it reads as picked even at a glance. */}
+            {on && <line x1={x(i)} y1={y(p.value)} x2={x(i)} y2={H} stroke="var(--color-primary)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
+            {on && <circle cx={x(i)} cy={y(p.value)} r="8" fill="var(--color-primary)" opacity="0.2" />}
+            <circle
+              cx={x(i)}
+              cy={y(p.value)}
+              r={on ? 4.5 : 2.5}
+              fill={on ? 'var(--color-primary)' : stroke}
+              stroke={on ? 'var(--color-bg-card)' : undefined}
+              strokeWidth={on ? 1.5 : undefined}
+            />
+            <rect
+              x={x(i) - band / 2}
+              y={0}
+              width={band}
+              height={H}
+              fill="transparent"
+              onClick={() => onSelect(on ? null : p.key)}
+              style={{ cursor: 'pointer' }}
+            />
           </g>
         );
       })}
@@ -136,27 +155,44 @@ function ImpactRow({
           {row.multiplier.toFixed(2)}x
         </span>
       )}
-      <span className="shrink-0 text-xs font-semibold tabular-nums" style={plStyle(row.impact, scaleRef)}>
+      <span className={`shrink-0 text-xs font-semibold tabular-nums ${plClass(row.impact)}`} style={plStyle(row.impact, scaleRef)}>
         {signed(row.impact)}
       </span>
     </div>
   );
 }
 
-/** A multiplier as a bar either side of 1.0x, so the spread reads without the numbers. */
-function MultiplierBar({ value }: { value: number }) {
-  const plStyle = usePlStyle();
-  const pct = Math.min(1, Math.abs(value - 1) / 0.5) * 50;
-  // Classic and Mono give no color for a gain, so fall back to the theme's own P/L colors.
-  const color = plStyle(value - 1, 0.5)?.color ?? (value >= 1 ? 'var(--color-profit)' : 'var(--color-loss)');
+/** A small tile under the chart: a label, the week it points at, and the amount. Tapping it picks that
+ * week, so the season view is three taps away from any week worth looking at. */
+function WeekTile({
+  label,
+  entry,
+  onPick,
+  plStyle,
+  scaleRef,
+}: {
+  label: string;
+  entry: PoolWeekEntry | null;
+  onPick: () => void;
+  plStyle: (amount: number, reference?: number) => CSSProperties | undefined;
+  scaleRef: number;
+}) {
+  if (!entry) {
+    return (
+      <div className="rounded-lg bg-bg-raised/60 px-2 py-1.5">
+        <p className="text-[10px] text-text-muted">{label}</p>
+        <p className="text-xs text-text-muted">None yet</p>
+      </div>
+    );
+  }
   return (
-    <div className="relative h-1 w-14 shrink-0 rounded-full bg-bg-raised overflow-hidden">
-      <span className="absolute inset-y-0 left-1/2 w-px bg-border" />
-      <span
-        className="absolute inset-y-0 rounded-full"
-        style={{ left: value >= 1 ? '50%' : `${50 - pct}%`, width: `${pct}%`, backgroundColor: color }}
-      />
-    </div>
+    <button type="button" onClick={onPick} className="rounded-lg bg-bg-raised px-2 py-1.5 text-left active:opacity-80">
+      <p className="text-[10px] text-text-muted truncate">{label}</p>
+      <p className={`text-xs font-semibold tabular-nums ${plClass(entry.netRealPL)}`} style={plStyle(entry.netRealPL, scaleRef)}>
+        {signed(entry.netRealPL)}
+      </p>
+      <p className="text-[10px] text-text-muted truncate">{weekLabel(entry.week)}</p>
+    </button>
   );
 }
 
@@ -174,7 +210,9 @@ export function PrizePool() {
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const refreshPrizePool = useAppStore((s) => s.refreshPrizePool);
   const plStyle = usePlStyle();
-  const [week, setWeek] = useState<WeekId | null>(null);
+  const [point, setPoint] = useState<PoolPoint>(null);
+  const week = point === 'start' ? null : point;
+  const atStart = point === 'start';
   const [helpOpen, setHelpOpen] = useState(false);
   const pool = league?.prizePool;
 
@@ -191,7 +229,7 @@ export function PrizePool() {
 
   const entry: PoolWeekEntry | undefined = useMemo(() => findWeek(pool, week), [pool, week]);
   const season = useMemo(() => seasonImpacts(pool), [pool]);
-  const swing = useMemo(() => biggestSwing(pool), [pool]);
+  const marks = useMemo(() => poolHighlights(pool), [pool]);
 
   if (!league) return null;
   if (!league.settings.buyInEnabled || !pool) {
@@ -218,6 +256,12 @@ export function PrizePool() {
   const payouts = league.seasonPhase === 'complete' ? computePayouts(pool, league.bracket, league.settings, league.standings) : [];
   const { championId } = championAndRunnerUp(league.bracket);
   const chips = payoutChips(league);
+  // Stepping through the chart points: the created pool, then each settled week.
+  const order: PoolPoint[] = ['start', ...pool.history.map((h) => h.week as PoolPoint)];
+  const stepTo = (by: number): PoolPoint | undefined => {
+    const i = order.findIndex((o) => samePoint(o, point));
+    return i < 0 ? undefined : order[i + by];
+  };
   const from = pool.history[0] ? weekLabel(pool.history[0].week) : null;
 
   return (
@@ -247,8 +291,11 @@ export function PrizePool() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] text-text-muted">Current pool</p>
-              <p className="text-3xl font-bold tabular-nums leading-tight">{formatCents(pool.current)}</p>
-              <p className="text-xs font-semibold tabular-nums mt-0.5" style={plStyle(delta, Math.max(1, pool.initial))}>
+              {/* The pool itself is plain unless it is actually above what the league put in. */}
+              <p className={`text-3xl font-bold tabular-nums leading-tight ${pool.current > pool.initial ? 'text-profit' : ''}`}>
+                {formatCents(pool.current)}
+              </p>
+              <p className={`text-xs font-semibold tabular-nums mt-0.5 ${plClass(delta)}`} style={plStyle(delta, Math.max(1, pool.initial))}>
                 {signed(delta)}
                 <span className="text-text-muted font-normal"> ({pct >= 0 ? '+' : ''}{pct}% from {formatCents(pool.initial)})</span>
               </p>
@@ -283,44 +330,94 @@ export function PrizePool() {
         ) : (
           <Card className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold">{entry ? weekLabel(entry.week) : 'Season'}</p>
-              {entry ? (
-                <button type="button" onClick={() => setWeek(null)} className="text-[11px] font-semibold text-primary">
+              <div className="flex items-center gap-1 min-w-0">
+                {point != null && (
+                  <button
+                    type="button"
+                    aria-label="Previous week"
+                    disabled={stepTo(-1) === undefined}
+                    onClick={() => setPoint(stepTo(-1) ?? point)}
+                    className="shrink-0 text-text-muted disabled:opacity-30 active:opacity-60"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                )}
+                <p className="text-xs font-semibold truncate">{atStart ? 'Pool created' : entry ? weekLabel(entry.week) : 'Season'}</p>
+                {point != null && (
+                  <button
+                    type="button"
+                    aria-label="Next week"
+                    disabled={stepTo(1) === undefined}
+                    onClick={() => setPoint(stepTo(1) ?? point)}
+                    className="shrink-0 text-text-muted disabled:opacity-30 active:opacity-60"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                )}
+              </div>
+              {point != null && (
+                <button type="button" onClick={() => setPoint(null)} className="shrink-0 text-[11px] font-semibold text-primary">
                   Back to season
                 </button>
-              ) : (
-                swing && (
-                  <button type="button" onClick={() => setWeek(swing.week)} className="text-[11px] text-text-muted">
-                    Biggest week: {weekLabel(swing.week)} <span style={plStyle(swing.netRealPL, Math.max(1, pool.initial))}>{signed(swing.netRealPL)}</span>
-                  </button>
-                )
               )}
             </div>
-            <PoolChart pool={pool} selected={week} onSelect={setWeek} />
-            <div className="space-y-0.5">
-              {pool.history.map((h) => {
-                const on = String(h.week) === String(week);
-                return (
-                  <button
-                    key={String(h.week)}
-                    type="button"
-                    onClick={() => setWeek(on ? null : h.week)}
-                    className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs ${on ? 'bg-primary/10' : ''}`}
-                  >
-                    <span className={on ? 'font-semibold' : 'text-text-muted'}>{weekLabel(h.week)}</span>
-                    <span className="tabular-nums" style={plStyle(h.netRealPL, Math.max(1, pool.initial))}>
-                      {signed(h.netRealPL)}
-                    </span>
-                    <span className="font-medium tabular-nums w-16 text-right">{formatCents(h.poolAfter)}</span>
-                  </button>
-                );
-              })}
+            <PoolChart pool={pool} selected={point} onSelect={setPoint} />
+            {/* Under the chart: the picked point on its own, or the season in three tiles. Tapping the
+                chart is how any other week is reached, so the list never grows to eighteen rows. */}
+            {point != null ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-bg-raised px-2 py-1.5">
+                  <p className="text-[10px] text-text-muted">{atStart ? 'Buy-in' : 'That week'}</p>
+                  {atStart ? (
+                    <p className="text-sm font-semibold tabular-nums">
+                      {poolTeamCount(league)} × {formatCents(league.settings.buyInAmount)}
+                    </p>
+                  ) : (
+                    <p
+                      className={`text-sm font-semibold tabular-nums ${plClass(entry?.netRealPL ?? 0)}`}
+                      style={plStyle(entry?.netRealPL ?? 0, Math.max(1, pool.initial))}
+                    >
+                      {signed(entry?.netRealPL ?? 0)}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-lg bg-bg-raised px-2 py-1.5">
+                  <p className="text-[10px] text-text-muted">Pool after</p>
+                  <p className="text-sm font-semibold tabular-nums">{formatCents(atStart ? pool.initial : (entry?.poolAfter ?? pool.current))}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                <WeekTile label="Last week" entry={marks.last} onPick={() => marks.last && setPoint(marks.last.week)} plStyle={plStyle} scaleRef={Math.max(1, pool.initial)} />
+                <WeekTile label="Best week" entry={marks.best} onPick={() => marks.best && setPoint(marks.best.week)} plStyle={plStyle} scaleRef={Math.max(1, pool.initial)} />
+                <WeekTile label="Worst week" entry={marks.worst} onPick={() => marks.worst && setPoint(marks.worst.week)} plStyle={plStyle} scaleRef={Math.max(1, pool.initial)} />
+              </div>
+            )}
+          </Card>
+        )}
+
+        {atStart && (
+          <Card className="space-y-1.5">
+            <p className="text-xs font-semibold">Before the season</p>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-muted">{poolTeamCount(league)} teams bought in</span>
+              <span className="font-semibold tabular-nums">
+                {poolTeamCount(league)} × {formatCents(league.settings.buyInAmount)}
+              </span>
             </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-muted">Starting pool</span>
+              <span className="font-semibold tabular-nums">{formatCents(pool.initial)}</span>
+            </div>
+            <p className="text-[11px] text-text-muted">
+              Nothing had been played yet{from ? `; tracking starts in ${from}` : ''}. Every week after this moves the pool by what the league wins or
+              loses on its picks.
+            </p>
           </Card>
         )}
 
         {/* Who moved it: the picked week, or the whole season. */}
-        {(entry ? rows.length > 0 : season.length > 0) && (
+        {!atStart && (entry ? rows.length > 0 : season.length > 0) && (
           <Card className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold">{entry ? `Who moved it in ${weekLabel(entry.week)}` : 'Who has moved it'}</p>
@@ -332,7 +429,7 @@ export function PrizePool() {
           </Card>
         )}
 
-        {entry && rows.length === 0 && (
+        {!atStart && entry && rows.length === 0 && (
           <Card>
             <p className="text-[11px] text-text-muted text-center py-3">
               {weekLabel(entry.week)} was settled before per-team tracking. It fills in the next time the pool is recalculated.
@@ -341,7 +438,7 @@ export function PrizePool() {
         )}
 
         {/* Current multipliers, only in the season view: a picked week shows its own in the list above. */}
-        {!entry && league.settings.poolMultipliers.enabled && (
+        {point == null && league.settings.poolMultipliers.enabled && (
           <Card className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold">Impact multipliers</p>
@@ -358,12 +455,12 @@ export function PrizePool() {
                   <TeamLogo team={team} size="sm" />
                   <span className={`text-xs truncate flex-1 min-w-0 ${team.isUser ? 'text-primary font-medium' : ''}`}>{team.teamName}</span>
                   {inPool ? (
-                    <>
-                      <MultiplierBar value={multiplier} />
-                      <span className="shrink-0 w-11 text-right text-xs font-semibold tabular-nums" style={plStyle(multiplier - 1, 0.5)}>
-                        {multiplier.toFixed(2)}x
-                      </span>
-                    </>
+                    <span
+                      className={`shrink-0 w-12 text-right text-xs font-semibold tabular-nums ${multiplier >= 1 ? 'text-profit' : 'text-loss'}`}
+                      style={plStyle(multiplier - 1, 0.5)}
+                    >
+                      {multiplier.toFixed(2)}x
+                    </span>
                   ) : (
                     <span className="text-[11px] text-text-muted shrink-0">Not in pool</span>
                   )}

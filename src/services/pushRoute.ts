@@ -3,6 +3,8 @@
 //   { screen: 'lineup', leagueId, week }                 lineup reminders
 //   { screen: 'matchup', leagueId, week, teamId }        settled-bet alerts and week results
 //   { screen: 'void-requests', leagueId }                void requests and their answers
+// A tapped Live Activity card (lock screen or Dynamic Island) arrives as a propleague:// URL instead
+// of a payload, carrying the same fields: see parsePushUrl below and services/liveActivities.ts.
 // pushNotifications.ts parses the tap into a PushRoute and parks it here; PushRouter (mounted in the
 // app shell) takes it once the app is ready and moves to that league and screen. Parking it means a
 // tap that cold-launches the app still lands in the right place after sign-in and league loading.
@@ -26,6 +28,28 @@ export function parsePushRoute(data: unknown): PushRoute | null {
     return { screen: 'matchup', leagueId, week, teamId: typeof d.teamId === 'string' ? d.teamId : null };
   }
   return null;
+}
+
+/**
+ * Reads a `propleague://open?screen=...&leagueId=...` URL, which is what tapping a Live Activity
+ * card sends (ios/App/App/LiveActivity/DeepLinkInbox.swift builds it, the widget attaches it). The
+ * query carries the same fields a push's data payload does, so both taps land the same way.
+ */
+export function parsePushUrl(raw: string): PushRoute | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'propleague:') return null;
+  const q = url.searchParams;
+  return parsePushRoute({
+    screen: q.get('screen'),
+    leagueId: q.get('leagueId'),
+    week: q.get('week'),
+    teamId: q.get('teamId'),
+  });
 }
 
 let pending: PushRoute | null = null;

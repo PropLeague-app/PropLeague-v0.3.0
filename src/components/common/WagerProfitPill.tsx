@@ -5,13 +5,13 @@ import { formatCents } from '../../engine/oddsMath';
  * pick (see chat, Sept 2026 -- the McCaffrey cell where you couldn't tell what
  * a loss actually cost you). Shows the real settled_profit dollar amount
  * instead of the status word: green "+$X.XX" for a win, red "-$X.XX" for a
- * loss. Push and voided are always exactly $0. Push stays the quiet, muted
- * treatment (Hunter's original call -- shouldn't fight for attention). Voided
- * was originally lumped in with push's muted styling too, but that made a
- * voided $0.00 in Advanced mode look unstyled/broken next to Simple mode's
- * clearly-colored purple "V" pill (see chat, Sept 2026 -- the Iosivas void
- * fix) -- so voided's $0.00 now uses that same accent color (bg-accent/20
- * text-accent, matching StatusPill's `voided` entry) instead of the muted one.
+ * loss. Push and voided are always exactly $0, and both now carry the same
+ * color their StatusPill does rather than a muted treatment, so Advanced never
+ * looks unstyled next to Simple. Voided went first (see chat, Sept 2026 -- the
+ * Iosivas void fix) with bg-accent/20 text-accent; push followed for the same
+ * reason (see chat, Oct 2026 -- the tied Giants moneyline), with bg-primary/20
+ * text-primary to match Simple mode's blue "P" pill and the accent-colored
+ * score that sits beside it. This reverses push's original muted styling.
  * Only ever rendered for a settled wager (pending/live keep the word-based
  * StatusPill, which has nothing meaningful to put a dollar figure on yet). */
 export function WagerProfitPill({ status, profit }: { status: Exclude<WagerStatus, 'pending'>; profit: number }) {
@@ -23,6 +23,8 @@ export function WagerProfitPill({ status, profit }: { status: Exclude<WagerStatu
         ? 'bg-loss/20 text-loss'
         : status === 'voided'
           ? 'bg-accent/20 text-accent'
-          : 'bg-bg-raised text-text-muted';
+          : status === 'push'
+            ? 'bg-primary/20 text-primary'
+            : 'bg-bg-raised text-text-muted';
   return <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${styleClass}`}>{amountText}</span>;
 }

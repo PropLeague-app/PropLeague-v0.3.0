@@ -12,6 +12,7 @@
 // relays, so there is no scheduling logic to keep in sync here.
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { supabase } from '../lib/supabaseClient';
+import { parsePushUrl, setPendingPushRoute } from './pushRoute';
 
 interface LiveActivityStatus {
   supported: boolean;
@@ -45,6 +46,7 @@ interface LiveActivityPlugin {
   setPlColorScale(options: { scale: 'classic' | 'scaled' }): Promise<void>;
   addListener(event: 'startToken', handler: (data: { token: string }) => void): Promise<{ remove: () => Promise<void> }>;
   addListener(event: 'activityToken', handler: (data: ActivityTokenEvent) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(event: 'openUrl', handler: (data: { url: string }) => void): Promise<{ remove: () => Promise<void> }>;
 }
 
 interface PlanItem {
@@ -139,6 +141,17 @@ export async function startLiveActivities(): Promise<void> {
 
     await LiveActivity.addListener('startToken', (data) => void registerStartToken(data.token));
     await LiveActivity.addListener('activityToken', (data) => void registerActivityToken(data));
+
+    // A tapped card. The native side holds the URL until this listener exists, so a tap that cold
+    // launches the app still lands in the right league once sign-in and loading are done.
+    try {
+      await LiveActivity.addListener('openUrl', (data) => {
+        const route = parsePushUrl(data?.url ?? '');
+        if (route) setPendingPushRoute(route);
+      });
+    } catch {
+      // older native build without the event: the card just opens the app
+    }
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') void syncLiveActivities();

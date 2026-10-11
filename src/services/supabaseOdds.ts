@@ -103,17 +103,22 @@ function resolvePlayer(description: string, homeAbbrev: string | null, awayAbbre
   return null;
 }
 
-interface RawOutcome {
+export interface RawOutcome {
   name: string;
   description?: string;
   price: number;
   point?: number;
+  /** The Odds API's includeLinks deep link to this outcome on its own book. */
+  link?: string;
+  /** Stamped on during the merge below, not sent by the feed: which book this came from. */
+  bookKey?: string;
+  bookTitle?: string;
 }
 interface RawMarket {
   key: string;
   outcomes: RawOutcome[];
 }
-interface RawBookmaker {
+export interface RawBookmaker {
   key: string;
   title: string;
   markets: RawMarket[];
@@ -161,7 +166,7 @@ function mapPlayerPropMarkets(rawMarket: RawMarket, homeAbbrev: string | null, a
       // never matches any slot.position comparison downstream, it doesn't crash.
       playerPosition: player.position as Position,
       playerTeamId: player.team,
-      outcomes: outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point, playerId: player.id })),
+      outcomes: outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point, playerId: player.id, link: o.link, bookKey: o.bookKey, bookTitle: o.bookTitle })),
       // Real data has one line per player per market, no alternates -- altLines
       // stays undefined (already optional on the type).
     });
@@ -201,27 +206,34 @@ const PREFERRED_BOOKMAKER_KEY = 'draftkings';
  * The result is never less complete than picking one book alone, and title is
  * deliberately generic now that a single game's lines can genuinely be sourced
  * from more than one real book. */
-function mergeBookmakersWithFallback(bookmakers: RawBookmaker[]): RawBookmaker[] {
+export function mergeBookmakersWithFallback(bookmakers: RawBookmaker[]): RawBookmaker[] {
   if (bookmakers.length === 0) return [];
   const preferred = bookmakers.find((b) => b.key === PREFERRED_BOOKMAKER_KEY);
   const priorityOrder = preferred ? [preferred, ...bookmakers.filter((b) => b !== preferred)] : bookmakers;
 
   const marketsByKey = new Map<string, RawMarket>();
+  // Every outcome is stamped with the book it came from on the way in. The merged feed is one
+  // synthetic book called Best Available Odds, so without this an outcome's deep link would have
+  // no name to put on the button, and a DraftKings line and a FanDuel line would be
+  // indistinguishable once merged.
   for (const book of priorityOrder) {
+    const stamp = (o: RawOutcome): RawOutcome => ({ ...o, bookKey: book.key, bookTitle: book.title });
     for (const rawMarket of book.markets) {
       if (GAME_LEVEL_KEYS.has(rawMarket.key)) {
-        if (!marketsByKey.has(rawMarket.key)) marketsByKey.set(rawMarket.key, rawMarket);
+        if (!marketsByKey.has(rawMarket.key)) {
+          marketsByKey.set(rawMarket.key, { key: rawMarket.key, outcomes: rawMarket.outcomes.map(stamp) });
+        }
         continue;
       }
       const existing = marketsByKey.get(rawMarket.key);
       if (!existing) {
-        marketsByKey.set(rawMarket.key, { key: rawMarket.key, outcomes: [...rawMarket.outcomes] });
+        marketsByKey.set(rawMarket.key, { key: rawMarket.key, outcomes: rawMarket.outcomes.map(stamp) });
         continue;
       }
       const seenDescriptions = new Set(existing.outcomes.map((o) => o.description));
       for (const outcome of rawMarket.outcomes) {
         if (outcome.description && seenDescriptions.has(outcome.description)) continue;
-        existing.outcomes.push(outcome);
+        existing.outcomes.push(stamp(outcome));
       }
     }
   }
@@ -234,7 +246,7 @@ function mapBookmaker(raw: RawBookmaker, homeAbbrev: string | null, awayAbbrev: 
     if (GAME_LEVEL_KEYS.has(rawMarket.key)) {
       markets.push({
         key: rawMarket.key as MarketKey,
-        outcomes: rawMarket.outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point })),
+        outcomes: rawMarket.outcomes.map((o) => ({ name: o.name, price: o.price, point: o.point, link: o.link, bookKey: o.bookKey, bookTitle: o.bookTitle })),
       });
     } else {
       markets.push(...mapPlayerPropMarkets(rawMarket, homeAbbrev, awayAbbrev, roster));

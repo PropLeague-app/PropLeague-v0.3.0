@@ -89,6 +89,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Stakes and games',
       body: [
         `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. Each key is a single tap (holding a key does not repeat), and any message about the stake shows just above the keypad so the keys never shift while you type. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
+        'Open picks at a sportsbook, in Profile & Settings under Display, is off until you turn it on. With it on, a small badge appears to the left of Add to Roster carrying the initials of the book that priced that line in that book\'s color, DK in green for DraftKings, FD in blue for FanDuel, with an arrow leaving it. Tap it and the keypad is replaced by one button out to that book; Back returns to the keypad. The book prices the bet at its own live number, which can differ from the one here, and a pick only ever joins your lineup through Add to Roster. PropLeague is not a sportsbook, takes nothing for the tap and is not told whether you placed anything. The badge only appears on a pick whose book published a link, and only for sportsbooks licensed in US states, so a line priced by an offshore book or carrying stale odds will not have one.',
       ],
     },
     {
@@ -149,13 +150,13 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Matchup screen: Simple and Advanced',
       body: [
         'Simple shows each pick as a compact cell. Advanced adds the stake and the stat line behind a result. Tap the Advanced button at the top to switch every pick at once, and your choice is remembered on this device.',
-        'To look closer at just one pick, tap it: that cell opens to the Advanced view, and tapping it again closes it. This works on either team\'s visible picks, in either mode. Empty and hidden picks do not respond. Opened cells reset when you leave the screen, swipe to another matchup, or press the Advanced button.',
+        'To look closer at just one pick, tap it: that slot opens to the Advanced view on both teams at once, since the two picks share a row, and tapping either one again closes them. This works on either team\'s visible picks, in either mode. Empty and hidden picks do not respond. Opened cells reset when you leave the screen, swipe to another matchup, or press the Advanced button.',
       ],
     },
     {
       title: 'Results',
       body: [
-        'Win and loss are what you expect. A push returns the stake with no effect. A void takes the pick out of play with no profit or loss, and its stake does not come back to your spendable credits.',
+        'Win and loss are what you expect. A push returns the stake with no effect. A tie game pushes a moneyline, the way the books settle a two-way line, and a spread or total that lands exactly on its number pushes too. A void takes the pick out of play with no profit or loss, and its stake does not come back to your spendable credits.',
         'A pick is voided when its player has no stats (inactive or did not play) once the game has been final for 3 hours. A commissioner can also flag an early exit (injury or ejection), which voids that player\'s Over and Anytime TD picks that did not hit.',
       ],
     },
@@ -187,7 +188,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Standings',
       body: [
         'Ranked by win percentage. Ties break by total profit, then bet record, then head-to-head, then best single week.',
-        'Small icons next to a team mark what it has locked up: ✓ a playoff spot, ★ a first-round bye, a crown the #1 seed, and × eliminated. A team only gets one once no result can change it (a tie in the standings counts against it), and League News posts each clinch.',
+        'Small icons next to a team mark what it has locked up: a check for a playoff spot, a star for a first-round bye, a crown for the #1 seed, and an x for eliminated. A team only gets one once no result can change it (a tie in the standings counts against it), and League News posts each clinch.',
       ],
     },
     {
@@ -209,7 +210,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       'Because it is only tracking, the commissioner can start it from any week already played, even when buy-ins are turned on mid-season. Every time a week closes the whole pool is recalculated from that week with the current rules, so changing the buy-in or multipliers shows up as if they had applied from the start.',
     ];
     if (settings?.poolMultipliers.enabled) {
-      body.push('Standing multipliers are on here: a team ranked higher moves the pool more and a lower one less (from 1.0x for everyone up to 1.5x top and 0.5x bottom), using the standings as they were that week. AI teams left out of the pool show as Not in pool. Total exposure never changes, only whose picks count more. They apply to past weeks too unless the commissioner turns that off.');
+      body.push('Standing multipliers are on here: a team ranked higher moves the pool more and a lower one less (from 1.0x for everyone up to 1.5x top and 0.5x bottom), using the standings as they were that week. Teams on the same record are split by season P/L, then bet record. AI teams left out of the pool show as Not in pool. Total exposure never changes, only whose picks count more. They apply to past weeks too unless the commissioner turns that off.');
     }
     scoring.push({ title: 'Prize pool', body });
   }
@@ -254,7 +255,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Notifications',
       body: [
-        'The switches in Profile & Settings are your defaults for every league. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. Void request alerts reach the commissioner when a request comes in, and the member when it is answered.',
+        'The switches in Profile & Settings are your defaults for every league. Lineup reminders can fire when your lineup needs work, when you are trailing, or on every slate. That same choice decides how long the lock screen countdown stays up: on every slate it counts down even with your lineup already set, on trailing it stays while you are behind, and on needs work it clears as soon as the lineup is done. Void request alerts reach the commissioner when a request comes in, and the member when it is answered.',
         'Settled-bet alerts tell you when your picks settle, usually within about 15 minutes of a game ending. Picks that settle together come in one push: up to three are listed with their result and profit, more than that as a record and net. Each one ends with where your matchup stands, as the gap only, so hidden picks stay hidden.',
         'Week results arrives when the week is final (Tuesday morning after Monday night): who won and the score, your record and place in the standings (regular season), and a note for a perfect or skunked week.',
         'Tap any push to go straight to that league: reminders open your Lineup, settled bets and week results open your Matchup, and void requests open Void Requests in Settings.',
@@ -266,7 +267,8 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Lock screen and Dynamic Island',
       body: [
         'About 90 minutes before a slate kicks off, a lineup card appears with a ring counting down to kickoff, how many picks are in, and what is still missing. Once games start, it becomes your matchup: both scores, each side\'s record and how many picks are still live, and a bar showing your estimated chance to win. The bar is hidden while picks are hidden before game start, and it is an estimate, so it can trail the app a bit mid-game.',
-        'On iOS 17 and later, the card also has a lineup scroller. Tap the arrows to step through your slots and see the position, player, line, stake and status of each. Scores use your P/L colors setting, so Scaled shows up here too (Mono keeps the usual colors on the lock screen).',
+        'Under the score sits your lineup: a strip of pips, one per slot, colored by how each pick is doing, with the pick worth watching named above them (the one live now, else the next one still open). On iOS 17 and later, tap the chevron to open the picks whose games are on right now, up to four, each with its position, player, stake and status. With nothing on yet it lists what is coming instead. Settled picks stay as pips, and the week record beside each team covers the rest. Open the card to see the full lineup in the app. Scores use your P/L colors setting, so Scaled shows up here too (Mono keeps the usual colors on the lock screen).',
+        'Tap the card to open that league in the app: a matchup card goes to that week\'s matchup, a lineup card goes to your Lineup. It works from the Dynamic Island too, and from a card for a league you were not last looking at.',
         'In the Dynamic Island, press and hold to expand. If you are in more than one league at the same time, the island shows one matchup at a time. Your favorite league goes first and wears a small gold star by its logo, and with no favorite the most urgent one goes first. Tap the league name pill to bring in the next league\'s matchup. It stays until the next slate, when your favorite takes the front again. Turn all of this off with Live scores on lock screen in Profile & Settings. Needs iOS 16.2 or later.',
       ],
     },
@@ -291,7 +293,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation, market and minimum-game rules, and penalties.',
         'You can still edit them. The change is saved as scheduled, shows an "Applies Week N" pill, and takes effect after Tuesday\'s settlement. You can discard scheduled changes in one tap.',
         'Changes that only affect new picks (stake limits, min odds, precision, duplicate picks, pick order, market rules, hidden picks) can be applied now instead: Apply now lists the picks already outside the new rules (names when picks are visible, counts when hidden), and those picks stay as they are. Lineup slots, weekly credits, correlation, minimum games and penalties judge whole rosters at the end of the week, so they always wait.',
-        'Everything else applies immediately, including the prize pool settings (buy-in, multipliers, AI teams, tracking week), since the pool is recalculated from history right away: league name and visibility, Weekly Moments, announcements, alt lines, line movement, playoff format, payout splits and conference names. Major changes (money, limits, roster shape, blocked markets, playoff format) get a one-line post in League News.',
+        'Everything else applies immediately, including the prize pool settings (buy-in, multipliers, AI teams, tracking week), since the pool is recalculated from history right away: league name and visibility, Weekly Moments, announcements, alt lines, line movement, playoff format, payout splits and conference names. Major changes (money, limits, roster shape, blocked markets, playoff format) get a one-line post in League News, at most one an hour: more changes inside that hour rewrite the same post, and changes that cancel out remove it.',
       ],
     },
     {

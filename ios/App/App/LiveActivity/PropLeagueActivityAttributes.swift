@@ -114,18 +114,13 @@ enum SharedPrefs {
         set { defaults?.set(newValue, forKey: "startToken") }
     }
 
-    /// Which lineup slot each activity's scroller is on.
-    static func slotIndex(_ activityId: String, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        let stored = defaults?.integer(forKey: "slot.\(activityId)") ?? 0
-        return min(max(stored, 0), count - 1)
+    /// Whether each activity's lineup panel is open on every slot. Collapsed by default.
+    static func lineupExpanded(_ activityId: String) -> Bool {
+        defaults?.bool(forKey: "lineupOpen.\(activityId)") ?? false
     }
 
-    static func stepSlot(_ activityId: String, delta: Int, count: Int) {
-        guard count > 0 else { return }
-        let current = slotIndex(activityId, count: count)
-        let next = ((current + delta) % count + count) % count
-        defaults?.set(next, forKey: "slot.\(activityId)")
+    static func toggleLineupExpanded(_ activityId: String) {
+        defaults?.set(!lineupExpanded(activityId), forKey: "lineupOpen.\(activityId)")
     }
 }
 
@@ -133,27 +128,24 @@ enum SharedPrefs {
 import AppIntents
 import ActivityKit
 
-/// The scroller's left and right arrows. Compiled into BOTH the app and the widget extension (this
-/// file is in both targets), which iOS needs for a button on a Live Activity to run an intent.
+/// The lineup panel's chevron: open or close the full slot grid. Compiled into BOTH the app and the
+/// widget extension (this file is in both targets), which iOS needs for a button on a Live Activity
+/// to run an intent.
 @available(iOS 17.0, *)
-struct StepLineupSlotIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "Step through lineup"
+struct ToggleLineupExpandedIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Show lineup"
 
     @Parameter(title: "Activity") var activityId: String
-    @Parameter(title: "Direction") var delta: Int
-    @Parameter(title: "Slots") var count: Int
 
     init() {}
 
-    init(activityId: String, delta: Int, count: Int) {
+    init(activityId: String) {
         self.activityId = activityId
-        self.delta = delta
-        self.count = count
     }
 
     func perform() async throws -> some IntentResult {
-        SharedPrefs.stepSlot(activityId, delta: delta, count: count)
-        // Bump a counter so the card redraws and reads the new position.
+        SharedPrefs.toggleLineupExpanded(activityId)
+        // Bump a counter so the card redraws and reads the new state.
         for activity in Activity<PropLeagueActivityAttributes>.activities where activity.id == activityId {
             var state = activity.content.state
             state.nudge = (state.nudge ?? 0) &+ 1
@@ -204,4 +196,5 @@ struct SwitchLeagueIntent: LiveActivityIntent {
         return .result()
     }
 }
+
 #endif

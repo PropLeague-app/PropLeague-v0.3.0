@@ -1,7 +1,9 @@
 import { createContext, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin, Plus } from 'lucide-react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin, Plus, SlidersHorizontal } from 'lucide-react';
 import type { ActivityItem, ChatMessage, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
+import { ClinchIcon } from '../common/ClinchIcon';
+import type { ClinchStatus } from '../../engine/clinch';
 import { Card } from '../common/Card';
 import { EmptyState } from '../common/EmptyState';
 import { TeamLogo } from '../common/TeamLogo';
@@ -33,6 +35,28 @@ const ICONS: Record<ActivityItem['type'], ReactNode> = {
   settled: <DollarSign size={16} />,
   moment: <Sparkles size={16} />,
 };
+
+/** The icon for a system post, read from its wording: a gear for a settings update, and the standings
+ * marker for a clinch. Everything else keeps the league logo. */
+function systemPostIcon(message: string): ReactNode {
+  if (message.startsWith('Commissioner update:')) {
+    return (
+      <span className="shrink-0 w-6 h-6 rounded-full bg-bg-raised flex items-center justify-center text-text-muted">
+        <SlidersHorizontal size={13} />
+      </span>
+    );
+  }
+  const clinch = /clinched (a playoff spot|a first-round bye|the #1 seed)/.exec(message);
+  if (clinch) {
+    const status: ClinchStatus = clinch[1] === 'the #1 seed' ? 'top' : clinch[1] === 'a first-round bye' ? 'bye' : 'playoffs';
+    return (
+      <span className="shrink-0 w-6 h-6 rounded-full bg-bg-raised flex items-center justify-center">
+        <ClinchIcon status={status} size={14} />
+      </span>
+    );
+  }
+  return null;
+}
 
 /** The league's teams, so a reaction chip can show who reacted. Provided by ActivityFeed. */
 const ReactionTeamsContext = createContext<League['teams']>([]);
@@ -419,10 +443,12 @@ function NewsCard({
   // Announcements the commissioner posted (or flagged a void with) carry their team id;
   // system ones (season start, welcome) do not.
   const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;
+  // A system post gets an icon that matches what it says, instead of an emoji in the text.
+  const systemIcon = isAnnouncement && !item.postedByTeamId ? systemPostIcon(item.message) : null;
   const showPin = isAnnouncement && (canPin || item.pinned);
   return (
     <Card className={`flex items-start gap-2.5 ${item.pinned ? 'ring-1 ring-pin/40' : ''}`}>
-      {isAnnouncement ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>}
+      {systemIcon ?? (isAnnouncement ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>)}
       <div className="min-w-0 flex-1">
         {(label || showPin) && (
           <div className="flex items-center justify-between gap-2 min-h-[16px]">

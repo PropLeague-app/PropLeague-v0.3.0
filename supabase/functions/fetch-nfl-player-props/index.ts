@@ -73,6 +73,9 @@ interface OddsApiOutcome {
   description?: string;
   price: number;
   point?: number;
+  /** Deep link straight to this outcome on that book's bet slip, from includeLinks=true.
+   * Passed through to the stored bookmakers blob untouched; see fetch-nfl-odds for the rest. */
+  link?: string;
 }
 interface OddsApiMarket {
   key: string;
@@ -173,7 +176,7 @@ Deno.serve(async (req: Request) => {
   for (const game of games) {
     try {
       const res = await fetch(
-        `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/events/${game.id}/odds?apiKey=${ODDS_API_KEY}&regions=us&markets=${ALL_MARKETS}&oddsFormat=american`,
+        `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/events/${game.id}/odds?apiKey=${ODDS_API_KEY}&regions=us&markets=${ALL_MARKETS}&oddsFormat=american&includeLinks=true`,
       );
       if (!res.ok) {
         gameErrors.push({ gameId: game.id, matchup: `${game.away_team} @ ${game.home_team}`, error: `${res.status} ${await res.text()}` });

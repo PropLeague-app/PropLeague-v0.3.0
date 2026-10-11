@@ -5,6 +5,43 @@ import Capacitor
 import ActivityKit
 #endif
 
+/// A `propleague://` URL from a tapped Live Activity card (lock screen or Dynamic Island), held
+/// until the web view is listening. SceneDelegate drops it in here, on a cold launch and while the
+/// app is already running; LiveActivityPlugin hands it to JS, which turns it into a route
+/// (src/services/pushRoute.ts) and moves to that league's screen.
+final class DeepLinkInbox {
+    static let shared = DeepLinkInbox()
+    private let lock = NSLock()
+    private var pending: String?
+    private var deliver: ((String) -> Void)?
+
+    func receive(_ url: URL) {
+        guard url.scheme?.lowercased() == "propleague" else { return }
+        let raw = url.absoluteString
+        lock.lock()
+        let fn = deliver
+        if fn == nil { pending = raw }
+        lock.unlock()
+        if let fn { DispatchQueue.main.async { fn(raw) } }
+    }
+
+    /// Set once the plugin loads. Anything parked before that is flushed by `take()`.
+    func setDeliver(_ fn: @escaping (String) -> Void) {
+        lock.lock()
+        deliver = fn
+        lock.unlock()
+    }
+
+    /// The parked link, cleared as it is read so a tap is only followed once.
+    func take() -> String? {
+        lock.lock()
+        let v = pending
+        pending = nil
+        lock.unlock()
+        return v
+    }
+}
+
 /// The web app's door to the Live Activities (JS name "LiveActivity", see
 /// src/services/liveActivities.ts). Registered in PropLeagueBridgeViewController.
 @objc(LiveActivityPlugin)
@@ -19,6 +56,14 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     public override func load() {
+        // A tapped card. Retained until JS adds the listener, so a tap that cold launches the app
+        // still lands in the right place once sign-in and league loading are done.
+        DeepLinkInbox.shared.setDeliver { [weak self] raw in
+            self?.notifyListeners("openUrl", data: ["url": raw], retainUntilConsumed: true)
+        }
+        if let parked = DeepLinkInbox.shared.take() {
+            notifyListeners("openUrl", data: ["url": parked], retainUntilConsumed: true)
+        }
         #if canImport(ActivityKit)
         if #available(iOS 16.2, *) {
             LiveActivityManager.shared.plugin = self

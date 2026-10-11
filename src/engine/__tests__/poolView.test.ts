@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PrizePool } from '../../types';
-import { biggestSwing, findWeek, poolHasDetail, seasonImpacts, weekImpacts } from '../poolView';
+import { biggestSwing, findWeek, poolHasDetail, poolHighlights, seasonImpacts, teamWeeklyImpact, weekImpacts } from '../poolView';
 
 const pool: PrizePool = {
   initial: 100,
@@ -40,5 +40,23 @@ describe('pool history reading', () => {
     expect(biggestSwing(pool)?.week).toBe(1);
     expect(biggestSwing({ history: [pool.history[1]] })?.week).toBe(2);
     expect(biggestSwing(null)).toBeNull();
+  });
+});
+
+describe('highlights and one team week by week', () => {
+  it('picks the last, best and worst weeks, ignoring weeks that did not move', () => {
+    const marks = poolHighlights(pool);
+    expect(marks.last?.week).toBe(3);
+    expect(marks.best?.week).toBe(1);
+    expect(marks.worst?.week).toBe(2);
+    expect(poolHighlights({ history: [] })).toEqual({ last: null, best: null, worst: null });
+  });
+
+  it('lists one team week by week, skipping weeks with no detail', () => {
+    expect(teamWeeklyImpact(pool, 'a')).toEqual([
+      { week: 1, impact: 12, multiplier: 1.2 },
+      { week: 2, impact: -1, multiplier: 1 },
+    ]);
+    expect(teamWeeklyImpact(pool, 'nobody')).toEqual([]);
   });
 });

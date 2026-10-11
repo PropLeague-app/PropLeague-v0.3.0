@@ -53,6 +53,32 @@ export function biggestSwing(pool: Pick<PrizePool, 'history'> | null | undefined
   return best;
 }
 
+/** The last settled week, the best one and the worst one: the season at a glance under the chart. */
+export function poolHighlights(pool: Pick<PrizePool, 'history'> | null | undefined): {
+  last: PoolWeekEntry | null;
+  best: PoolWeekEntry | null;
+  worst: PoolWeekEntry | null;
+} {
+  const history = pool?.history ?? [];
+  let best: PoolWeekEntry | null = null;
+  let worst: PoolWeekEntry | null = null;
+  for (const h of history) {
+    if (h.netRealPL > 0 && (!best || h.netRealPL > best.netRealPL)) best = h;
+    if (h.netRealPL < 0 && (!worst || h.netRealPL < worst.netRealPL)) worst = h;
+  }
+  return { last: history[history.length - 1] ?? null, best, worst };
+}
+
+/** One team's own week-by-week pool impact, in calendar order (My Stats). */
+export function teamWeeklyImpact(pool: Pick<PrizePool, 'history'> | null | undefined, teamId: string): { week: WeekId; impact: number; multiplier: number }[] {
+  const out: { week: WeekId; impact: number; multiplier: number }[] = [];
+  for (const h of pool?.history ?? []) {
+    const mine = h.byTeam?.[teamId];
+    if (mine) out.push({ week: h.week, impact: mine.impact, multiplier: mine.multiplier });
+  }
+  return out;
+}
+
 export function findWeek(pool: Pick<PrizePool, 'history'> | null | undefined, week: WeekId | string | null): PoolWeekEntry | undefined {
   if (week == null) return undefined;
   return pool?.history.find((h) => String(h.week) === String(week));

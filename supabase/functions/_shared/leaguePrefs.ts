@@ -54,3 +54,24 @@ export async function profileNotifAllowed(supabase: any, profileId: string, leag
   const { data } = await supabase.from('profiles').select('notification_prefs').eq('id', profileId).maybeSingle();
   return notifAllowed(data?.notification_prefs, leagueId, type);
 }
+
+// ---------------------------------------------------------------------------
+// Slate updates: how often someone wants to hear about a slate. Also inside notification_prefs,
+// as `slateUpdates`. It decides both the roster reminder push (send-roster-reminders) and whether
+// the lineup countdown Live Activity stays up once the lineup is already set (live-activities):
+//   needs_work  -> only while the lineup still needs work (the default)
+//   trailing    -> also when the team is behind in its matchup
+//   every_slate -> before every slate, lineup finished or not
+// ---------------------------------------------------------------------------
+
+export type SlateMode = 'needs_work' | 'trailing' | 'every_slate';
+
+export function slateModeFrom(raw: unknown): SlateMode {
+  const v = asRecord(raw).slateUpdates;
+  return v === 'trailing' || v === 'every_slate' ? v : 'needs_work';
+}
+
+/** Does this slate deserve a reminder, or a countdown card that stays up? Same answer for both. */
+export function slateWanted(mode: SlateMode, needsWork: boolean, trailing: boolean): boolean {
+  return needsWork || mode === 'every_slate' || (mode === 'trailing' && trailing);
+}

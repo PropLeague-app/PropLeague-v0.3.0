@@ -31,7 +31,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
-import { favoriteLeagueId, leagueMuted, notifAllowed } from '../_shared/leaguePrefs.ts';
+import { favoriteLeagueId, leagueMuted, notifAllowed, slateModeFrom, slateWanted } from '../_shared/leaguePrefs.ts';
 import { daySlotLong, WINDOW_LONG, WINDOW_OF_SLOT } from '../_shared/dayWindows.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
@@ -402,12 +402,19 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
                 ? `$${String(unspent).replace(/\.0+$/, '')} unspent`
                 : '';
 
+        // Whether a finished lineup still gets a countdown follows the person's Slate updates
+        // choice, the same rule the reminder push uses: needs_work ends the card once the lineup is
+        // set, trailing keeps it while behind, every_slate always keeps it until kickoff.
+        const mode = slateModeFrom(prefs);
+        const trailing = !!mu && mu.mine < mu.theirs;
+        const wanted = slateWanted(mode, needsWork, trailing);
+
         for (const slot of LINEUP_SLOTS) {
           const k = kickoffBySlot.get(slot);
           if (k == null) continue;
           if (now < k - LINEUP_LEAD_MS || now >= k + LINEUP_TAIL_MS) continue;
           const locked = now >= k;
-          const ending = locked || !needsWork;
+          const ending = locked || !wanted;
           out.push({
             profileId,
             leagueId,
@@ -420,7 +427,10 @@ async function buildDesired(supabase: any, now: number, onlyProfileId?: string):
             ending,
             relevance: locked ? 20 : needsWork ? 90 : 40,
             staleDate: Math.floor(k / 1000),
-            alert: { title: `${daySlotLong(slot)} kicks off soon`, body: hint || 'Your lineup needs work.' },
+            alert: {
+              title: `${daySlotLong(slot)} kicks off soon`,
+              body: needsWork ? hint || 'Your lineup needs work.' : `Lineup set: ${picksIn}/${totalSlots} picks in.`,
+            },
           });
         }
       }

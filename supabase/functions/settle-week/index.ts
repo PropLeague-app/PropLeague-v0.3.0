@@ -384,7 +384,8 @@ function gradeWager(wager: WagerRow, game: RealGame, stat: StatRow | undefined):
   let result: string;
 
   if (marketKey === 'h2h') {
-    result = homeMargin > 0 ? game.home_team : game.away_team;
+    // A tie pushes a two-way moneyline, the way DraftKings and FanDuel settle it.
+    result = homeMargin === 0 ? 'push' : homeMargin > 0 ? game.home_team : game.away_team;
   } else if (marketKey === 'spreads') {
     const sideIsHome = wager.side === game.home_team;
     const sideMargin = sideIsHome ? homeMargin : -homeMargin;
@@ -1319,7 +1320,8 @@ Deno.serve(async (req) => {
             const { error: clinchErr } = await supabase.from('activity_items').insert({
               league_id: leagueId,
               type: 'announcement',
-              message: `${newest === 'playoffs' ? '✅' : newest === 'bye' ? '⭐' : '👑'} ${name} clinched ${words[newest]}.`,
+              // No emoji in the text: the feed draws its own icon from the wording (ActivityFeed.tsx).
+              message: `${name} clinched ${words[newest]}.`,
               pinned: false,
             });
             if (clinchErr) errors.push(`clinch ${teamId}: ${clinchErr.message}`);

@@ -96,6 +96,12 @@ interface OddsApiOutcome {
   name: string;
   price: number;
   point?: number;
+  /** Deep link straight to this outcome on that book's bet slip, from includeLinks=true.
+   * Stored as it arrives and handed to the app, which offers it on the bet slip when the
+   * person turned Open picks at a sportsbook on (src/components/roster/BetSlipSheet.tsx).
+   * Absent for books that do not publish one. Costs no extra quota: The Odds API prices a
+   * request as markets times regions. */
+  link?: string;
 }
 interface OddsApiMarket {
   key: string;
@@ -172,7 +178,7 @@ Deno.serve(async (_req: Request) => {
 
   // Live/upcoming odds — game-level markets only (see file header for why).
   const oddsRes = await fetch(
-    `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`,
+    `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&includeLinks=true`,
   );
   if (!oddsRes.ok) {
     return new Response(JSON.stringify({ error: `Odds fetch failed: ${oddsRes.status} ${await oddsRes.text()}` }), { status: 502 });

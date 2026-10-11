@@ -87,10 +87,11 @@ export function majorSettingsChanges(before: LeagueSettings, after: LeagueSettin
   return out;
 }
 
-/** The post, e.g. "⚙️ Commissioner update: Buy-in $20 → $50. From Week 6: Anytime TD blocked." */
+/** The post, e.g. "Commissioner update: Buy-in $20 → $50. From Week 6: Anytime TD blocked." The feed draws
+ * its own icon (emoji in a message are reserved for reactions, chat and logos). */
 export function settingsNewsMessage(now: string[], later: string[], laterLabel: string): string | null {
   const parts: string[] = [];
   if (now.length > 0) parts.push(`${now.join('; ')}.`);
   if (later.length > 0) parts.push(`From ${laterLabel}: ${later.join('; ')}.`);
-  return parts.length > 0 ? `⚙️ Commissioner update: ${parts.join(' ')}` : null;
+  return parts.length > 0 ? `Commissioner update: ${parts.join(' ')}` : null;
 }

@@ -380,3 +380,25 @@ describe('per-team pool impact (1.2.11)', () => {
     expect(clientPool.advancePoolForWeek(pool, 3, scores, settings, 4, mult)).toEqual(next);
   });
 });
+
+describe('multiplier order by win-loss (1.2.11)', () => {
+  const team = (teamId: string, wins: number, totalPL: number, betsWon = 0, betsLost = 0) => ({
+    teamId, wins, losses: 4 - wins, ties: 0, totalPL, betsWon, betsLost, bestWeekPL: 0,
+  });
+
+  it('breaks an equal record by season P/L, then bet record, on both sides', () => {
+    const rows = [team('a', 2, -50), team('b', 2, 75), team('c', 3, -120), team('d', 2, 75, 10, 2)];
+    const s = server.computeStandingMultipliers(rows, 'record', 1);
+    const c = clientPool.computeStandingMultipliers(rows as never, 'record', 1);
+    expect(c).toEqual(s);
+    expect(s.c).toBeGreaterThan(s.d); // the better record still leads
+    expect(s.d).toBeGreaterThan(s.b); // same record and P/L: the better bet record leads
+    expect(s.b).toBeGreaterThan(s.a); // same record: the better P/L leads
+  });
+
+  it('still ranks purely by P/L on the season P/L basis', () => {
+    const rows = [team('a', 4, -10), team('b', 0, 90)];
+    const byPL = server.computeStandingMultipliers(rows, 'seasonPL', 1);
+    expect(byPL.b).toBeGreaterThan(byPL.a);
+  });
+});
