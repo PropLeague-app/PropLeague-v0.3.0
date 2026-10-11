@@ -46,6 +46,7 @@ import {
   Check,
   ChevronRight,
   SlidersHorizontal,
+  Swords,
   TrendingDown,
   Wrench,
 } from 'lucide-react';
@@ -58,7 +59,8 @@ const MORE_LINKS = [
   { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
   { to: '/schedule', label: 'Season Schedule', icon: <Calendar size={18} /> },
   { to: '/members', label: 'League Members', icon: <Users size={18} /> },
-  { to: '/bracket', label: 'Playoff Bracket', icon: <Trophy size={18} /> },
+  // Becomes Bracket while the playoffs are on (see the render below).
+  { to: '/matchups', label: 'Matchups', icon: <Swords size={18} /> },
   { to: '/bet-history', label: 'My Bets', icon: <Ticket size={18} /> },
   { to: '/prize-pool', label: 'Prize Pool', icon: <DollarSign size={18} /> },
   { to: '/my-stats', label: 'My Stats', icon: <TrendingUp size={18} /> },
@@ -443,7 +445,9 @@ export function SettingsHome() {
 
       <div className="px-4 pt-2 pb-5 space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          {MORE_LINKS.map((link) => (
+          {MORE_LINKS.map((l) =>
+            l.to === '/matchups' && league?.seasonPhase === 'playoffs' ? { ...l, label: 'Bracket', icon: <Trophy size={18} /> } : l,
+          ).map((link) => (
             <button
               key={link.to}
               onClick={() => goTo(link.to)}

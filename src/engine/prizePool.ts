@@ -1,5 +1,7 @@
 import type { League, LeagueSettings, MultiplierBasis, PlayoffBracket, PrizePool, TeamStanding, WeekId } from '../types';
 import { championAndRunnerUp } from './playoffs';
+import { sortStandings } from './standings';
+import { regularSeasonMatchups } from './bracketModel';
 
 export { championAndRunnerUp };
 
@@ -62,8 +64,14 @@ export function advancePoolForWeek(
 ): PrizePool {
   if (pool.locked) return pool;
   let netRealPL = 0;
+  // Each team's own share of the move is kept with the week, so the Prize Pool screen can show who
+  // moved the pool in any past week without recomputing it from rosters.
+  const byTeam: Record<string, { impact: number; multiplier: number }> = {};
   for (const [teamId, score] of weeklyVirtualScores) {
-    netRealPL += realDollarAmount(score, settings.weeklyCredits, pool.current, teamCount) * (multipliers[teamId] ?? 1);
+    const multiplier = multipliers[teamId] ?? 1;
+    const impact = realDollarAmount(score, settings.weeklyCredits, pool.current, teamCount) * multiplier;
+    byTeam[teamId] = { impact, multiplier };
+    netRealPL += impact;
   }
   const poolAfter = Math.max(0, pool.current + netRealPL);
   const locked = poolAfter <= 0.01;
@@ -71,7 +79,7 @@ export function advancePoolForWeek(
     ...pool,
     current: poolAfter,
     locked,
-    history: [...pool.history, { week, poolBefore: pool.current, poolAfter, netRealPL }],
+    history: [...pool.history, { week, poolBefore: pool.current, poolAfter, netRealPL, byTeam }],
   };
 }
 
@@ -81,7 +89,7 @@ export function advancePoolForWeek(
  * 0.8x bottom). The 0.5x-1.5x hard cap below is a separate, wider safety net — at
  * spread=1 it never actually engages, but stays in place as an invariant regardless
  * of how the curve above it might change later. */
-const MULTIPLIER_SPREAD_AT_MAX = 0.2;
+const MULTIPLIER_SPREAD_AT_MAX = 0.5; // 1.2.11: up to 1.5x top / 0.5x bottom (was 0.2)
 const MULTIPLIER_HARD_MIN = 0.5;
 const MULTIPLIER_HARD_MAX = 1.5;
 
@@ -152,10 +160,14 @@ export function computeStandingMultipliers(standings: TeamStanding[], basis: Mul
  * spec's own phrasing) is satisfied without two separate code paths. */
 export function activeMultipliers(league: League): Record<string, number> {
   const cfg = league.settings.poolMultipliers;
-  if (!cfg.enabled || league.seasonPhase !== 'regular') {
-    return Object.fromEntries(league.teams.map((t) => [t.id, 1]));
-  }
-  return computeStandingMultipliers(league.standings, cfg.basis, cfg.spread);
+  const flat = Object.fromEntries(league.teams.map((t) => [t.id, 1]));
+  if (!cfg.enabled || league.seasonPhase !== 'regular') return flat;
+  // Ranked standings (the "Standings" basis reads the order as given), and only the teams in the pool:
+  // humans alone when AI teams are left out, the same as the server.
+  const humans = new Set(league.teams.filter((t) => !t.isSimulated).map((t) => t.id));
+  const humansOnly = !league.settings.aiTeamsAffectPool && humans.size > 0;
+  const ranked = sortStandings(league.standings, regularSeasonMatchups(league)).filter((s) => !humansOnly || humans.has(s.teamId));
+  return { ...flat, ...computeStandingMultipliers(ranked, cfg.basis, cfg.spread) };
 }
 
 export function lockPool(pool: PrizePool): PrizePool {
@@ -167,6 +179,8 @@ export interface PayoutEntry {
   place: number; // 1-indexed: 1 = champion, 2 = runner-up, 3+ = see payoutPlacementOrder
   pct: number;
   amount: number;
+  /** The highest-season-P/L share (place is 0 for it). */
+  topPL?: boolean;
 }
 
 /** manual v0.3.0 §4: commissioner-chosen percentages, one per paid place, summing to
@@ -176,11 +190,12 @@ export interface PayoutEntry {
  * count, so this also satisfies the spec's "paid places <= league team count").
  * Engine-level so Settings can block Save with this exact message rather than only
  * checking it in the UI. */
-export function validatePayoutSplit(splits: number[], playoffTeams: number): { valid: boolean; reason?: string } {
+export function validatePayoutSplit(splits: number[], playoffTeams: number, topPLPct = 0): { valid: boolean; reason?: string } {
   if (splits.length === 0) return { valid: false, reason: 'At least one place must be paid.' };
   if (splits.length > playoffTeams) return { valid: false, reason: `Can't pay out more places (${splits.length}) than playoff teams (${playoffTeams}).` };
   if (splits.some((pct) => !(pct > 0))) return { valid: false, reason: 'Every paid place must be more than 0%.' };
-  const sum = splits.reduce((a, b) => a + b, 0);
+  if (topPLPct < 0) return { valid: false, reason: 'The top P/L share cannot be negative.' };
+  const sum = splits.reduce((a, b) => a + b, 0) + topPLPct;
   if (Math.abs(sum - 100) > 0.01) return { valid: false, reason: `Percentages must sum to exactly 100% (currently ${sum.toFixed(1)}%).` };
   return { valid: true };
 }
@@ -202,7 +217,7 @@ export function payoutPlacementOrder(bracket: PlayoffBracket | null): string[] {
  * above — silently stops early if the bracket has fewer teams than paid places
  * (shouldn't happen given validatePayoutSplit's teamCount cap, but keeps this total
  * regardless). */
-export function computePayouts(pool: PrizePool, bracket: PlayoffBracket | null, settings: LeagueSettings): PayoutEntry[] {
+export function computePayouts(pool: PrizePool, bracket: PlayoffBracket | null, settings: LeagueSettings, standings: TeamStanding[] = []): PayoutEntry[] {
   const order = payoutPlacementOrder(bracket);
   if (order.length === 0) return [];
   const entries: PayoutEntry[] = [];
@@ -211,5 +226,11 @@ export function computePayouts(pool: PrizePool, bracket: PlayoffBracket | null, 
     if (!teamId) return;
     entries.push({ teamId, place: i + 1, pct, amount: pool.current * (pct / 100) });
   });
+  // Highest regular-season P/L (1.2.11): its own share, even for a team that also won a place.
+  const topPL = settings.payoutTopPLPct ?? 0;
+  if (topPL > 0 && standings.length > 0) {
+    const best = [...standings].sort((a, b) => b.totalPL - a.totalPL)[0];
+    entries.push({ teamId: best.teamId, place: 0, pct: topPL, amount: pool.current * (topPL / 100), topPL: true });
+  }
   return entries;
 }

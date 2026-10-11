@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { computeTeamStreak } from '../engine/stats';
 import { sortStandings } from '../engine/standings';
+import { leagueClinchStatuses, regularSeasonMatchups } from '../engine/bracketModel';
 import { activeMultipliers } from '../engine/prizePool';
 import { seasonScaleRef } from '../engine/plColor';
 import { usePlStyle } from '../components/common/usePlStyle';
@@ -10,6 +11,7 @@ import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader'
 import { TeamLogo } from '../components/common/TeamLogo';
 import { LeagueLogo } from '../components/common/LeagueLogo';
 import type { League, TeamStanding } from '../types';
+import { ClinchIcon, ClinchLegend } from '../components/common/ClinchIcon';
 
 type SortKey = 'default' | 'pl' | 'bets' | 'best';
 type ViewMode = 'overall' | 'conference';
@@ -79,6 +81,7 @@ function StandingsRows({
 }) {
   const multipliers = showMultiplier ? activeMultipliers(league) : null;
   const plStyle = usePlStyle();
+  const clinch = leagueClinchStatuses(league);
   const plRef = seasonScaleRef(league);
   return (
     <div className="space-y-1.5">
@@ -101,6 +104,7 @@ function StandingsRows({
                   <span className="shrink-0 text-text-muted">{i + 1}.</span>
                   <TeamLogo team={team} size="sm" />
                   <span className="truncate">{team.teamName}</span>
+                  <ClinchIcon status={clinch.get(team.id)} />
                 </span>
                 <span className="text-center tabular-nums">
                   {s.wins}-{s.losses}
@@ -139,6 +143,9 @@ function StandingsRows({
           </div>
         );
       })}
+      <div className="px-2 pt-1">
+        <ClinchLegend statuses={rows.map((r) => clinch.get(r.teamId)).filter((x) => x != null)} />
+      </div>
     </div>
   );
 }
@@ -165,7 +172,7 @@ export function FullStandings() {
     // tiebreaker chain (engine/standings.ts, spec §4) -- it was already being
     // called for the per-conference view below (line ~199) but never for the
     // main overall list, so "default" rank was never actually rank order.
-    if (sortKey === 'default') return sortStandings(league.standings, league.matchupsByWeek);
+    if (sortKey === 'default') return sortStandings(league.standings, regularSeasonMatchups(league));
     const rows = [...league.standings];
     if (sortKey === 'pl') rows.sort((a, b) => b.totalPL - a.totalPL);
     else if (sortKey === 'bets') rows.sort((a, b) => b.betsWon - b.betsLost - (a.betsWon - a.betsLost));
@@ -215,7 +222,7 @@ export function FullStandings() {
               const confTeamIds = new Set(league.teams.filter((t) => t.conferenceId === conf.id).map((t) => t.id));
               const confStandings = sortStandings(
                 league.standings.filter((s) => confTeamIds.has(s.teamId)),
-                league.matchupsByWeek,
+                regularSeasonMatchups(league),
               );
               return (
                 <div key={conf.id}>

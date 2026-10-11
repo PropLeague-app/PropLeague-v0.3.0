@@ -69,6 +69,8 @@ import { encodePerfectWeek, signedMoney } from '../_shared/perfectAnnouncement.t
 import { encodeSkunkedWeek, isSkunkedWagers } from '../_shared/skunkedAnnouncement.ts';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
 import { notifAllowed } from '../_shared/leaguePrefs.ts';
+import { clinchStatuses } from '../_shared/clinch.ts';
+import { buildLeaguePool } from '../_shared/poolRebuild.ts';
 import { buildSettledAlert, buildWeekResult, type SettledPick } from '../_shared/settleAlerts.ts';
 import { checkRosterRules, effectiveEmptyFloor, type CorrelationRuleReal, type PenaltyPickReal } from '../_shared/rosterPenalties.ts';
 import {
@@ -83,11 +85,12 @@ import {
   conferenceBracketSupported,
   advanceBracket,
   sortStandings,
-  computeStandingMultipliers,
-  advancePoolForWeek,
-  lockPool,
-  regularSeasonWeeksFor,
-  playoffWeekSequence,
+  seasonPlan,
+  calendarIndex,
+  nextCalendarWeek,
+  playoffPairingsForWeek,
+  isPlayoffPairing,
+  playoffWinner,
 } from '../_shared/playoffLogic.ts';
 
 type MarketKey =
@@ -248,6 +251,8 @@ interface SettingsSlice {
   weeklyCredits: number;
   playoffTeams: number;
   eliminationType: 'single' | 'double';
+  /** The week the title is decided (1.2.11); the playoffs fill backward from it. Default CONF. */
+  championshipWeek: WeekId;
   conferencesEnabled: boolean;
   buyInEnabled: boolean;
   buyInAmount: number;
@@ -255,6 +260,11 @@ interface SettingsSlice {
    * movement. Default true (how it always worked); false leaves them out of all three. */
   aiTeamsAffectPool: boolean;
   poolMultipliers: { enabled: boolean; basis: 'rank' | 'record' | 'seasonPL'; spread: number };
+  /** Prize pool tracking (1.2.11): the week the pool is tracked from (null = the season start), whether
+   * multipliers also apply to weeks before they were turned on, and the week they were turned on. */
+  poolTrackFromWeek: WeekId | null;
+  poolMultipliersBackfill: boolean;
+  poolMultipliersSince: WeekId | null;
   /** Needed to know how many slots a full roster actually has, for the
    * incomplete-lineup penalty (see chat: engine/scoring.ts's
    * computeIncompleteLineupPenalty, ported into this function below). */
@@ -276,11 +286,15 @@ const DEFAULT_SETTINGS: SettingsSlice = {
   weeklyCredits: 100,
   playoffTeams: 4,
   eliminationType: 'single',
+  championshipWeek: 'CONF',
   conferencesEnabled: false,
   buyInEnabled: false,
   buyInAmount: 0,
   aiTeamsAffectPool: true,
   poolMultipliers: { enabled: false, basis: 'rank', spread: 0 },
+  poolTrackFromWeek: null,
+  poolMultipliersBackfill: true,
+  poolMultipliersSince: null,
   lineupSlots: DEFAULT_LINEUP_SLOTS,
   emptySlotFloor: null,
   invalidRosterPenaltyEnabled: false,
@@ -299,11 +313,15 @@ function settingsFrom(raw: unknown): SettingsSlice {
     weeklyCredits: r.weeklyCredits ?? DEFAULT_SETTINGS.weeklyCredits,
     playoffTeams: r.playoffTeams ?? DEFAULT_SETTINGS.playoffTeams,
     eliminationType: r.eliminationType ?? DEFAULT_SETTINGS.eliminationType,
+    championshipWeek: calendarIndex(r.championshipWeek as WeekId | undefined) >= 0 ? (r.championshipWeek as WeekId) : DEFAULT_SETTINGS.championshipWeek,
     conferencesEnabled: r.conferencesEnabled ?? DEFAULT_SETTINGS.conferencesEnabled,
     buyInEnabled: r.buyInEnabled ?? DEFAULT_SETTINGS.buyInEnabled,
     buyInAmount: r.buyInAmount ?? DEFAULT_SETTINGS.buyInAmount,
     aiTeamsAffectPool: r.aiTeamsAffectPool !== false,
     poolMultipliers: { ...DEFAULT_SETTINGS.poolMultipliers, ...r.poolMultipliers },
+    poolTrackFromWeek: calendarIndex(r.poolTrackFromWeek as WeekId | undefined) >= 0 ? (r.poolTrackFromWeek as WeekId) : null,
+    poolMultipliersBackfill: r.poolMultipliersBackfill !== false,
+    poolMultipliersSince: calendarIndex(r.poolMultipliersSince as WeekId | undefined) >= 0 ? (r.poolMultipliersSince as WeekId) : null,
     lineupSlots: r.lineupSlots && typeof r.lineupSlots === 'object' ? (r.lineupSlots as Record<string, number>) : DEFAULT_SETTINGS.lineupSlots,
     emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,
     invalidRosterPenaltyEnabled: r.invalidRosterPenaltyEnabled === true,
@@ -318,6 +336,38 @@ function settingsFrom(raw: unknown): SettingsSlice {
 
 function fieldSizeFor(settings: SettingsSlice): PlayoffFieldSize {
   return (([2, 4, 6, 8, 16] as const).includes(settings.playoffTeams as PlayoffFieldSize) ? settings.playoffTeams : 4) as PlayoffFieldSize;
+}
+
+type MatchupPair = { team_a_id: string; team_b_id: string };
+
+/** Playoff games are real `matchups` rows (1.2.11): every bracket game set for `week` gets one, in the
+ * bracket's team order, so Home, the matchup screen, the Live Activity, reminders and result pushes all
+ * see playoff games the same way as regular-season ones. Only missing rows are written (an existing
+ * row keeps its scores). Returns the rows it added. */
+async function ensurePlayoffMatchupRows(
+  supabase: any,
+  leagueId: string,
+  bracket: PlayoffBracket | null,
+  week: string,
+  existing: MatchupPair[],
+  errors: string[],
+): Promise<MatchupPair[]> {
+  const added: MatchupPair[] = [];
+  for (const p of playoffPairingsForWeek(bracket, week)) {
+    const has = existing.some(
+      (r) => (r.team_a_id === p.teamAId && r.team_b_id === p.teamBId) || (r.team_a_id === p.teamBId && r.team_b_id === p.teamAId),
+    );
+    if (has) continue;
+    const { error } = await supabase.rpc('upsert_matchup', {
+      p_league_id: leagueId, p_week: week,
+      p_team_a_id: p.teamAId, p_team_b_id: p.teamBId,
+      p_team_a_score: null, p_team_b_score: null,
+      p_winner_id: null, p_is_tie: false,
+    });
+    if (error) errors.push(`playoff matchup ${p.matchId} (${week}): ${error.message}`);
+    else added.push({ team_a_id: p.teamAId, team_b_id: p.teamBId });
+  }
+  return added;
 }
 
 function parseWeekId(raw: string): WeekId {
@@ -857,13 +907,23 @@ Deno.serve(async (req) => {
         }
       }
 
-      const { data: weekMatchups } = await supabase
+      const { data: weekMatchupRows } = await supabase
         .from('matchups')
         .select('team_a_id, team_b_id')
         .eq('league_id', leagueId)
         .eq('week', weekStr);
+      // In the playoffs the bracket decides who plays: its games become rows here if they are not yet,
+      // and any other row for the week (a leftover regular-season pairing from before the playoff
+      // field grew into Weeks 17 or 18) is ignored.
+      const bracketNow = (league.bracket as PlayoffBracket | null) ?? null;
+      const inPlayoffs = league.season_phase === 'playoffs' && !!bracketNow;
+      let weekMatchups: MatchupPair[] = (weekMatchupRows ?? []) as MatchupPair[];
+      if (inPlayoffs) {
+        weekMatchups = [...weekMatchups, ...(await ensurePlayoffMatchupRows(supabase, leagueId, bracketNow, weekStr, weekMatchups, errors))]
+          .filter((m) => isPlayoffPairing(bracketNow, weekStr, m.team_a_id, m.team_b_id));
+      }
 
-      for (const m of weekMatchups ?? []) {
+      for (const m of weekMatchups) {
         // Season Start gate (see chat, 0013_season_start_week.sql): a not-started
         // week gives every team a neutral 0 in weeklyScoreByTeam above (not null),
         // so the null-score check just below wouldn't catch it on its own -- this
@@ -883,8 +943,13 @@ Deno.serve(async (req) => {
         // stay null/false, which the standings recompute below already treats as
         // "not decided yet" and skips incrementing wins/losses/ties for -- so a team's
         // official record can't flip mid-week off a snapshot that later changes.
-        const isTie = weekComplete && aScore === bScore;
-        const winnerId = weekComplete ? (isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id) : null;
+        // A playoff game cannot tie: team A advances on equal scores, exactly as the bracket does.
+        const isTie = weekComplete && aScore === bScore && !inPlayoffs;
+        const winnerId = weekComplete
+          ? inPlayoffs
+            ? playoffWinner(m.team_a_id, m.team_b_id, aScore, bScore)
+            : isTie ? null : aScore > bScore ? m.team_a_id : m.team_b_id
+          : null;
         const { error: matchupErr } = await supabase.rpc('upsert_matchup', {
           p_league_id: leagueId, p_week: weekStr,
           p_team_a_id: m.team_a_id, p_team_b_id: m.team_b_id,
@@ -904,7 +969,7 @@ Deno.serve(async (req) => {
         return String(t?.abbrev ?? t?.team_name ?? 'your opponent');
       };
       const oppByTeam = new Map<string, string>();
-      for (const m of weekMatchups ?? []) {
+      for (const m of weekMatchups) {
         oppByTeam.set(m.team_a_id, m.team_b_id);
         oppByTeam.set(m.team_b_id, m.team_a_id);
       }
@@ -976,7 +1041,7 @@ Deno.serve(async (req) => {
       const { data: allMatchups } = await supabase.from('matchups').select('*').eq('league_id', leagueId);
       const { data: allRosterRows } = await supabase
         .from('weekly_rosters')
-        .select('team_id, wagers(status, stake), teams!inner(league_id)')
+        .select('team_id, week, wagers(status, stake, settled_profit), teams!inner(league_id)')
         .eq('teams.league_id', leagueId);
 
       const standingsMap = new Map(
@@ -984,6 +1049,8 @@ Deno.serve(async (req) => {
       );
       for (const m of allMatchups ?? []) {
         if (m.team_a_score == null || m.team_b_score == null) continue;
+        // Standings are the regular season: playoff games never change a team's record or season P/L.
+        if (isPlayoffPairing(bracketNow, String(m.week), m.team_a_id, m.team_b_id)) continue;
         const a = standingsMap.get(m.team_a_id);
         const b = standingsMap.get(m.team_b_id);
         if (!a || !b) continue;
@@ -1198,20 +1265,70 @@ Deno.serve(async (req) => {
           teamId: s.teamId, wins: s.wins, losses: s.losses, ties: s.ties, totalPL: s.totalPL,
           betsWon: s.betsWon, betsLost: s.betsLost, bestWeekPL: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL,
         }));
-        const matchupLines: MatchupLine[] = (allMatchups ?? []).map((m) => ({ teamAId: m.team_a_id, teamBId: m.team_b_id, winnerId: m.winner_id }));
+        const matchupLines: MatchupLine[] = (allMatchups ?? [])
+          .filter((m) => !isPlayoffPairing(bracketNow, String(m.week), m.team_a_id, m.team_b_id))
+          .map((m) => ({ teamAId: m.team_a_id, teamBId: m.team_b_id, winnerId: m.winner_id }));
         const sorted = sortStandings(standingLines, matchupLines);
-        const teamCount = (teams ?? []).length || league.target_team_count || sorted.length;
 
         let newWeek: string = weekStr;
         let newPhase: string = league.season_phase;
         let newBracket: PlayoffBracket | null = (league.bracket as PlayoffBracket | null) ?? null;
         let seasonJustCompleted = false;
 
+        // The season calendar (1.2.11): regular season from the start week, then the playoff rounds
+        // ending on the commissioner's championship week, with no gaps in between.
+        const plan = seasonPlan(league.season_start_week, settings.championshipWeek, fieldSize, settings.eliminationType);
+
+        // Clinch news (1.2.11): once per team and milestone, a one-line post when a team locks up a playoff
+        // spot, a first-round bye or the #1 seed (only the biggest new one is posted). Same math as the
+        // app's standings markers (_shared/clinch.ts).
+        if (league.season_phase === 'regular' && seasonStarted) {
+          const confIds = [...new Set((teams ?? []).map((t: any) => t.conference_id).filter(Boolean))] as string[];
+          const byConf = settings.conferencesEnabled && confIds.length === 2 && conferenceBracketSupported(fieldSize, settings.eliminationType, 2);
+          const regularSet = new Set(plan.regularWeeks.map(String));
+          const remaining = new Map<string, number>();
+          for (const m of allMatchups ?? []) {
+            if (!regularSet.has(String(m.week)) || m.winner_id != null || m.is_tie) continue;
+            remaining.set(m.team_a_id, (remaining.get(m.team_a_id) ?? 0) + 1);
+            remaining.set(m.team_b_id, (remaining.get(m.team_b_id) ?? 0) + 1);
+          }
+          const clinchTeams = standingLines.map((l) => ({
+            id: l.teamId,
+            group: byConf ? String((teams ?? []).find((t: any) => t.id === l.teamId)?.conference_id ?? 'all') : 'all',
+            wins: l.wins,
+            losses: l.losses,
+            ties: l.ties,
+            remaining: remaining.get(l.teamId) ?? 0,
+          }));
+          const statuses = clinchStatuses(clinchTeams, byConf ? fieldSize / 2 : fieldSize, fieldSize === 6 && !byConf ? 2 : 0);
+          const rank: Record<string, number> = { playoffs: 1, bye: 2, top: 3 };
+          const words: Record<string, string> = { playoffs: 'a playoff spot', bye: 'a first-round bye', top: 'the #1 seed' };
+          for (const [teamId, status] of statuses) {
+            if (status === 'out') continue;
+            let newest: string | null = null;
+            for (const kind of ['playoffs', 'bye', 'top']) {
+              if (rank[kind] > rank[status]) continue;
+              try {
+                if (await claimMomentOnce(supabase, `clinch:${leagueId}:${teamId}:${kind}`)) newest = kind;
+              } catch (claimErr) {
+                errors.push(`clinch ${teamId}: ${claimErr instanceof Error ? claimErr.message : String(claimErr)}`);
+              }
+            }
+            if (!newest) continue;
+            const name = String((teams ?? []).find((t: any) => t.id === teamId)?.team_name ?? 'A team');
+            const { error: clinchErr } = await supabase.from('activity_items').insert({
+              league_id: leagueId,
+              type: 'announcement',
+              message: `${newest === 'playoffs' ? '✅' : newest === 'bye' ? '⭐' : '👑'} ${name} clinched ${words[newest]}.`,
+              pinned: false,
+            });
+            if (clinchErr) errors.push(`clinch ${teamId}: ${clinchErr.message}`);
+          }
+        }
         if (league.season_phase === 'regular') {
-          const regWeeks = regularSeasonWeeksFor(fieldSize, settings.eliminationType);
-          const currentWeekNum = Number(weekStr);
-          if (Number.isFinite(currentWeekNum) && currentWeekNum < regWeeks) {
-            newWeek = String(currentWeekNum + 1);
+          const regIdx = plan.regularWeeks.findIndex((w) => String(w) === weekStr);
+          if (regIdx >= 0 && regIdx < plan.regularWeeks.length - 1) {
+            newWeek = String(plan.regularWeeks[regIdx + 1]);
             newPhase = 'regular';
           } else {
             // Regular season just ended -- build and seed the playoff bracket.
@@ -1225,21 +1342,20 @@ Deno.serve(async (req) => {
             } else {
               bracket = buildBracket(sorted.slice(0, fieldSize).map((s) => s.teamId), fieldSize, settings.eliminationType);
             }
-            const firstPlayoffWeek = playoffWeekSequence(fieldSize, settings.eliminationType)[0] ?? 'WC';
+            // Normally the plan's first playoff week, which is the next week. If settings moved the
+            // playoffs to a week already past, they start next week instead of skipping ahead.
+            const planned = plan.playoffWeeks[0];
+            const firstPlayoffWeek: WeekId =
+              planned != null && calendarIndex(planned) > calendarIndex(weekStr) ? planned : (nextCalendarWeek(weekStr) ?? 'CONF');
             bracket = advanceBracket(bracket, null, () => null, firstPlayoffWeek);
             newWeek = String(firstPlayoffWeek);
             newPhase = 'playoffs';
             newBracket = bracket;
           }
         } else if (league.season_phase === 'playoffs' && newBracket) {
-          const sequence = playoffWeekSequence(fieldSize, settings.eliminationType);
           const settledWeekId = parseWeekId(weekStr);
-          const currentIdx = sequence.findIndex((w) => String(w) === weekStr);
-          // Fallback for the rare bracket-reset round, which sits one week past
-          // the precomputed sequence (only reachable in double-elimination).
-          const nextWeekId: WeekId = currentIdx >= 0 && currentIdx + 1 < sequence.length
-            ? sequence[currentIdx + 1]
-            : (typeof settledWeekId === 'number' ? settledWeekId + 1 : 'CONF');
+          // Playoff rounds run on consecutive calendar weeks (the plan's playoff weeks).
+          const nextWeekId: WeekId = nextCalendarWeek(weekStr) ?? 'CONF';
           const scoresFor = (teamId: string): number | null => weeklyScoreByTeam.get(teamId) ?? null;
           const advanced = advanceBracket(newBracket, settledWeekId, scoresFor, nextWeekId);
           newBracket = advanced;
@@ -1253,38 +1369,14 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Prize pool -- advances on every settled week, regular season or
-        // playoffs, same as the client engine did.
-        let pool = (league.prize_pool as PrizePool | null) ?? null;
-        // "AI teams count toward the pool" (default on). When a commissioner turns it off, AI teams drop out
-        // of all of it: the starting pool and per-team share count only human teams, only human scores move
-        // the pool, and the standing multipliers are worked out among the humans alone.
-        const aiTeamIds = new Set((teams ?? []).filter((t: any) => t.is_simulated).map((t: any) => t.id as string));
-        const humanCount = (teams ?? []).length - aiTeamIds.size;
-        const excludeAi = !settings.aiTeamsAffectPool && humanCount > 0;
-        const poolTeamCount = excludeAi ? humanCount : teamCount;
-        const poolScores = excludeAi ? new Map([...weeklyBetPLByTeam].filter(([id]) => !aiTeamIds.has(id))) : weeklyBetPLByTeam;
-        const poolStandingLines = excludeAi ? standingLines.filter((s) => !aiTeamIds.has(s.teamId)) : standingLines;
-        if (!pool && settings.buyInEnabled) {
-          const initial = poolTeamCount * settings.buyInAmount;
-          pool = { initial, current: initial, locked: false, history: [] };
-        }
-        if (pool && !pool.locked) {
-          const multipliers = settings.poolMultipliers.enabled && league.season_phase === 'regular'
-            ? computeStandingMultipliers(poolStandingLines, settings.poolMultipliers.basis, settings.poolMultipliers.spread)
-            : Object.fromEntries(poolStandingLines.map((s) => [s.teamId, 1]));
-          pool = advancePoolForWeek(pool, parseWeekId(weekStr), poolScores, settings.weeklyCredits, poolTeamCount, multipliers);
-          if (seasonJustCompleted) pool = lockPool(pool);
-        }
-
-        // Optimistic-concurrency guard: only write if this league is still
-        // where we started (protects against two overlapping cron runs).
         // Scheduled settings changes (migration 0027): a commissioner who edited gameplay settings
         // while picks were already in saved them as pending. They go live in the SAME update that
         // advances the week, so there is never a moment with the new week and the old rules (or the
         // reverse). Re-checked against the server's feasibility rule first; an unreachable
-        // combination is dropped rather than applied.
-        const leagueUpdate: Record<string, unknown> = { current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool };
+        // combination is dropped rather than applied. Worked out before the prize pool so a buy-in or
+        // multiplier change that goes live now is already used for it.
+        let appliedSettings: Record<string, unknown> | null = null;
+        let clearPending = false;
         const pendingRaw = (league as any).pending_settings;
         if (pendingRaw && typeof pendingRaw === 'object' && Object.keys(pendingRaw).length > 0 && newWeek !== weekStr) {
           const merged = { ...(league.settings as Record<string, unknown> | null), ...pendingRaw };
@@ -1293,12 +1385,37 @@ Deno.serve(async (req) => {
             errors.push(`pending settings check: ${feasErr.message}`); // leave them pending, retry on the next run
           } else if (infeasible) {
             errors.push(`pending settings dropped: ${infeasible}`);
-            leagueUpdate.pending_settings = null;
+            clearPending = true;
           } else {
-            leagueUpdate.settings = merged;
-            leagueUpdate.pending_settings = null;
+            appliedSettings = merged;
+            clearPending = true;
           }
         }
+        const poolSettings = appliedSettings ? settingsFrom(appliedSettings) : settings;
+
+        // Prize pool (1.2.11): rebuilt from stored results every time a week closes, from the tracking
+        // week (the season start unless the commissioner picked another) through this week, under the
+        // current pool rules. A virtual tracking feature, so starting it mid-season backfills it.
+        // "AI teams count toward the pool" (default on): when off, only human teams buy in, move the pool
+        // and are ranked for multipliers. With buy-ins off the stored pool is left as it was.
+        const pool = buildLeaguePool({
+          prior: (league.prize_pool as PrizePool | null) ?? null,
+          settings: poolSettings,
+          teams: (teams ?? []) as { id: string; is_simulated?: boolean | null }[],
+          rosterRows: (allRosterRows ?? []) as any[],
+          matchups: (allMatchups ?? []) as any[],
+          bracket: bracketNow,
+          plan,
+          seasonStartWeek: league.season_start_week,
+          closedWeek: weekStr,
+          lock: seasonJustCompleted,
+        });
+
+        // Optimistic-concurrency guard: only write if this league is still
+        // where we started (protects against two overlapping cron runs).
+        const leagueUpdate: Record<string, unknown> = { current_week: newWeek, season_phase: newPhase, bracket: newBracket, prize_pool: pool };
+        if (appliedSettings) leagueUpdate.settings = appliedSettings;
+        if (clearPending) leagueUpdate.pending_settings = null;
         const { data: advancedRows, error: updateErr } = await supabase
           .from('leagues')
           .update(leagueUpdate)
@@ -1307,6 +1424,17 @@ Deno.serve(async (req) => {
           .eq('season_phase', league.season_phase)
           .select('id');
         advancement = { from: `${league.season_phase} ${weekStr}`, to: `${newPhase} ${newWeek}`, updateErr: updateErr?.message ?? null };
+
+        // The next playoff week's games exist as matchups the moment the bracket sets them (not only
+        // once that week's first settle run happens), so Home and the Live Activity show them right away.
+        if (!updateErr && (advancedRows ?? []).length > 0 && newPhase === 'playoffs' && newBracket && newWeek !== weekStr) {
+          const { data: nextRows } = await supabase
+            .from('matchups')
+            .select('team_a_id, team_b_id')
+            .eq('league_id', leagueId)
+            .eq('week', newWeek);
+          await ensurePlayoffMatchupRows(supabase, leagueId, newBracket, newWeek, (nextRows ?? []) as MatchupPair[], errors);
+        }
 
         // Week results push: only from the run that actually closed the week (the guarded update
         // above matched a row), so a forced rerun of an old week or the stray-week pass never sends
@@ -1350,7 +1478,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: (weekMatchups ?? []).length, weekComplete, advancement, errors, skipped });
+      summary.push({ leagueId, week: weekStr, wagersGraded: gradedCount, teamsScored: weeklyScoreByTeam.size, matchupsScored: weekMatchups.length, weekComplete, advancement, errors, skipped });
     }
   }
 

@@ -27,6 +27,7 @@ import { weekLabel } from '../types';
 import { ShareButton } from '../share/ShareButton';
 import { MatchupShareCard, type MatchupCell, type MatchupSide } from '../share/cards/MatchupShareCard';
 import type { ShareStatus } from '../share/palette';
+import { leagueWeekMatchups } from '../engine/bracketModel';
 
 // A faint edge plus a soft drop shadow lifts the logos off the matchup switcher pills.
 const LOGO_RING = { boxShadow: '0 0 0 1px color-mix(in oklab, var(--color-text) 16%, transparent), 0 1px 4px rgba(0,0,0,0.35)' } as const;
@@ -67,7 +68,7 @@ export function MatchupDetail() {
   // uses for its own matchup card + "View other matchups" list: the
   // viewer's own matchup first, then the rest in schedule order.
   const navigate = useNavigate();
-  const weekMatchups = league && matchup ? league.matchupsByWeek[String(matchup.week)] ?? [] : [];
+  const weekMatchups = league && matchup ? leagueWeekMatchups(league, matchup.week) : [];
   const userTeamId = league?.teams.find((t) => t.isUser)?.id;
   const userWeekMatchup = weekMatchups.find((m) => m.teamAId === userTeamId || m.teamBId === userTeamId);
   const orderedWeekMatchups: Matchup[] = userWeekMatchup

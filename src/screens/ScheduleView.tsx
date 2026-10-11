@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flame } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { weekLabel, weekOrder, type WeekId } from '../types';
+import { weekLabel, type WeekId } from '../types';
 import { formatCents } from '../engine/oddsMath';
 import { Card } from '../components/common/Card';
 import { BackHeader } from '../components/layout/BackHeader';
@@ -14,6 +14,7 @@ import { MemberSelector } from '../components/common/MemberSelector';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { isTeamWeekPerfect } from '../engine/perfectWeek';
 import { isTeamWeekSkunked } from '../engine/skunkedWeek';
+import { leagueSeasonPlan, leagueWeekMatchups } from '../engine/bracketModel';
 
 function toWeekId(week: string): WeekId {
   return Number.isNaN(Number(week)) ? (week as WeekId) : Number(week);
@@ -50,13 +51,14 @@ export function ScheduleView() {
 
   const viewedTeam = league.teams.find((t) => t.id === selectedTeamId) ?? userTeam;
 
-  const weeks = Object.entries(league.matchupsByWeek)
-    .map(([week, matchups]) => ({
-      week,
-      matchup: matchups.find((m) => m.teamAId === viewedTeam.id || m.teamBId === viewedTeam.id),
+  // The league's own weeks (1.2.11 season calendar), so leftover rows for weeks outside it never show.
+  const plan = leagueSeasonPlan(league);
+  const weeks = [...plan.regularWeeks, ...plan.playoffWeeks]
+    .map((w) => ({
+      week: String(w),
+      matchup: leagueWeekMatchups(league, w).find((m) => m.teamAId === viewedTeam.id || m.teamBId === viewedTeam.id),
     }))
-    .filter((w) => w.matchup)
-    .sort((a, b) => weekOrder(toWeekId(a.week)) - weekOrder(toWeekId(b.week)));
+    .filter((w) => w.matchup);
 
   // A league that started mid-season has real matchup rows sitting in
   // matchupsByWeek for the weeks before it existed (the schedule is generated
@@ -76,11 +78,11 @@ export function ScheduleView() {
       <div className="p-4 space-y-3">
       <MemberSelector teams={league.teams} selectedTeamId={viewedTeam.id} onSelect={setSelectedTeamId} />
       <div className="space-y-2">
-        {notStartedWeeks.length > 0 && (
-          <Card className="flex items-center justify-center py-4">
+        {(notStartedWeeks.length > 0 || league.seasonStartWeek == null || toWeekId(league.seasonStartWeek) !== 1) && (
+          <Card className="flex items-center justify-center py-3">
             <p className="text-sm text-text-muted">
               {league.seasonStartWeek != null
-                ? `Season not started until ${weekLabel(toWeekId(league.seasonStartWeek))}`
+                ? `Season started ${weekLabel(toWeekId(league.seasonStartWeek))}`
                 : 'Season not started'}
             </p>
           </Card>

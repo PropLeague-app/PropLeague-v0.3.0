@@ -144,6 +144,8 @@ describe('scheduled-change helpers', () => {
   it('nextWeekLabel handles numeric weeks and playoff rounds', () => {
     expect(nextWeekLabel(5)).toBe('Week 6');
     expect(nextWeekLabel('5')).toBe('Week 6');
-    expect(nextWeekLabel('WC')).toBe('the next round');
+    expect(nextWeekLabel(18)).toBe('Wild Card week');
+    expect(nextWeekLabel('WC')).toBe('Divisional week');
+    expect(nextWeekLabel('CONF')).toBe('next season');
   });
 });

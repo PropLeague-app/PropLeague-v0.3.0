@@ -40,17 +40,23 @@ import {
   meaningfulPending,
   nextWeekLabel,
   pendingKeys,
+  APPLY_NOW_KEYS,
   settingsInfeasibility,
   touchesFeasibility,
   type DeferredSettingKey,
 } from '../../engine/settingsRules';
-import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount, structureAvailable } from '../../engine/playoffs';
+import { PillSelect } from '../common/PillSelect';
+import { KeypadField } from './KeypadField';
+import { ApplyNowSheet } from './ApplyNowSheet';
+import { usePlStyle } from '../common/usePlStyle';
+import { calendarIndex, championshipWeekOptions, doubleEliminationAvailable, fieldSizeOptionsForTeamCount, nextCalendarWeek } from '../../engine/playoffs';
+import { leagueSeasonPlan, nflWeekName, structureFits } from '../../engine/bracketModel';
 import { activeMultipliers, multiplierRangeForSpread, poolTeamCount } from '../../engine/prizePool';
 import { CorrelationRulesEditor } from './CorrelationRulesEditor';
 import { MarketRulesEditor } from './MarketRulesEditor';
 import { PayoutSplitEditor } from './PayoutSplitEditor';
 import { BettingLimitsGroup } from './BettingLimitsGroup';
-import { ChipRow, CollapsibleSection, SectionHeader, SubSection, NumberField, Stepper, TextField, chipClass } from './SettingsPrimitives';
+import { ChipRow, CollapsibleSection, SectionHeader, SubSection, Stepper, TextField, chipClass } from './SettingsPrimitives';
 
 const POSITIONS: Position[] = ['QB', 'RB', 'WR', 'TE', 'K'];
 const POSITION_RANGE: Record<Position | 'ML', [number, number]> = {
@@ -65,9 +71,15 @@ const POSITION_RANGE: Record<Position | 'ML', [number, number]> = {
 /** manual v0.3.0 §8: each team's current real-dollar impact multiplier, for the
  * settings preview list, sorted by team so the row order doesn't jump around as
  * standings shift week to week. */
-function leagueMultiplierRows(league: League): { team: LeagueTeam; multiplier: number }[] {
-  const multipliers = activeMultipliers(league);
-  return league.teams.map((team) => ({ team, multiplier: multipliers[team.id] ?? 1 }));
+/** Each team's multiplier now, and under the scheduled rules when a change is waiting for next week. */
+function leagueMultiplierRows(league: League, effective: LeagueSettings): { team: LeagueTeam; now: number; next: number; inPool: boolean }[] {
+  const now = activeMultipliers(league);
+  const next = activeMultipliers({ ...league, settings: effective });
+  // With AI teams left out of the pool they have no multiplier at all.
+  const aiOut = !effective.aiTeamsAffectPool && league.teams.some((t) => !t.isSimulated);
+  return league.teams
+    .map((team) => ({ team, now: now[team.id] ?? 1, next: next[team.id] ?? 1, inPool: !(aiOut && team.isSimulated) }))
+    .sort((a, b) => Number(b.inPool) - Number(a.inPool) || b.next - a.next);
 }
 
 const onOff = (v: boolean) => (v ? 'on' : 'off');
@@ -75,7 +87,6 @@ const onOff = (v: boolean) => (v ? 'on' : 'off');
 /** Which settings group each gameplay key belongs to, for the "Applies Week N" pills. */
 const ROSTER_KEYS: DeferredSettingKey[] = ['lineupSlots', 'minGamesPerRoster', 'maxDuplicatePicks', 'waiverMode', 'correlationBlockEnabled', 'correlationRules', 'marketRulesEnabled', 'marketRules', 'hidePicks'];
 const LIMIT_KEYS: DeferredSettingKey[] = ['weeklyCredits', 'minBetPerSlot', 'maxMLBet', 'maxPropBet', 'minOdds', 'singleBetCapPct', 'wagerPrecision', 'propBetOverride', 'mlBetOverride'];
-const BUYIN_KEYS: DeferredSettingKey[] = ['buyInEnabled', 'buyInAmount', 'poolMultipliers', 'aiTeamsAffectPool'];
 const PENALTY_KEYS: DeferredSettingKey[] = ['emptySlotFloor', 'invalidRosterPenaltyEnabled', 'invalidRosterFee'];
 
 /** A small dollar stepper (whole-dollar steps), for penalty amounts. */
@@ -140,6 +151,7 @@ export function LeagueSettingsPanel({
   const updateLeagueLogoStore = useAppStore((s) => s.updateLeagueLogo);
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [identityDirty, setIdentityDirty] = useState(false);
+  const plStyle = usePlStyle();
 
   // Once a pick exists this week, gameplay edits are scheduled for next week instead of applied
   // (see engine/settingsRules). The commissioner works against live settings with their scheduled
@@ -151,6 +163,7 @@ export function LeagueSettingsPanel({
   const nextWeek = nextWeekLabel(league.currentWeek);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
+  const [applyNowOpen, setApplyNowOpen] = useState(false);
   const pillFor = (keys: DeferredSettingKey[]) => (scheduledKeys.some((k) => keys.includes(k)) ? `Applies ${nextWeek}` : undefined);
   const readOnly = !isCommissioner;
   const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
@@ -245,15 +258,23 @@ export function LeagueSettingsPanel({
             )}
           </p>
           {isCommissioner && (
-            <button
-              type="button"
-              disabled={discarding}
-              onClick={() => void discardScheduled()}
-              className="text-xs font-semibold text-accent disabled:opacity-40"
-            >
-              {discarding ? 'Discarding…' : 'Discard scheduled changes'}
-            </button>
+            <div className="flex items-center gap-4">
+              {scheduledKeys.some((k) => (APPLY_NOW_KEYS as readonly string[]).includes(k)) && (
+                <button type="button" onClick={() => setApplyNowOpen(true)} className="text-xs font-semibold text-accent">
+                  Apply now
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={discarding}
+                onClick={() => void discardScheduled()}
+                className="text-xs font-semibold text-accent disabled:opacity-40"
+              >
+                {discarding ? 'Discarding…' : 'Discard scheduled changes'}
+              </button>
+            </div>
           )}
+          {applyNowOpen && pending && <ApplyNowSheet league={league} pending={pending} onClose={() => setApplyNowOpen(false)} />}
         </div>
       )}
 
@@ -488,7 +509,7 @@ export function LeagueSettingsPanel({
           icon={<Gauge size={16} />}
           help={['lineup', 'Stakes and games']}
           readOnly={readOnly}
-          badge={pillFor([...LIMIT_KEYS, ...BUYIN_KEYS])}
+          badge={pillFor(LIMIT_KEYS)}
           summary={`$${settings.weeklyCredits} weekly · ML max $${settings.maxMLBet} · prop ${settings.maxPropBet != null ? `max $${settings.maxPropBet}` : 'no max'} · buy-in ${settings.buyInEnabled ? `$${settings.buyInAmount.toFixed(2)}` : 'off'}`}
         >
           {errorNote}
@@ -508,7 +529,15 @@ export function LeagueSettingsPanel({
           {settings.buyInEnabled && (
             <>
               <SubSection title="Buy-in">
-                <NumberField label="Buy-in per team" value={settings.buyInAmount} onChange={(v) => update({ buyInAmount: v })} />
+                <KeypadField
+                  label="Buy-in per team"
+                  unit="$"
+                  decimals={2}
+                  value={settings.buyInAmount}
+                  presets={[10, 20, 50, 100].map((n) => ({ label: `$${n}`, value: n }))}
+                  check={(v) => (v != null && v < 0 ? 'The buy-in cannot be negative.' : null)}
+                  onChange={(v) => update({ buyInAmount: v ?? 0 })}
+                />
                 <p className="text-[11px] text-text-muted">
                   Starting pool: {poolTeamCount(league)} × ${settings.buyInAmount.toFixed(2)} = ${(poolTeamCount(league) * settings.buyInAmount).toFixed(2)}
                 </p>
@@ -531,20 +560,49 @@ export function LeagueSettingsPanel({
                   value={settings.showRealDollarStakes}
                   onChange={(v) => update({ showRealDollarStakes: v })}
                 />
+                {(() => {
+                  // 1.2.11: the pool can be tracked from any played week; it is recalculated from there under
+                  // the current rules every time a week closes. Virtual tracking only.
+                  const plan = leagueSeasonPlan(league);
+                  const played = [...plan.regularWeeks, ...plan.playoffWeeks].filter((w) => calendarIndex(w) <= calendarIndex(league.currentWeek));
+                  const from = settings.poolTrackFromWeek ?? played[0] ?? league.currentWeek;
+                  return (
+                    <div>
+                      <label className="text-xs text-text-muted mb-1.5 block">Track the pool from</label>
+                      <PillSelect
+                        fill
+                        ariaLabel="Track the pool from"
+                        value={String(from)}
+                        onChange={(v) => update({ poolTrackFromWeek: (Number.isFinite(Number(v)) ? Number(v) : v) as LeagueSettings['poolTrackFromWeek'] })}
+                        options={(played.length > 0 ? played : [league.currentWeek]).map((w) => ({ value: String(w), label: nflWeekName(w) }))}
+                      />
+                      <p className="text-[11px] text-text-muted mt-1">
+                        Tracking only, no real money moves. The pool is recalculated from this week with the current rules each time a week closes.
+                      </p>
+                    </div>
+                  );
+                })()}
               </SubSection>
               <SubSection title="Payouts (must total 100%)">
                 <PayoutSplitEditor
                   key={`payout-${league.id}`}
                   splits={settings.payoutSplits}
+                  topPL={settings.payoutTopPLPct ?? 0}
                   playoffTeams={settings.playoffTeams}
-                  onSave={(payoutSplits) => update({ payoutSplits })}
+                  onSave={(payoutSplits, payoutTopPLPct) => update({ payoutSplits, payoutTopPLPct })}
                 />
               </SubSection>
               <SubSection title="Multipliers">
                 <ToggleRow
                   label="Scale pool impact by standing"
                   value={settings.poolMultipliers.enabled}
-                  onChange={(v) => update({ poolMultipliers: { ...settings.poolMultipliers, enabled: v } })}
+                  onChange={(v) =>
+                    update({
+                      poolMultipliers: { ...settings.poolMultipliers, enabled: v },
+                      // The week they start counting, for when they are not applied to past weeks.
+                      ...(v ? { poolMultipliersSince: league.settingsLocked ? nextCalendarWeek(league.currentWeek) ?? league.currentWeek : league.currentWeek } : {}),
+                    })
+                  }
                 />
                 {settings.poolMultipliers.enabled && (
                   <div className="space-y-3 pl-1">
@@ -583,23 +641,52 @@ export function LeagueSettingsPanel({
                         max={100}
                         value={Math.round(settings.poolMultipliers.spread * 100)}
                         onChange={(e) => update({ poolMultipliers: { ...settings.poolMultipliers, spread: Number(e.target.value) / 100 } })}
-                        className="w-full accent-primary"
+                        className="pl-range"
+                        style={{ '--fill': `${Math.round(settings.poolMultipliers.spread * 100)}%` } as React.CSSProperties}
+                        aria-label="Multiplier spread"
                       />
                     </div>
+                    <ToggleRow
+                      label="Apply to past weeks"
+                      value={settings.poolMultipliersBackfill !== false}
+                      note="Recalculates the tracked pool as if multipliers had been on from the start"
+                      onChange={(v) => update({ poolMultipliersBackfill: v })}
+                    />
                     <div>
-                      <p className="text-xs text-text-muted mb-1.5">Current multipliers</p>
-                      <div className="space-y-1">
-                        {leagueMultiplierRows(league).map(({ team, multiplier }) => (
-                          <div key={team.id} className="flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1">
-                            <span className="text-xs flex items-center gap-1.5 min-w-0 truncate">
-                              <TeamLogo team={team} size="sm" /> <span className="truncate">{team.teamName}</span>
-                            </span>
-                            <span className={`text-xs font-semibold shrink-0 ${multiplier >= 1 ? 'text-profit' : 'text-loss'}`}>
-                              {multiplier.toFixed(2)}x
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                      {(() => {
+                        const rows = leagueMultiplierRows(league, settings);
+                        const changing = rows.some((r) => Math.abs(r.now - r.next) > 0.0049);
+                        // Colored like P/L amounts, following the Display setting (Classic, Scaled or Mono).
+                        const tone = (m: number) => (m >= 1 ? 'text-profit' : 'text-loss');
+                        const toneStyle = (m: number) => plStyle(m - 1, 0.5);
+                        return (
+                          <>
+                            <p className="text-xs text-text-muted mb-1.5">{changing ? `Multipliers now → ${nextWeek}` : 'Current multipliers'}</p>
+                            <div className="space-y-1">
+                              {rows.map(({ team, now, next, inPool }) => (
+                                <div key={team.id} className={`flex items-center justify-between bg-bg-raised rounded-lg px-2.5 py-1 ${inPool ? '' : 'opacity-50'}`}>
+                                  <span className="text-xs flex items-center gap-1.5 min-w-0 truncate">
+                                    <TeamLogo team={team} size="sm" /> <span className="truncate">{team.teamName}</span>
+                                  </span>
+                                  <span className="text-xs font-semibold shrink-0 tabular-nums">
+                                    {!inPool ? (
+                                      <span className="text-text-muted font-medium">Not in pool</span>
+                                    ) : changing ? (
+                                      <>
+                                        <span className="text-text-muted">{now.toFixed(2)}x</span>
+                                        <span className="text-text-muted mx-1">→</span>
+                                        <span className={tone(next)} style={toneStyle(next)}>{next.toFixed(2)}x</span>
+                                      </>
+                                    ) : (
+                                      <span className={tone(now)} style={toneStyle(now)}>{now.toFixed(2)}x</span>
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
                       {league.seasonPhase !== 'regular' && (
                         <p className="text-[11px] text-text-muted mt-1">Flat 1.0x in the playoffs.</p>
                       )}
@@ -640,7 +727,7 @@ export function LeagueSettingsPanel({
                 {(bracketLocked
                   ? [settings.playoffTeams as PlayoffFieldSize]
                   : fieldSizeOptionsForTeamCount(league.targetTeamCount).filter((n) =>
-                      structureAvailable(n, doubleEliminationAvailable(n) ? settings.eliminationType : 'single', league.currentWeek),
+                      structureFits(league, n, doubleEliminationAvailable(n) ? settings.eliminationType : 'single', settings.championshipWeek),
                     )
                 ).map((n) => {
                   const effectiveType = doubleEliminationAvailable(n) ? settings.eliminationType : 'single';
@@ -665,7 +752,7 @@ export function LeagueSettingsPanel({
                   : (['single', 'double'] as const).filter(
                       (type) =>
                         (type === 'single' || doubleEliminationAvailable(settings.playoffTeams as PlayoffFieldSize)) &&
-                        structureAvailable(settings.playoffTeams as PlayoffFieldSize, type, league.currentWeek),
+                        structureFits(league, settings.playoffTeams as PlayoffFieldSize, type, settings.championshipWeek),
                     )
                 ).map((type) => (
                   <button
@@ -680,6 +767,41 @@ export function LeagueSettingsPanel({
               </div>
               {bracketLocked && <p className="text-[11px] text-text-muted mt-1">Locked: the bracket is already set.</p>}
             </div>
+            {(() => {
+              // 1.2.11: the title is decided on the week picked here; the playoff rounds fill the weeks
+              // just before it and the regular season every week from the start until then.
+              const plan = leagueSeasonPlan({ ...league, settings });
+              const options = bracketLocked
+                ? [plan.championshipWeek]
+                : championshipWeekOptions(league.seasonStartWeek, league.currentWeek, settings.playoffTeams as PlayoffFieldSize, settings.eliminationType);
+              const span = (ws: typeof plan.regularWeeks) =>
+                ws.length === 0 ? 'none' : ws.length === 1 ? nflWeekName(ws[0], true) : `${nflWeekName(ws[0], true)} to ${nflWeekName(ws[ws.length - 1], true)}`;
+              return (
+                <div>
+                  <label className="text-xs text-text-muted mb-1.5 block">Championship week</label>
+                  {readOnly || bracketLocked ? (
+                    <p className="text-sm">{nflWeekName(plan.championshipWeek)}</p>
+                  ) : (
+                    <PillSelect
+                      fill
+                      ariaLabel="Championship week"
+                      value={String(plan.championshipWeek)}
+                      onChange={(v) => update({ championshipWeek: (Number.isFinite(Number(v)) ? Number(v) : v) as typeof settings.championshipWeek })}
+                      options={options.map((w) => ({ value: String(w), label: nflWeekName(w) }))}
+                    />
+                  )}
+                  <p className="text-[11px] text-text-muted mt-1">
+                    Regular season {span(plan.regularWeeks)} · Playoffs {span(plan.playoffWeeks)}
+                  </p>
+                </div>
+              );
+            })()}
+            <ToggleRow
+              label="Show projected playoffs"
+              value={settings.showProjectedBracket !== false}
+              note="Before the playoffs, Matchups shows the bracket as if the season ended today"
+              onChange={(v) => update({ showProjectedBracket: v })}
+            />
           </SubSection>
           <SubSection title="Conferences">
             {(() => {

@@ -72,6 +72,27 @@ describe('championAndRunnerUp / computePayouts', () => {
     ]);
   });
 
+  it('pays the highest season P/L its own share, even when it also won a place (1.2.11)', () => {
+    const bracket: PlayoffBracket = {
+      fieldSize: 2,
+      eliminationType: 'single',
+      seeds: ['a', 'b'],
+      matches: [
+        { id: 'F', side: 'F', label: 'Championship', sourceA: { type: 'seed', seed: 1 }, sourceB: { type: 'seed', seed: 2 }, teamAId: 'a', teamBId: 'b', teamAScore: 10, teamBScore: 5, winnerId: 'a', weekId: 'CONF' },
+      ],
+      championId: 'a',
+    };
+    const pool: PrizePool = { initial: 100, current: 200, locked: true, history: [] };
+    const settings = { ...DEFAULT_LEAGUE_SETTINGS, payoutSplits: [75], payoutTopPLPct: 25 };
+    const standings = [{ ...emptyStanding('a'), totalPL: 40 }, { ...emptyStanding('c'), totalPL: 90 }];
+    expect(computePayouts(pool, bracket, settings, standings)).toEqual([
+      { teamId: 'a', place: 1, pct: 75, amount: 150 },
+      { teamId: 'c', place: 0, pct: 25, amount: 50, topPL: true },
+    ]);
+    expect(validatePayoutSplit([75], 2, 25).valid).toBe(true);
+    expect(validatePayoutSplit([75], 2, 20).valid).toBe(false);
+  });
+
   it('returns no payouts before the bracket has a champion', () => {
     expect(championAndRunnerUp(null).championId).toBeNull();
   });
@@ -151,12 +172,12 @@ describe('computeStandingMultipliers', () => {
     }
   });
 
-  it('gives the top-ranked team 1.2x and the bottom-ranked team 0.8x at max spread', () => {
+  it('gives the top-ranked team 1.5x and the bottom-ranked team 0.5x at max spread', () => {
     const standings = standingsFor(['a', 'b', 'c', 'd', 'e']);
     const result = computeStandingMultipliers(standings, 'rank', 1);
-    expect(result.a).toBeCloseTo(1.2, 5);
+    expect(result.a).toBeCloseTo(1.5, 5);
     expect(result.c).toBeCloseTo(1.0, 5); // dead-center of 5 teams
-    expect(result.e).toBeCloseTo(0.8, 5);
+    expect(result.e).toBeCloseTo(0.5, 5);
   });
 
   it('always averages exactly 1.0 across the league, for any spread', () => {
@@ -175,8 +196,8 @@ describe('computeStandingMultipliers', () => {
       { ...emptyStanding('c'), totalPL: 0 },
     ];
     const result = computeStandingMultipliers(standings, 'seasonPL', 1);
-    expect(result.b).toBeCloseTo(1.2, 5); // best P/L
-    expect(result.a).toBeCloseTo(0.8, 5); // worst P/L
+    expect(result.b).toBeCloseTo(1.5, 5); // best P/L
+    expect(result.a).toBeCloseTo(0.5, 5); // worst P/L
   });
 
   it('re-ranks by win percentage for the record basis', () => {
@@ -185,8 +206,8 @@ describe('computeStandingMultipliers', () => {
       { ...emptyStanding('b'), wins: 5, losses: 1 },
     ];
     const result = computeStandingMultipliers(standings, 'record', 1);
-    expect(result.b).toBeCloseTo(1.2, 5);
-    expect(result.a).toBeCloseTo(0.8, 5);
+    expect(result.b).toBeCloseTo(1.5, 5);
+    expect(result.a).toBeCloseTo(0.5, 5);
   });
 
   it('gives a single-team league a flat 1.0x (no meaningful spread with one team)', () => {
@@ -297,7 +318,7 @@ describe('activeMultipliers', () => {
   it('delegates to computeStandingMultipliers using the league\'s current standings when enabled in-season', () => {
     const league = leagueForMultiplierTest();
     const result = activeMultipliers(league);
-    expect(result.a).toBeCloseTo(1.2, 5);
-    expect(result.c).toBeCloseTo(0.8, 5);
+    expect(result.a).toBeCloseTo(1.5, 5);
+    expect(result.c).toBeCloseTo(0.5, 5);
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, ChevronDown, ChevronUp, Hourglass, Rocket, RefreshCw, Pin } from 'lucide-react';
 import { MAX_PINNED_ANNOUNCEMENTS, pinnedAnnouncementCount } from '../engine/richText';
-import { useAppStore } from '../store/useAppStore';
+import { fillScheduleGaps, useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
 import { StandingsPreview } from '../components/home/StandingsPreview';
@@ -12,6 +12,9 @@ import { EmptyState } from '../components/common/EmptyState';
 import { PrizePoolTicker } from '../components/home/PrizePoolTicker';
 import { LeagueLogo } from '../components/common/LeagueLogo';
 import { LeagueSwitcherSheet } from '../components/home/LeagueSwitcherSheet';
+import { leagueBracketModel, leagueWeekMatchups, weekStatus } from '../engine/bracketModel';
+
+const scheduleChecked = new Set<string>();
 
 export function LeagueHome() {
   const navigate = useNavigate();
@@ -41,10 +44,21 @@ export function LeagueHome() {
 
   // Pulls the real, shared matchup/standings results — matters most for anyone who
   // isn't the commissioner, since they never ran Advance Week themselves.
+  // The commissioner's app also fills in any regular-season week that has no matchups yet (1.2.11:
+  // a league whose calendar grew, e.g. a 4-team league now playing in Wild Card week). Once per session.
+  const isCommish = useAppStore((s) => {
+    const l = s.currentLeagueId ? s.leagues[s.currentLeagueId] : undefined;
+    return !!l && l.teams.some((t) => t.isUser && t.id === l.commissionerTeamId);
+  });
   useEffect(() => {
-    if (currentLeagueId) loadLeagueResults(currentLeagueId);
+    if (!currentLeagueId) return;
+    const loaded = Promise.resolve(loadLeagueResults(currentLeagueId));
+    if (isCommish && !scheduleChecked.has(currentLeagueId)) {
+      scheduleChecked.add(currentLeagueId);
+      void loaded.then(() => fillScheduleGaps(currentLeagueId));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLeagueId]);
+  }, [currentLeagueId, isCommish]);
 
   // MatchupCard needs each team's roster to compute a live in-progress score (see
   // chat: MatchupDetail.tsx had the same gap) -- without this, whichever matchups
@@ -101,7 +115,7 @@ export function LeagueHome() {
       setRefreshing(false);
     }
   }
-  const weekMatchups = league.matchupsByWeek[String(league.currentWeek)] ?? [];
+  const weekMatchups = leagueWeekMatchups(league, league.currentWeek);
   const userMatchup = weekMatchups.find((m) => m.teamAId === userTeam?.id || m.teamBId === userTeam?.id);
   const otherMatchups = weekMatchups.filter((m) => m.id !== userMatchup?.id);
   // No matchup this week is ambiguous on its own -- could mean "eliminated from
@@ -109,6 +123,11 @@ export function LeagueHome() {
   // that filled up entirely with real invite-code joins used to have no path to
   // ever get a schedule at all). Distinguish by whether *any* week has matchups.
   const seasonNotStarted = Object.keys(league.matchupsByWeek).length === 0;
+  // In the playoffs, no matchup means a bye (you play again later) or that you are out.
+  const playoffModel = !userMatchup && league.seasonPhase === 'playoffs' ? leagueBracketModel(league) : null;
+  const playoffStatus = playoffModel ? weekStatus(playoffModel, league, league.currentWeek) : null;
+  const myBye = playoffStatus?.byes.find((b) => b.teamId === userTeam?.id);
+  const myOut = playoffStatus?.out.find((o) => o.teamId === userTeam?.id);
   const isCommissioner = !!userTeam && userTeam.id === league.commissionerTeamId;
   // Real games only now -- no more falling back to the simulated slate just to
   // compute a countdown (see chat, Sept 2026: MarketBrowser dropped the same
@@ -167,7 +186,12 @@ export function LeagueHome() {
           <EmptyState
             icon={<Trophy size={36} strokeWidth={1.5} />}
             title={`${league.teams.find((t) => t.id === league.bracket?.championId)?.teamName ?? 'A team'} won it all!`}
-            subtitle="Check the Playoff Bracket in Settings to relive the run."
+            subtitle="The full bracket is in Matchups."
+            action={
+              <button onClick={() => navigate('/matchups')} className="btn-soft-primary text-sm font-semibold px-4 py-2 rounded-lg">
+                View bracket
+              </button>
+            }
           />
         ) : userMatchup ? (
           <MatchupCard league={league} matchup={userMatchup} highlightTeamId={userTeam?.id} />
@@ -189,7 +213,24 @@ export function LeagueHome() {
             }
           />
         ) : (
-          <EmptyState icon={<Hourglass size={36} strokeWidth={1.5} />} title="No matchup this week" subtitle="Your team may have been eliminated from the playoffs." />
+          <EmptyState
+            icon={<Hourglass size={36} strokeWidth={1.5} />}
+            title={myBye ? 'Bye this week' : myOut ? 'Out of the playoffs' : 'No matchup this week'}
+            subtitle={
+              myBye
+                ? `You rest this week${myBye.nextLabel ? ` and play in the ${myBye.nextLabel}` : ''}.`
+                : myOut
+                  ? `${myOut.reason}. You can follow the rest of the bracket in Matchups.`
+                  : 'Your team may have been eliminated from the playoffs.'
+            }
+            action={
+              league.seasonPhase === 'playoffs' ? (
+                <button onClick={() => navigate('/matchups')} className="btn-soft-primary text-sm font-semibold px-4 py-2 rounded-lg">
+                  View bracket
+                </button>
+              ) : undefined
+            }
+          />
         )}
 
         {otherMatchups.length > 0 && (

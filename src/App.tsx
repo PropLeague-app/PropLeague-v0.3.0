@@ -34,9 +34,8 @@ import { SettingsHome } from './screens/SettingsHome';
 const LeagueSettingsScreen = lazyNamed(() => import('./screens/LeagueSettingsScreen'), 'LeagueSettingsScreen');
 const FullStandings = lazyNamed(() => import('./screens/FullStandings'), 'FullStandings');
 const ScheduleView = lazyNamed(() => import('./screens/ScheduleView'), 'ScheduleView');
-const WeekMatchups = lazyNamed(() => import('./screens/WeekMatchups'), 'WeekMatchups');
+const LeagueMatchups = lazyNamed(() => import('./screens/LeagueMatchups'), 'LeagueMatchups');
 const LeagueMembers = lazyNamed(() => import('./screens/LeagueMembers'), 'LeagueMembers');
-const PlayoffBracket = lazyNamed(() => import('./screens/PlayoffBracket'), 'PlayoffBracket');
 const BetHistory = lazyNamed(() => import('./screens/BetHistory'), 'BetHistory');
 const PrizePool = lazyNamed(() => import('./screens/PrizePool'), 'PrizePool');
 const MyStats = lazyNamed(() => import('./screens/MyStats'), 'MyStats');
@@ -213,9 +212,10 @@ function App() {
         <Route path="/settings/league" element={<LeagueSettingsScreen />} />
         <Route path="/standings" element={<FullStandings />} />
         <Route path="/schedule" element={<ScheduleView />} />
-        <Route path="/matchups" element={<WeekMatchups />} />
+        <Route path="/matchups" element={<LeagueMatchups />} />
         <Route path="/members" element={<LeagueMembers />} />
-        <Route path="/bracket" element={<PlayoffBracket />} />
+        {/* The old Playoff Bracket screen is now the playoff weeks of Matchups. */}
+        <Route path="/bracket" element={<Navigate to="/matchups" replace />} />
         <Route path="/bet-history" element={<BetHistory />} />
         <Route path="/prize-pool" element={<PrizePool />} />
         <Route path="/my-stats" element={<MyStats />} />

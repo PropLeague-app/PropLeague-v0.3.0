@@ -229,6 +229,28 @@ export async function discardPendingSettingsRemote(
   return { ok: true, state: parseSettingsState(data) };
 }
 
+/** "Apply now" (1.2.11, migration 0038): applies the given scheduled keys right away. Only keys that
+ * affect new picks are accepted (APPLY_NOW_KEYS); the rest stay scheduled. */
+export async function applyPendingSettingsNowRemote(
+  leagueId: string,
+  keys: string[],
+): Promise<{ ok: true; state: SettingsRpcState } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('apply_pending_settings_now', { p_league_id: leagueId, p_keys: keys });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, state: parseSettingsState(data) };
+}
+
+/** Recalculates the tracked prize pool now (rebuild-pool function) after a pool setting changed. */
+export async function rebuildPoolRemote(leagueId: string): Promise<{ ok: boolean; pool?: unknown }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('rebuild-pool', { method: 'POST', body: { leagueId } });
+    if (error || !data?.ok) return { ok: false };
+    return { ok: true, pool: data.pool };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** True once any pick (human or bot) exists in the league's current week. Null if the
  * check failed, in which case callers keep whatever they had. */
 export async function fetchSettingsLocked(leagueId: string): Promise<boolean | null> {

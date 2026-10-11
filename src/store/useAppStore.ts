@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, MatchupDetailMode, NFLGame, OddsFormat, PlayoffFieldSize, ThemeMode, UserProfile, WeekId } from '../types';
+import type { ActivityItem, League, LeagueSettings, LeagueTeam, MarketKey, Matchup, MatchupDetailMode, NFLGame, OddsFormat, PlayoffFieldSize, ThemeMode, UserProfile, WeekId } from '../types';
 import { DEFAULT_LEAGUE_SETTINGS, TEAM_LOGO_EMOJIS } from '../types';
+import { calendarIndex } from '../engine/playoffs';
 import * as leagueService from '../services/leagueService';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { validateLineup } from '../engine/validation';
@@ -16,6 +17,8 @@ import {
   fetchLeagueMeta,
   updateLeagueSettingsRemote,
   discardPendingSettingsRemote,
+  applyPendingSettingsNowRemote,
+  rebuildPoolRemote,
   fetchSettingsLocked,
   updateTeamIdentityRemote,
   updateLeagueIdentityRemote,
@@ -34,7 +37,8 @@ import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
 import { moveReactor } from '../engine/reactions';
-import { effectiveSettings, meaningfulPending, splitPendingSettings } from '../engine/settingsRules';
+import { effectiveSettings, meaningfulPending, nextWeekLabel, splitPendingSettings } from '../engine/settingsRules';
+import { majorSettingsChanges, settingsNewsMessage } from '../engine/settingsNews';
 
 interface PlaceWagerParams {
   leagueId: string;
@@ -112,7 +116,11 @@ interface AppState {
   setCurrentLeague: (leagueId: string) => void;
   updateSettings: (leagueId: string, partial: Partial<LeagueSettings>) => Promise<{ ok: boolean; error?: string }>;
   discardPendingSettings: (leagueId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Applies scheduled changes that only affect new picks right away (1.2.11). */
+  applyPendingSettingsNow: (leagueId: string, keys: string[]) => Promise<{ ok: boolean; error?: string }>;
   refreshLeagueSettings: (leagueId: string) => Promise<void>;
+  /** Recalculates the tracked prize pool from stored results (commissioner only). */
+  refreshPrizePool: (leagueId: string) => Promise<void>;
   transferCommissioner: (leagueId: string, newCommissionerTeamId: string) => Promise<{ ok: boolean; reason?: string }>;
   leaveLeague: (leagueId: string) => Promise<{ ok: boolean; reason?: string }>;
 
@@ -173,19 +181,9 @@ async function syncNewActivity(leagueId: string, prev: ActivityItem[], next: Act
  * fillWithSimulatedTeams and startSeason, since both end by calling
  * leagueService.startSeason.
  *
- * Also stamps season_start_week/current_week to the real live NFL week right
- * now (see chat, 0013_season_start_week.sql) -- not week 1, which is all
- * `league.currentWeek` can ever say here, since this is the very first
- * schedule this league has ever had. Fixes a real bug: a league started after
- * the real season was already underway used to get auto-settled by
- * settle-week for every already-final past week as "complete with zero
- * rosters", eating a full incomplete-lineup penalty for weeks it never
- * actually played. No new button/user-facing step -- this rides along on the
- * same existing "Start Season" action. Best-effort: if the RPC call fails
- * (network, etc.), the season still starts, just without the new gate --
- * exactly the old (bug-prone, but not newly broken) behavior, rather than
- * blocking league creation over this. */
-async function pushSeasonStart(leagueId: string, league: League): Promise<{ seasonStartWeek: string | null; currentWeek: WeekId }> {
+ * The start week itself (season_start_week/current_week, 0013) is stamped first by beginSeason below,
+ * so a league started mid-season is never scored for weeks it did not play. */
+async function pushSeasonStart(leagueId: string, league: League): Promise<void> {
   for (const matchups of Object.values(league.matchupsByWeek)) {
     for (const m of matchups) {
       await upsertMatchupRemote(leagueId, String(m.week), m.teamAId, m.teamBId, m.teamAScore, m.teamBScore, m.winnerId, m.isTie);
@@ -197,11 +195,86 @@ async function pushSeasonStart(leagueId: string, league: League): Promise<{ seas
   for (const team of league.teams) {
     if (team.conferenceId) await updateTeamConferenceRemote(team.id, team.conferenceId);
   }
+}
 
+function parseStartWeek(raw: string | null): WeekId | null {
+  if (raw == null) return null;
+  if (raw === 'WC' || raw === 'DIV' || raw === 'CONF') return raw;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Starts the season (1.2.11 order): stamp the real start week first, then build the schedule from that
+ * week (so there are no made-up matchups for earlier weeks) and save it. `build` makes the started
+ * league from the start week. If stamping fails, the season still starts from Week 1 as before. */
+async function beginSeason(
+  leagueId: string,
+  league: League,
+  build: (startWeek: WeekId | null) => League,
+): Promise<{ updatedLeague: League; seasonStartWeek: string | null; currentWeek: WeekId }> {
   const started = await markSeasonStartedRemote(leagueId);
-  if (!started.ok) return { seasonStartWeek: null, currentWeek: league.currentWeek };
-  const weekNum = Number(started.seasonStartWeek);
-  return { seasonStartWeek: started.seasonStartWeek, currentWeek: Number.isFinite(weekNum) ? weekNum : league.currentWeek };
+  const startWeek = started.ok ? parseStartWeek(started.seasonStartWeek) : null;
+  const updatedLeague = build(startWeek);
+  await pushSeasonStart(leagueId, updatedLeague);
+  return { updatedLeague, seasonStartWeek: started.ok ? started.seasonStartWeek : null, currentWeek: startWeek ?? league.currentWeek };
+}
+
+// League news for major settings changes (1.2.11): saves are gathered for a few seconds (a slider or
+// several fields in a row make one post), then the change from before the first save to now is posted as
+// one short line, split into what applies now and what starts next week.
+const settingsNewsQueue = new Map<string, { live: LeagueSettings; effective: LeagueSettings; timer: ReturnType<typeof setTimeout> }>();
+
+function queueSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings) {
+  const entry = settingsNewsQueue.get(leagueId);
+  if (entry) clearTimeout(entry.timer);
+  const live = entry?.live ?? beforeLive;
+  const effective = entry?.effective ?? beforeEffective;
+  const timer = setTimeout(() => void postSettingsNews(leagueId, live, effective), 4000);
+  settingsNewsQueue.set(leagueId, { live, effective, timer });
+}
+
+async function postSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings, nowOnly = false) {
+  settingsNewsQueue.delete(leagueId);
+  const league = useAppStore.getState().leagues[leagueId];
+  if (!league) return;
+  const now = majorSettingsChanges(beforeLive, league.settings);
+  const later = nowOnly
+    ? []
+    : majorSettingsChanges(beforeEffective, effectiveSettings(league.settings, league.pendingSettings)).filter((c) => !now.includes(c));
+  const message = settingsNewsMessage(now, later, nextWeekLabel(league.currentWeek));
+  if (!message) return;
+  const item: ActivityItem = { id: `settings-${Date.now()}`, ts: new Date().toISOString(), type: 'announcement', message };
+  const res = await postSystemActivityRemote(leagueId, item);
+  if (!res.ok) return;
+  useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, activity: [{ ...item, id: res.itemId }, ...l.activity] })));
+}
+
+/** Settings that change the tracked prize pool; saving one recalculates it right away. */
+const POOL_KEYS = ['buyInEnabled', 'buyInAmount', 'poolMultipliers', 'aiTeamsAffectPool', 'poolTrackFromWeek', 'poolMultipliersBackfill', 'poolMultipliersSince'] as const;
+
+/** After a playoff structure change (field size, elimination type, championship week), the regular season
+ * can gain weeks, e.g. a 4-team league now playing in Wild Card week. Any upcoming regular-season week with
+ * no matchups yet gets them from the same schedule generator; weeks that already have matchups keep them,
+ * and weeks that are now playoff weeks are left for the bracket. */
+export async function fillScheduleGaps(leagueId: string): Promise<void> {
+  const league = useAppStore.getState().leagues[leagueId];
+  if (!league || league.seasonStartWeek == null || league.seasonPhase !== 'regular') return;
+  if (Object.keys(league.matchupsByWeek).length === 0) return;
+  const schedule = leagueService.regularSeasonSchedule(league, league.seasonStartWeek);
+  const currentIdx = calendarIndex(league.currentWeek);
+  const added: Record<string, Matchup[]> = {};
+  for (const [week, rows] of Object.entries(schedule)) {
+    if (calendarIndex(week) <= currentIdx || (league.matchupsByWeek[week] ?? []).length > 0) continue;
+    for (const m of rows) {
+      const res = await upsertMatchupRemote(leagueId, week, m.teamAId, m.teamBId, null, null, null, false);
+      if (!res.ok) return; // try again on the next structure change rather than half-filling locally
+    }
+    added[week] = rows;
+  }
+  if (Object.keys(added).length === 0) return;
+  useAppStore.setState((state) =>
+    updateLeague(state, leagueId, (l) => ({ ...l, matchupsByWeek: { ...l.matchupsByWeek, ...added } })),
+  );
 }
 
 export const useAppStore = create<AppState>()(
@@ -281,8 +354,7 @@ export const useAppStore = create<AppState>()(
           // (see chat: this used to silently no-op here, leaving a fully-real,
           // fully-joined league with no schedule and the invite screen's button
           // about to disappear behind "Continue to League" anyway).
-          const updatedLeague = leagueService.startSeason(league);
-          const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+          const { updatedLeague, seasonStartWeek, currentWeek } = await beginSeason(leagueId, league, (w) => leagueService.startSeason(league, w));
           set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
           await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
           return { ok: true };
@@ -303,8 +375,9 @@ export const useAppStore = create<AppState>()(
           withIds.push({ ...identity, id: result.teamId });
         }
 
-        const updatedLeague = leagueService.fillWithSimulatedTeams(league, withIds);
-        const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+        const { updatedLeague, seasonStartWeek, currentWeek } = await beginSeason(leagueId, league, (w) =>
+          leagueService.fillWithSimulatedTeams(league, withIds, w),
+        );
         set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
         await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
@@ -321,8 +394,7 @@ export const useAppStore = create<AppState>()(
         if (league.teams.length < 2) return { ok: false, error: 'Need at least 2 teams to start the season.' };
         if (Object.keys(league.matchupsByWeek).length > 0) return { ok: false, error: 'This season has already started.' };
 
-        const updatedLeague = leagueService.startSeason(league);
-        const { seasonStartWeek, currentWeek } = await pushSeasonStart(leagueId, updatedLeague);
+        const { updatedLeague, seasonStartWeek, currentWeek } = await beginSeason(leagueId, league, (w) => leagueService.startSeason(league, w));
         set((state) => updateLeague(state, leagueId, () => ({ ...updatedLeague, seasonStartWeek, currentWeek })));
         await syncNewActivity(leagueId, league.activity, updatedLeague.activity);
         return { ok: true };
@@ -382,6 +454,19 @@ export const useAppStore = create<AppState>()(
         );
 
         const res = await updateLeagueSettingsRemote(leagueId, partial);
+        if (res.ok) queueSettingsNews(leagueId, before.settings, effectiveSettings(before.settings, before.pendingSettings));
+        if (res.ok && POOL_KEYS.some((k) => k in partial)) {
+          // Pool settings apply now (1.2.11): recalculate the tracked pool right away.
+          void rebuildPoolRemote(leagueId).then((r) => {
+            if (r.ok && r.pool !== undefined) {
+              useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, prizePool: (r.pool as League['prizePool']) ?? null })));
+            }
+          });
+        }
+        if (res.ok && (['playoffTeams', 'eliminationType', 'championshipWeek'] as const).some((k) => k in partial)) {
+          // Applied after the state update below; the season calendar may now include new regular weeks.
+          queueMicrotask(() => void fillScheduleGaps(leagueId));
+        }
         if (!res.ok) {
           set((state) =>
             updateLeague(state, leagueId, (league) => ({
@@ -405,6 +490,20 @@ export const useAppStore = create<AppState>()(
             };
           }),
         );
+        return { ok: true };
+      },
+
+      applyPendingSettingsNow: async (leagueId, keys) => {
+        const beforeLive = get().leagues[leagueId]?.settings;
+        const res = await applyPendingSettingsNowRemote(leagueId, keys);
+        if (!res.ok) return { ok: false, error: res.error };
+        set((state) =>
+          updateLeague(state, leagueId, (league) => {
+            const settings = { ...league.settings, ...res.state.settings } as LeagueSettings;
+            return { ...league, settings, pendingSettings: meaningfulPending(settings, res.state.pending), settingsLocked: res.state.locked };
+          }),
+        );
+        if (beforeLive) void postSettingsNews(leagueId, beforeLive, beforeLive, true);
         return { ok: true };
       },
 
@@ -461,6 +560,12 @@ export const useAppStore = create<AppState>()(
             return { ...league, name, targetTeamCount: meta.targetTeamCount, commissionerTeamId, settings, pendingSettings, settingsLocked };
           }),
         );
+      },
+
+      refreshPrizePool: async (leagueId) => {
+        const res = await rebuildPoolRemote(leagueId);
+        if (!res.ok || res.pool === undefined) return;
+        set((state) => updateLeague(state, leagueId, (l) => ({ ...l, prizePool: (res.pool as League['prizePool']) ?? null })));
       },
 
       // manual v0.2.0 §6 #12: the commissioner role must move to another team before

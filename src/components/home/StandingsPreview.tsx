@@ -4,6 +4,8 @@ import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
 import { formatCents } from '../../engine/oddsMath';
 import { sortStandings } from '../../engine/standings';
+import { leagueClinchStatuses, regularSeasonMatchups } from '../../engine/bracketModel';
+import { ClinchIcon, ClinchLegend } from '../common/ClinchIcon';
 
 export function StandingsPreview({ league }: { league: League }) {
   const navigate = useNavigate();
@@ -11,11 +13,13 @@ export function StandingsPreview({ league }: { league: League }) {
   // 2026 (same bug FullStandings.tsx's default view had): sort here with the
   // real W-L -> P/L -> bet record tiebreaker chain before taking the top 4,
   // rather than slicing whatever order the store happens to hold.
-  const ranked = sortStandings(league.standings, league.matchupsByWeek);
+  const ranked = sortStandings(league.standings, regularSeasonMatchups(league));
   const top4 = ranked.slice(0, 4);
   const userTeam = league.teams.find((t) => t.isUser);
   const userRank = userTeam ? ranked.findIndex((s) => s.teamId === userTeam.id) + 1 : 0;
   const userInTop4 = userRank > 0 && userRank <= 4;
+  const clinch = leagueClinchStatuses(league);
+  const shownIds = [...top4.map((s) => s.teamId), ...(userTeam && !userInTop4 ? [userTeam.id] : [])];
 
   return (
     <Card onClick={() => navigate('/standings')} className="space-y-2">
@@ -33,6 +37,7 @@ export function StandingsPreview({ league }: { league: League }) {
                 <span className="shrink-0">{i + 1}.</span>
                 <TeamLogo team={team} size="sm" />
                 <span className="truncate">{team.teamName}</span>
+                <ClinchIcon status={clinch.get(team.id)} />
               </span>
               <span className="text-text-muted shrink-0">
                 {s.wins}-{s.losses}
@@ -47,6 +52,7 @@ export function StandingsPreview({ league }: { league: League }) {
               <span>{userRank}.</span>
               <TeamLogo team={userTeam} size="sm" />
               {userTeam.teamName}
+              <ClinchIcon status={clinch.get(userTeam.id)} />
             </span>
             <span className="text-text-muted">
               {ranked[userRank - 1]?.wins}-{ranked[userRank - 1]?.losses}
@@ -54,6 +60,7 @@ export function StandingsPreview({ league }: { league: League }) {
           </div>
         )}
       </div>
+      <ClinchLegend statuses={shownIds.map((id) => clinch.get(id)).filter((x) => x != null)} />
     </Card>
   );
 }

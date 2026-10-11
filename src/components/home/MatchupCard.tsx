@@ -71,25 +71,10 @@ export function formatProgressLine(
   return segments.join(' · ');
 }
 
-/** `compact` (see chat, Sept 2026) renders the exact same real computation --
- * win probability, give, per-team scores, hidePicks-aware "decided" lookup --
- * just visually smaller and without the settled-pick-count line, for the Home
- * screen's "Other Matchups" disclosure. Deliberately NOT a separate hand-rolled
- * component: an earlier attempt at that duplicated (and got wrong) logic this
- * component already has right, including status text ('Final'/'Even'/'X leads'
- * -- there's no separate "Upcoming" state to get out of sync with reality). */
-export function MatchupCard({
-  league,
-  matchup,
-  highlightTeamId,
-  compact,
-}: {
-  league: League;
-  matchup: Matchup;
-  highlightTeamId?: string;
-  compact?: boolean;
-}) {
-  const navigate = useNavigate();
+/** Everything a matchup card shows, worked out once for any card that shows a matchup (the full card
+ * here and the bracket's mini cards): live scores (hide-picks aware), win chance, pick progress, perfect
+ * and skunked weeks, and who leads. Null when a team is missing. */
+export function useMatchupView(league: League, matchup: Matchup) {
   // Real games for this matchup's week -- LeagueHome (the only place this card
   // is rendered) already loads them, this just reads what's there (see chat:
   // getGame() alone can't see real games at all, which made every real,
@@ -187,6 +172,31 @@ export function MatchupCard({
   const skunkedA = isSkunkedWeek(rosterA, isFinal);
   const skunkedB = isSkunkedWeek(rosterB, isFinal);
   const leaderId = isFinal ? matchup.winnerId : prob === 0.5 ? null : prob > 0.5 ? teamA.id : teamB.id;
+  return { teamA, teamB, isFinal, scoreA, scoreB, hiddenA, hiddenB, scoreHiddenA, scoreHiddenB, probHidden, prob, giveWidthPx, progressA, progressB, scaleRef, perfectA, perfectB, skunkedA, skunkedB, leaderId };
+}
+
+/** `compact` (see chat, Sept 2026) renders the exact same real computation --
+ * win probability, give, per-team scores, hidePicks-aware "decided" lookup --
+ * just visually smaller and without the settled-pick-count line, for the Home
+ * screen's "Other Matchups" disclosure. Deliberately NOT a separate hand-rolled
+ * component: an earlier attempt at that duplicated (and got wrong) logic this
+ * component already has right, including status text ('Final'/'Even'/'X leads'
+ * -- there's no separate "Upcoming" state to get out of sync with reality). */
+export function MatchupCard({
+  league,
+  matchup,
+  highlightTeamId,
+  compact,
+}: {
+  league: League;
+  matchup: Matchup;
+  highlightTeamId?: string;
+  compact?: boolean;
+}) {
+  const navigate = useNavigate();
+  const view = useMatchupView(league, matchup);
+  if (!view) return null;
+  const { teamA, teamB, isFinal, scoreA, scoreB, hiddenA, hiddenB, scoreHiddenA, scoreHiddenB, probHidden, prob, giveWidthPx, progressA, progressB, scaleRef, perfectA, perfectB, skunkedA, skunkedB, leaderId } = view;
 
   return (
     <Card

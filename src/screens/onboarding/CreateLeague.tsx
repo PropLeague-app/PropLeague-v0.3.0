@@ -6,7 +6,7 @@ import { createRealLeague, updateLeagueSettingsRemote } from '../../services/sup
 import { postSystemActivityRemote } from '../../services/supabaseActivity';
 import { TEAM_LOGO_COLORS, abbrevFromName } from '../../data/simulatedTeamNames';
 import { Toggle } from '../../components/common/Toggle';
-import { NumberInput } from '../../components/common/NumberInput';
+import { KeypadField } from '../../components/settings/KeypadField';
 import { doubleEliminationAvailable, fieldSizeOptionsForTeamCount } from '../../engine/playoffs';
 import { conferencesEligible, defaultConferences } from '../../engine/conferences';
 import { goBack } from '../../components/layout/BackHeader';
@@ -178,15 +178,14 @@ export function CreateLeague() {
 
         <div className="bg-bg-card border border-border rounded-lg p-3 space-y-4">
           <p className="font-semibold text-sm">Commissioner basics</p>
-          <div>
-            <label className="text-xs text-text-muted mb-1 block">Weekly credit allocation</label>
-            <NumberInput
-              value={weeklyCredits}
-              onChange={setWeeklyCredits}
-              min={1}
-              className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
+          <KeypadField
+            label="Weekly credit allocation"
+            unit="$"
+            value={weeklyCredits}
+            presets={[50, 100, 200].map((n) => ({ label: `$${n}`, value: n }))}
+            check={(v) => (v == null || v < 1 ? 'At least $1 a week.' : null)}
+            onChange={(v) => setWeeklyCredits(v ?? 100)}
+          />
           <div>
             <label className="text-xs text-text-muted mb-1 block">Playoff teams</label>
             <div className="flex gap-1.5">

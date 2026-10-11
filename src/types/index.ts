@@ -375,6 +375,12 @@ export interface LeagueSettings {
   conferences: Conference[]; // locked once the league is filled/started
   playoffTeams: number;
   eliminationType: 'single' | 'double'; // 'double' stub, non-functional in v0.01
+  /** The week the title is decided (1.2.11): any week up to the NFL Conference Championship. The playoff
+   * rounds fill the weeks just before it and the regular season every week from the start until then. */
+  championshipWeek: WeekId;
+  /** Before the playoffs, the Matchups screen shows the bracket as if the season ended today. On by
+   * default; the commissioner can hide it. Display only, applies immediately. */
+  showProjectedBracket: boolean;
   buyInEnabled: boolean;
   buyInAmount: number;
   /** Whether AI teams count toward the prize pool (its size, share per team and weekly movement). On by
@@ -386,7 +392,17 @@ export interface LeagueSettings {
    * engine/prizePool.ts's validatePayoutSplit, not just the settings UI (manual
    * v0.3.0 §4, replacing the old fixed champion/runner-up split). */
   payoutSplits: number[];
+  /** Share of the pot (percent) paid to the team with the highest regular-season P/L (1.2.11). 0 = none.
+   * Places plus this must total 100%. The same team can also win a place. */
+  payoutTopPLPct: number;
   showRealDollarStakes: boolean; // per-wager "real $ at stake" line on bet slip/roster cards
+  /** Prize pool tracking (1.2.11, virtual only): the week the pool is tracked from (null = the season
+   * start). The pool is recalculated from that week under the current rules every time a week closes. */
+  poolTrackFromWeek: WeekId | null;
+  /** Multipliers also apply to weeks before they were turned on (default on). */
+  poolMultipliersBackfill: boolean;
+  /** The week multipliers were turned on, used when they are not applied to past weeks. */
+  poolMultipliersSince: WeekId | null;
   /** manual v0.3.0 §8: scales how much each team's wagers move the shared prize pool,
    * based on standing — a genuinely new game mechanic, not just a display setting
    * (see engine/prizePool.ts's computeStandingMultipliers for the conservation math). */
@@ -443,11 +459,17 @@ export const DEFAULT_LEAGUE_SETTINGS: LeagueSettings = {
   ],
   playoffTeams: 4,
   eliminationType: 'single',
+  championshipWeek: 'CONF',
+  showProjectedBracket: true,
   buyInEnabled: false,
   buyInAmount: 0,
   aiTeamsAffectPool: true,
   payoutSplits: [100],
+  payoutTopPLPct: 0,
   showRealDollarStakes: false,
+  poolTrackFromWeek: null,
+  poolMultipliersBackfill: true,
+  poolMultipliersSince: null,
   poolMultipliers: DEFAULT_POOL_MULTIPLIER_SETTINGS,
   moments: DEFAULT_MOMENT_SETTINGS,
   propBetOverride: null,
@@ -588,6 +610,10 @@ export interface PoolWeekEntry {
   poolBefore: number;
   poolAfter: number;
   netRealPL: number;
+  /** Each team's real-dollar impact on the pool that week, and the multiplier it carried (1.2.11, so the
+   * Prize Pool screen can show who moved the pool in any week). Missing on weeks saved before 1.2.11;
+   * the next rebuild fills it in. */
+  byTeam?: Record<string, { impact: number; multiplier: number }>;
 }
 
 export interface PrizePool {

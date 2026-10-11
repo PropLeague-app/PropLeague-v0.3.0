@@ -2,12 +2,12 @@
 // stays a thin persistence/dispatch layer — this is the seam a real backend
 // would slot in behind later.
 
-import type { League, LeagueSettings, LeagueTeam, Matchup, PlayoffFieldSize, TeamStanding } from '../types';
-import { DEFAULT_LEAGUE_SETTINGS, TEAM_LOGO_EMOJIS } from '../types';
+import type { League, LeagueSettings, LeagueTeam, Matchup, PlayoffFieldSize, TeamStanding, WeekId } from '../types';
+import { DEFAULT_LEAGUE_SETTINGS, TEAM_LOGO_EMOJIS, weekLabel } from '../types';
 import { FUNNY_TEAM_NAMES, FUNNY_OWNER_NAMES, TEAM_LOGO_COLORS, abbrevFromName } from '../data/simulatedTeamNames';
 import { generateMatchupSchedule, generateConferenceWeightedSchedule } from '../engine/matchups';
 import { conferencesEligible, assignConferencesRandomly } from '../engine/conferences';
-import { regularSeasonWeeksFor } from '../engine/playoffs';
+import { seasonPlan } from '../engine/playoffs';
 import { ensurePool } from '../engine/prizePool';
 import { ClaimTracker } from '../engine/duplicatePicks';
 import { generateAutoLineup } from '../engine/autoLineup';
@@ -16,35 +16,41 @@ import { rosterKey } from '../engine/rosterSlots';
 import { gamesForWeek } from '../data/seed';
 import { createRng, shuffle } from '../engine/random';
 
-function regularSeasonWeeksForSettings(settings: LeagueSettings): number {
+/** The league's regular-season weeks (1.2.11): from its start week up to the first playoff round, which
+ * is set by the field size, elimination type and championship week. */
+export function regularSeasonWeeksForLeague(settings: LeagueSettings, startWeek: WeekId | string | null): WeekId[] {
   const fieldSize = (([2, 4, 6, 8, 16] as const).includes(settings.playoffTeams as PlayoffFieldSize)
     ? settings.playoffTeams
     : 4) as PlayoffFieldSize;
-  return regularSeasonWeeksFor(fieldSize, settings.eliminationType);
+  return seasonPlan(startWeek, settings.championshipWeek, fieldSize, settings.eliminationType).regularWeeks;
 }
 
-/** Builds the season schedule, weighting toward in-conference matchups when
- * conferences are enabled and the team count is eligible (even, per manual §3.1).
- * Regular season length varies by playoff field size/elimination type — a 16-team or
- * double-elim bracket needs more weeks than WC/DIV/CONF alone, so it starts earlier
- * (manual §3.2: "start earlier — Week 17/18 as needed"). */
-function buildSeasonSchedule(teams: LeagueTeam[], settings: LeagueSettings, seed: string): Record<number, [string, string][]> {
+/** Builds the regular-season schedule for the given weeks, weighting toward in-conference matchups when
+ * conferences are enabled and the team count is eligible (even, per manual §3.1). Keyed by week text. */
+function buildSeasonSchedule(teams: LeagueTeam[], settings: LeagueSettings, seed: string, weeks: WeekId[]): Record<string, [string, string][]> {
   const teamIds = teams.map((t) => t.id);
-  const weeks = regularSeasonWeeksForSettings(settings);
+  let byIndex: Record<number, [string, string][]>;
   if (settings.conferencesEnabled && conferencesEligible(teams.length)) {
     const conferenceOf: Record<string, string> = {};
     for (const t of teams) if (t.conferenceId) conferenceOf[t.id] = t.conferenceId;
-    return generateConferenceWeightedSchedule(teamIds, conferenceOf, weeks, `${seed}-schedule`);
+    byIndex = generateConferenceWeightedSchedule(teamIds, conferenceOf, weeks.length, `${seed}-schedule`);
+  } else {
+    byIndex = generateMatchupSchedule(teamIds, weeks.length);
   }
-  return generateMatchupSchedule(teamIds, weeks);
+  const out: Record<string, [string, string][]> = {};
+  weeks.forEach((w, i) => {
+    out[String(w)] = byIndex[i + 1] ?? [];
+  });
+  return out;
 }
 
-function matchupsFromSchedule(scheduleByWeek: Record<number, [string, string][]>): Record<string, Matchup[]> {
+function matchupsFromSchedule(scheduleByWeek: Record<string, [string, string][]>, weeks: WeekId[]): Record<string, Matchup[]> {
   const matchupsByWeek: Record<string, Matchup[]> = {};
-  for (const [week, pairings] of Object.entries(scheduleByWeek)) {
-    matchupsByWeek[week] = pairings.map(([teamAId, teamBId], i) => ({
-      id: `W${week}-M${i + 1}`,
-      week: Number(week),
+  for (const week of weeks) {
+    const pairings = scheduleByWeek[String(week)] ?? [];
+    matchupsByWeek[String(week)] = pairings.map(([teamAId, teamBId]) => ({
+      id: `${teamAId}-${teamBId}-${week}`,
+      week,
       teamAId,
       teamBId,
       teamAScore: null,
@@ -54,6 +60,13 @@ function matchupsFromSchedule(scheduleByWeek: Record<number, [string, string][]>
     }));
   }
   return matchupsByWeek;
+}
+
+/** The full regular-season schedule for a league that starts in `startWeek` with its current teams and
+ * settings. Used to start the season and to fill in weeks added later by a structure change. */
+export function regularSeasonSchedule(league: Pick<League, 'id' | 'teams' | 'settings'>, startWeek: WeekId | string | null): Record<string, Matchup[]> {
+  const weeks = regularSeasonWeeksForLeague(league.settings, startWeek);
+  return matchupsFromSchedule(buildSeasonSchedule(league.teams, league.settings, league.id, weeks), weeks);
 }
 
 /**
@@ -275,7 +288,7 @@ export function generateSimulatedTeamIdentities(seed: string, count: number): Si
  * teams, all simulated, or a mix. Callers must only invoke it once per league
  * (both call sites below guard on `matchupsByWeek` being empty first) -- calling
  * it twice regenerates a fresh schedule from Week 1. */
-export function startSeason(league: League): League {
+export function startSeason(league: League, startWeek: WeekId | null = null): League {
   let teams = league.teams;
 
   // Conference assignment happens once, right here, when the full roster is first
@@ -289,15 +302,19 @@ export function startSeason(league: League): League {
     teams = teams.map((t) => ({ ...t, conferenceId: assignment[t.id] ?? t.conferenceId }));
   }
 
-  const matchupsByWeek = matchupsFromSchedule(buildSeasonSchedule(teams, league.settings, league.id));
+  // The schedule starts in the league's real start week (1.2.11), so there are no made-up matchups
+  // for weeks before it.
+  const matchupsByWeek = regularSeasonSchedule({ ...league, teams }, startWeek);
+  const firstWeek: WeekId = Object.values(matchupsByWeek)[0]?.[0]?.week ?? startWeek ?? 1;
+  const firstWeekNum = typeof firstWeek === 'number' ? firstWeek : 1;
 
-  const week1Games = gamesForWeek(1);
+  const firstGames = gamesForWeek(firstWeekNum);
   const rostersByTeamWeek = { ...league.rostersByTeamWeek };
-  const claims = new ClaimTracker(league, 1);
+  const claims = new ClaimTracker(league, firstWeekNum);
   for (const team of teams.filter((t) => t.isSimulated)) {
-    const roster = generateAutoLineup(team.id, 1, league.settings, week1Games, (g, m, p, s, pt) => claims.isTaken(g, m, p, s, pt));
+    const roster = generateAutoLineup(team.id, firstWeekNum, league.settings, firstGames, (g, m, p, s, pt) => claims.isTaken(g, m, p, s, pt));
     claims.claimRoster(roster);
-    rostersByTeamWeek[rosterKey(team.id, 1)] = roster;
+    rostersByTeamWeek[rosterKey(team.id, firstWeekNum)] = roster;
   }
 
   const standings: TeamStanding[] = teams.map((t) => emptyStanding(t.id));
@@ -313,7 +330,7 @@ export function startSeason(league: League): League {
         id: `season-started-${league.id}`,
         ts: new Date().toISOString(),
         type: 'announcement',
-        message: `The season is underway! Week 1 matchups are set.`,
+        message: `The season is underway! ${weekLabel(firstWeek)} matchups are set.`,
       },
       ...league.activity,
     ],
@@ -323,7 +340,7 @@ export function startSeason(league: League): League {
 /** Adds already-identified simulated teams (real ids already assigned by the
  * caller, from the real Supabase rows) into the league, then calls `startSeason`
  * to build the schedule/lineups/standings around the full (real + sim) roster. */
-export function fillWithSimulatedTeams(league: League, simIdentities: (SimulatedTeamIdentity & { id: string })[]): League {
+export function fillWithSimulatedTeams(league: League, simIdentities: (SimulatedTeamIdentity & { id: string })[], startWeek: WeekId | null = null): League {
   const simTeams: LeagueTeam[] = simIdentities.map((t) => ({
     id: t.id,
     ownerName: t.ownerName,
@@ -338,7 +355,7 @@ export function fillWithSimulatedTeams(league: League, simIdentities: (Simulated
     logoDataUrl: null,
   }));
 
-  return startSeason({ ...league, teams: [...league.teams, ...simTeams] });
+  return startSeason({ ...league, teams: [...league.teams, ...simTeams] }, startWeek);
 }
 
 /** manual v0.2.0 §3 #7: `ensurePool` was previously only ever called lazily from

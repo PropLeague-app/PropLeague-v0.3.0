@@ -46,6 +46,8 @@ export interface PoolWeekEntry {
   poolBefore: number;
   poolAfter: number;
   netRealPL: number;
+  /** Each team's real-dollar impact that week and the multiplier it carried (1.2.11). */
+  byTeam?: Record<string, { impact: number; multiplier: number }>;
 }
 
 export interface PrizePool {
@@ -205,10 +207,6 @@ function resolveSource(bracket: PlayoffBracket, source: MatchSource): string | n
   return match.teamAId === match.winnerId ? match.teamBId : match.teamAId;
 }
 
-function wbSideOfTrueFinal(bracket: PlayoffBracket): MatchSource | null {
-  const tf = bracket.matches.find((m) => m.id === 'TRUE-FINAL');
-  return tf ? tf.sourceA : null;
-}
 
 export function advanceBracket(bracket: PlayoffBracket, settledWeek: WeekId | null, scoresFor: (teamId: string) => number | null, nextWeekId: WeekId): PlayoffBracket {
   let matches = bracket.matches.map((m) => {
@@ -220,15 +218,8 @@ export function advanceBracket(bracket: PlayoffBracket, settledWeek: WeekId | nu
     return { ...m, teamAScore: a, teamBScore: b, winnerId };
   });
 
-  const trueFinal = matches.find((m) => m.id === 'TRUE-FINAL' && m.winnerId);
-  const hasReset = matches.some((m) => m.id === 'RESET');
-  if (trueFinal && !hasReset) {
-    const wbSide = wbSideOfTrueFinal(bracket);
-    const wbTeamId = wbSide ? resolveSource({ ...bracket, matches }, wbSide) : null;
-    if (wbTeamId && trueFinal.winnerId !== wbTeamId) {
-      matches = [...matches, bareMatch('RESET', 'RESET', 'Bracket Reset', winnerOf('TRUE-FINAL'), loserOf('TRUE-FINAL'))];
-    }
-  }
+  // No bracket reset (1.2.11): the True Final decides the title, so the championship lands exactly
+  // on the week the commissioner picked. RESET is still read below for brackets saved before.
 
   matches = matches.map((m) => {
     if (m.weekId != null) return m;
@@ -290,6 +281,29 @@ export function regularSeasonWeeksFor(fieldSize: PlayoffFieldSize, eliminationTy
   return 18 - Math.max(0, weeksNeeded - 3);
 }
 
+/** The bracket games set for `week` with both teams known. Each one is a real row in `matchups` for that
+ * week (written by settle-week), so playoff games show and score like any other matchup. Team A and B
+ * keep the bracket's order, which matters for ties (see playoffWinner). */
+export function playoffPairingsForWeek(bracket: PlayoffBracket | null | undefined, week: string): { matchId: string; teamAId: string; teamBId: string }[] {
+  if (!bracket) return [];
+  return bracket.matches
+    .filter((m) => m.weekId != null && String(m.weekId) === week && m.teamAId && m.teamBId)
+    .map((m) => ({ matchId: m.id, teamAId: m.teamAId as string, teamBId: m.teamBId as string }));
+}
+
+/** Whether a `matchups` row is a playoff game. Standings (the regular-season record) skip these. */
+export function isPlayoffPairing(bracket: PlayoffBracket | null | undefined, week: string, teamAId: string, teamBId: string): boolean {
+  return playoffPairingsForWeek(bracket, week).some(
+    (p) => (p.teamAId === teamAId && p.teamBId === teamBId) || (p.teamAId === teamBId && p.teamBId === teamAId),
+  );
+}
+
+/** A playoff game always has a winner: on a tie, team A (the better seed or the winners-bracket side)
+ * advances, the same rule as advanceBracket. */
+export function playoffWinner(teamAId: string, teamBId: string, aScore: number, bScore: number): string {
+  return aScore >= bScore ? teamAId : teamBId;
+}
+
 export function playoffWeekSequence(fieldSize: PlayoffFieldSize, eliminationType: 'single' | 'double'): WeekId[] {
   const weeksNeeded = countPlayoffWeeksNeeded(fieldSize, eliminationType);
   const named: WeekId[] = ['WC', 'DIV', 'CONF'];
@@ -297,6 +311,70 @@ export function playoffWeekSequence(fieldSize: PlayoffFieldSize, eliminationType
   const extra = weeksNeeded - 3;
   const numeric: WeekId[] = Array.from({ length: extra }, (_, i) => 18 - extra + 1 + i);
   return [...numeric, ...named];
+}
+
+// ---- Season calendar (1.2.11) ----
+// A league plays a run of consecutive weeks with no gaps: the regular season from its start week,
+// then the playoff rounds, ending on the championship week the commissioner picks (any week up to the
+// NFL Conference Championship; the Super Bowl has one game, too thin for a lineup). Small fields can
+// play regular-season weeks during the NFL playoffs; a short season can end as early as the field
+// allows (at least one regular-season week).
+
+/** Every week a league can play, in order. */
+export const SEASON_CALENDAR: WeekId[] = [...Array.from({ length: 18 }, (_, i) => i + 1), 'WC', 'DIV', 'CONF'];
+
+/** Position of a week in SEASON_CALENDAR, or -1. Accepts a WeekId or its text form ("7", "WC"). */
+export function calendarIndex(week: WeekId | string | null | undefined): number {
+  if (week == null) return -1;
+  return SEASON_CALENDAR.findIndex((w) => String(w) === String(week));
+}
+
+export interface SeasonPlan {
+  regularWeeks: WeekId[];
+  playoffWeeks: WeekId[];
+  championshipWeek: WeekId;
+}
+
+/** The league's weeks: regular season from `startWeek` (Week 1 when not started), then the playoff
+ * rounds ending on `championshipWeek`. A championship too early to leave one regular-season week is
+ * moved later, as far as the calendar allows. */
+export function seasonPlan(
+  startWeek: WeekId | string | null | undefined,
+  championshipWeek: WeekId | string | null | undefined,
+  fieldSize: PlayoffFieldSize,
+  eliminationType: 'single' | 'double',
+): SeasonPlan {
+  const last = SEASON_CALENDAR.length - 1;
+  const rounds = countPlayoffWeeksNeeded(fieldSize, eliminationType);
+  const startIdx = Math.max(0, calendarIndex(startWeek));
+  let champIdx = calendarIndex(championshipWeek);
+  if (champIdx < 0) champIdx = last;
+  champIdx = Math.min(last, Math.max(champIdx, startIdx + rounds));
+  const firstPlayoff = Math.max(0, champIdx - rounds + 1);
+  return {
+    regularWeeks: SEASON_CALENDAR.slice(startIdx, Math.max(startIdx, firstPlayoff)),
+    playoffWeeks: SEASON_CALENDAR.slice(firstPlayoff, champIdx + 1),
+    championshipWeek: SEASON_CALENDAR[champIdx],
+  };
+}
+
+/** Championship weeks a commissioner can pick: early enough for one regular-season week after the
+ * start, and late enough that the playoffs begin after the current week. */
+export function championshipWeekOptions(
+  startWeek: WeekId | string | null | undefined,
+  currentWeek: WeekId | string | null | undefined,
+  fieldSize: PlayoffFieldSize,
+  eliminationType: 'single' | 'double',
+): WeekId[] {
+  const rounds = countPlayoffWeeksNeeded(fieldSize, eliminationType);
+  const base = Math.max(0, calendarIndex(startWeek), calendarIndex(currentWeek));
+  return SEASON_CALENDAR.slice(Math.min(SEASON_CALENDAR.length - 1, base + rounds));
+}
+
+/** The calendar week after `week`, or null after the last one. */
+export function nextCalendarWeek(week: WeekId | string): WeekId | null {
+  const i = calendarIndex(week);
+  return i >= 0 && i + 1 < SEASON_CALENDAR.length ? SEASON_CALENDAR[i + 1] : null;
 }
 
 // --- Standings tiebreaker (port of src/engine/standings.ts's sortStandings) -
@@ -336,7 +414,7 @@ export function sortStandings(standings: StandingLine[], allMatchups: MatchupLin
 
 // --- Prize pool (port of the relevant slice of src/engine/prizePool.ts) ----
 
-const MULTIPLIER_SPREAD_AT_MAX = 0.2;
+const MULTIPLIER_SPREAD_AT_MAX = 0.5; // 1.2.11: up to 1.5x top / 0.5x bottom (was 0.2)
 const MULTIPLIER_HARD_MIN = 0.5;
 const MULTIPLIER_HARD_MAX = 1.5;
 
@@ -397,14 +475,100 @@ export function advancePoolForWeek(
 ): PrizePool {
   if (pool.locked) return pool;
   let netRealPL = 0;
+  // Each team's own share of the move is kept with the week, so the Prize Pool screen can show who
+  // moved the pool in any past week without recomputing it from rosters.
+  const byTeam: Record<string, { impact: number; multiplier: number }> = {};
   for (const [teamId, score] of weeklyVirtualScores) {
-    netRealPL += realDollarAmount(score, weeklyCredits, pool.current, teamCount) * (multipliers[teamId] ?? 1);
+    const multiplier = multipliers[teamId] ?? 1;
+    const impact = realDollarAmount(score, weeklyCredits, pool.current, teamCount) * multiplier;
+    byTeam[teamId] = { impact, multiplier };
+    netRealPL += impact;
   }
   const poolAfter = Math.max(0, pool.current + netRealPL);
   const locked = poolAfter <= 0.01;
-  return { ...pool, current: poolAfter, locked, history: [...pool.history, { week, poolBefore: pool.current, poolAfter, netRealPL }] };
+  return { ...pool, current: poolAfter, locked, history: [...pool.history, { week, poolBefore: pool.current, poolAfter, netRealPL, byTeam }] };
 }
 
 export function lockPool(pool: PrizePool): PrizePool {
   return pool.locked ? pool : { ...pool, locked: true };
+}
+
+// ---- Prize pool rebuilt from history (1.2.11) ----
+// The pool is a virtual tracking feature, so it is recalculated from stored results every time a week
+// closes: from the commissioner's "track from" week through the week just closed, under the league's
+// current pool rules. Turning buy-ins on mid-season, changing the buy-in or the multipliers all show up
+// as if those rules had applied from the tracking week.
+
+export interface PoolWeekInput {
+  week: WeekId;
+  /** Regular-season week: standing multipliers can apply (the playoffs are a flat 1.0x). */
+  regular: boolean;
+  /** Each team's settled bet profit for the week (the same number the live pool used). */
+  betPL: Map<string, number>;
+  /** Standings as of the end of this week, ranked (needed only for multipliers). */
+  standings: StandingLine[];
+}
+
+export interface PoolRebuildRules {
+  buyInAmount: number;
+  weeklyCredits: number;
+  /** Teams that buy in and move the pool (all teams, or humans only when AI teams are left out). */
+  teamIds: string[];
+  multipliers: { enabled: boolean; basis: MultiplierBasis; spread: number };
+  /** With multipliers on but not applied to past weeks: the first week they count. Null = every week. */
+  multipliersFromWeek: WeekId | null;
+  /** Lock the pool at the end (the season is over). */
+  lock: boolean;
+}
+
+export function rebuildPrizePool(weeks: PoolWeekInput[], rules: PoolRebuildRules): PrizePool {
+  const teamCount = rules.teamIds.length;
+  const initial = teamCount * rules.buyInAmount;
+  let pool: PrizePool = { initial, current: initial, locked: false, history: [] };
+  const inPool = new Set(rules.teamIds);
+  const fromIdx = rules.multipliersFromWeek != null ? calendarIndex(rules.multipliersFromWeek) : -1;
+  for (const w of weeks) {
+    if (pool.locked) break;
+    const scores = new Map([...w.betPL].filter(([id]) => inPool.has(id)));
+    const standings = w.standings.filter((s) => inPool.has(s.teamId));
+    const useMultipliers = rules.multipliers.enabled && w.regular && calendarIndex(w.week) >= fromIdx;
+    const multipliers = useMultipliers ? computeStandingMultipliers(standings, rules.multipliers.basis, rules.multipliers.spread) : {};
+    pool = advancePoolForWeek(pool, w.week, scores, rules.weeklyCredits, teamCount, multipliers);
+  }
+  return rules.lock ? lockPool(pool) : pool;
+}
+
+/** Standings as of the end of `throughWeek` (inclusive), ranked, from regular-season results and bets. */
+export function standingsThrough(
+  teamIds: string[],
+  throughWeek: WeekId,
+  matchups: { week: string; teamAId: string; teamBId: string; teamAScore: number | null; teamBScore: number | null; winnerId: string | null; isTie: boolean }[],
+  betsByTeamWeek: { teamId: string; week: string; won: number; lost: number }[],
+): StandingLine[] {
+  const limit = calendarIndex(throughWeek);
+  const lines = new Map(teamIds.map((id) => [id, { teamId: id, wins: 0, losses: 0, ties: 0, totalPL: 0, betsWon: 0, betsLost: 0, bestWeekPL: -Infinity }]));
+  const decided: MatchupLine[] = [];
+  for (const m of matchups) {
+    if (calendarIndex(m.week) > limit || m.teamAScore == null || m.teamBScore == null) continue;
+    const a = lines.get(m.teamAId);
+    const b = lines.get(m.teamBId);
+    if (!a || !b) continue;
+    a.totalPL += m.teamAScore;
+    b.totalPL += m.teamBScore;
+    a.bestWeekPL = Math.max(a.bestWeekPL, m.teamAScore);
+    b.bestWeekPL = Math.max(b.bestWeekPL, m.teamBScore);
+    if (m.isTie) { a.ties++; b.ties++; }
+    else if (m.winnerId === m.teamAId) { a.wins++; b.losses++; }
+    else if (m.winnerId === m.teamBId) { b.wins++; a.losses++; }
+    decided.push({ teamAId: m.teamAId, teamBId: m.teamBId, winnerId: m.winnerId });
+  }
+  for (const r of betsByTeamWeek) {
+    if (calendarIndex(r.week) > limit) continue;
+    const s = lines.get(r.teamId);
+    if (!s) continue;
+    s.betsWon += r.won;
+    s.betsLost += r.lost;
+  }
+  const out = [...lines.values()].map((s) => ({ ...s, bestWeekPL: s.bestWeekPL === -Infinity ? 0 : s.bestWeekPL }));
+  return sortStandings(out, decided);
 }

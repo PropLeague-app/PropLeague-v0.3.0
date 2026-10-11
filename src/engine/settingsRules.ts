@@ -2,6 +2,7 @@
 // the server (supabase/migrations/0027_settings_lock_and_stake_rules.sql: settings_infeasibility,
 // update_league_settings), so keep the two in step. Nothing here touches the store or network.
 import type { LeagueSettings } from '../types';
+import { nextCalendarWeek } from './playoffs';
 
 const EPS = 0.005;
 
@@ -27,18 +28,34 @@ export const DEFERRED_SETTING_KEYS = [
   'marketRulesEnabled',
   'marketRules',
   'minGamesPerRoster',
-  'buyInEnabled',
-  'buyInAmount',
-  'poolMultipliers',
   'propBetOverride',
   'mlBetOverride',
   'emptySlotFloor',
   'invalidRosterPenaltyEnabled',
   'invalidRosterFee',
-  'aiTeamsAffectPool',
 ] as const satisfies readonly (keyof LeagueSettings)[];
 
 export type DeferredSettingKey = (typeof DEFERRED_SETTING_KEYS)[number];
+
+/** Scheduled changes the commissioner can apply right away (1.2.11, apply_pending_settings_now in
+ * migration 0038): they only affect new picks and edits, existing picks stay as they are. Settings that
+ * judge whole rosters at the end of the week (lineup slots, weekly credits, correlation, minimum games,
+ * penalties) always wait. Must match v_allowed on the server. */
+export const APPLY_NOW_KEYS = [
+  'minBetPerSlot',
+  'maxMLBet',
+  'maxPropBet',
+  'minOdds',
+  'singleBetCapPct',
+  'wagerPrecision',
+  'hidePicks',
+  'maxDuplicatePicks',
+  'waiverMode',
+  'marketRulesEnabled',
+  'marketRules',
+  'propBetOverride',
+  'mlBetOverride',
+] as const satisfies readonly DeferredSettingKey[];
 
 export function totalSlotsOf(lineupSlots: Record<string, number>): number {
   return Object.values(lineupSlots).reduce((a, b) => a + b, 0);
@@ -141,6 +158,14 @@ export function pendingKeys(pending: AnyObj | null | undefined): DeferredSetting
 /** Pending keys whose value actually differs from what is live. A key set back to its live
  * value (or never really changed) is not a scheduled change, so it must not light up a
  * banner or a pill. */
+/** Settings that only matter while their switch is on. */
+const PARENT_SWITCHES: [string, string[]][] = [
+  ['buyInEnabled', ['buyInAmount', 'poolMultipliers', 'aiTeamsAffectPool']],
+  ['marketRulesEnabled', ['marketRules']],
+  ['correlationBlockEnabled', ['correlationRules']],
+  ['invalidRosterPenaltyEnabled', ['invalidRosterFee']],
+];
+
 export function meaningfulPending<T extends AnyObj>(live: T, pending: Partial<T> | null | undefined): Partial<T> | null {
   if (!pending) return null;
   const out: SettingsLike = {};
@@ -148,6 +173,12 @@ export function meaningfulPending<T extends AnyObj>(live: T, pending: Partial<T>
   const l = live as SettingsLike;
   for (const key of Object.keys(p)) {
     if (!same(p[key], l[key])) out[key] = p[key];
+  }
+  // A change to a part of a feature that will be off has no effect, so it is not shown as scheduled
+  // (e.g. a buy-in amount while buy-ins are off).
+  const eff = { ...l, ...p };
+  for (const [parent, children] of PARENT_SWITCHES) {
+    if (eff[parent] === false) for (const c of children) delete out[c];
   }
   return Object.keys(out).length > 0 ? (out as Partial<T>) : null;
 }
@@ -185,15 +216,11 @@ export const SETTING_LABELS: Record<DeferredSettingKey, string> = {
   marketRulesEnabled: 'market rules',
   marketRules: 'market rules',
   minGamesPerRoster: 'minimum games',
-  buyInEnabled: 'buy-in',
-  buyInAmount: 'buy-in amount',
-  poolMultipliers: 'standing multipliers',
   propBetOverride: 'prop bet limits',
   mlBetOverride: 'moneyline bet limits',
   emptySlotFloor: 'empty slot penalty',
   invalidRosterPenaltyEnabled: 'invalid roster penalty',
   invalidRosterFee: 'invalid roster fee',
-  aiTeamsAffectPool: 'AI teams in the prize pool',
 };
 
 /** "weekly credits, minimum bet and pick visibility" */
@@ -205,6 +232,9 @@ export function describePendingKeys(keys: readonly DeferredSettingKey[]): string
 
 /** "Week 6" for a numeric week, otherwise a generic phrase (playoff rounds). */
 export function nextWeekLabel(currentWeek: string | number): string {
-  const n = Number(currentWeek);
-  return Number.isFinite(n) ? `Week ${n + 1}` : 'the next round';
+  // The calendar runs Week 18 into the NFL playoff weeks (1.2.11).
+  const next = nextCalendarWeek(currentWeek);
+  if (next == null) return 'next season';
+  if (typeof next === 'number') return `Week ${next}`;
+  return next === 'WC' ? 'Wild Card week' : next === 'DIV' ? 'Divisional week' : 'Conference week';
 }

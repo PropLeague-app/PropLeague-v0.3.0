@@ -185,23 +185,31 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     },
     {
       title: 'Standings',
-      body: ['Ranked by win percentage. Ties break by total profit, then bet record, then head-to-head, then best single week.'],
+      body: [
+        'Ranked by win percentage. Ties break by total profit, then bet record, then head-to-head, then best single week.',
+        'Small icons next to a team mark what it has locked up: ✓ a playoff spot, ★ a first-round bye, a crown the #1 seed, and × eliminated. A team only gets one once no result can change it (a tie in the standings counts against it), and League News posts each clinch.',
+      ],
     },
     {
       title: 'Playoffs',
       body: [
-        `The top ${playoffTeams} teams${generic ? ' by default' : ''} make the playoffs, seeded by standings, timed so the final lands around Conference Championship week. Format can be single or double elimination, and commissioners can split the league into two conferences.`,
-        'Fields can be 2, 4, 6, 8 or 16 teams, never more than the league has. Double elimination is available for 2, 4 and 8. A 6-team field gives the top two seeds a bye. Bigger fields and double elimination start earlier, in Weeks 17 and 18, and the bracket locks once the playoffs begin.',
+        `The top ${playoffTeams} teams${generic ? ' by default' : ''} make the playoffs, seeded by standings. Format can be single or double elimination, and commissioners can split the league into two conferences.`,
+        'The commissioner picks the championship week: any week up to the NFL Conference Championship (the default), as long as the season keeps at least one regular-season week. The playoff rounds fill the weeks just before it and the regular season every week from the start until then, so no week is ever skipped. A small field can play regular-season games during NFL Wild Card or Divisional week, which have fewer games to pick from.',
+        'Fields can be 2, 4, 6, 8 or 16 teams, never more than the league has. Double elimination is available for 2, 4 and 8, and its True Final decides the title (there is no bracket reset game). A 6-team field gives the top two seeds a bye. The bracket locks once the playoffs begin.',
+        'Playoff games are real matchups: they show on League Home, on the matchup screen and on the lock screen like any other week, and your lineup works the same. A playoff game cannot tie: on equal scores the better seed (or the winners-bracket side) advances. Playoff games do not change regular-season records. With no game in a playoff week, Home says whether you have a bye or are out.',
+        'Matchups (in Profile, or See all matchups on Home) has every week of your season on a scroller, from your start week to the championship, with your matchup first. Past weeks show results, with perfect and skunked weeks, and later weeks show who plays whom. The playoff weeks sit under a Playoffs line, each chip showing our round and the real NFL week under it (Final 4 over NFL Div). Rounds are named Round of 16 (or Wild Card in a 6-team field), Elite 8, Final 4 and Prop Bowl, with Survivor rounds in a losers bracket. A league that started after Week 1 shows a "Season started" note at the start of the bar. A playoff week shows the bracket on that round: every game is a small matchup card you can tap, and each swipe moves exactly one round. Teams already out sit in a row under it (tap to see who). Before the playoffs the bracket is projected from the current standings, unless the commissioner turns off Show projected playoffs. During the playoffs the Profile button reads Bracket.',
       ],
     },
   ];
 
   if (!settings || settings.buyInEnabled) {
     const body = [
-      'If buy-ins are on, every team adds a virtual buy-in to a shared prize pool. Each week the pool moves by the league\'s combined virtual profit or loss on bets that were actually placed, scaled by how much of your weekly budget you used. Penalties for unspent credits or an empty lineup hurt a team\'s score and standings, but no bet was placed, so they never move the pool. It locks at the end of the regular season and is split among the top finishers. The prize pool is always virtual: no real money is ever deposited, held or paid out, and nothing can be cashed out.',
+      'If buy-ins are on, every team adds a virtual buy-in to a shared prize pool. Each week the pool moves by the league\'s combined virtual profit or loss on bets that were actually placed, scaled by how much of your weekly budget you used. Penalties for unspent credits or an empty lineup hurt a team\'s score and standings, but no bet was placed, so they never move the pool. It locks when the season ends and is split among the top finishers, and the commissioner can also set aside a share for the team with the highest season P/L (it can go to a team that also placed). The prize pool is always virtual: no real money is ever deposited, held or paid out, and nothing can be cashed out.',
+      'The Prize Pool screen shows where the pool stands, its line over the season against the starting pool, and who has moved it. Tap a week on the chart or in the list to see that week on its own: what it did to the pool, and each team\'s dollar impact with the multiplier it carried. Tap it again, or Back to season, to return. The share button turns whatever you are looking at into a picture.',
+      'Because it is only tracking, the commissioner can start it from any week already played, even when buy-ins are turned on mid-season. Every time a week closes the whole pool is recalculated from that week with the current rules, so changing the buy-in or multipliers shows up as if they had applied from the start.',
     ];
     if (settings?.poolMultipliers.enabled) {
-      body.push('Standing multipliers are on here: a team ranked higher moves the pool a bit more and a lower one a bit less. Total exposure never changes, only whose picks count more.');
+      body.push('Standing multipliers are on here: a team ranked higher moves the pool more and a lower one less (from 1.0x for everyone up to 1.5x top and 0.5x bottom), using the standings as they were that week. AI teams left out of the pool show as Not in pool. Total exposure never changes, only whose picks count more. They apply to past weeks too unless the commissioner turns that off.');
     }
     scoring.push({ title: 'Prize pool', body });
   }
@@ -280,9 +288,10 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Changing settings mid-week',
       body: [
-        'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation, market and minimum-game rules, buy-in, multipliers and penalties.',
+        'Rules that change how a week is played lock once any pick exists for the current week: lineup slots, weekly credits, bet limits, pick visibility, duplicate, correlation, market and minimum-game rules, and penalties.',
         'You can still edit them. The change is saved as scheduled, shows an "Applies Week N" pill, and takes effect after Tuesday\'s settlement. You can discard scheduled changes in one tap.',
-        'Everything else applies immediately: league name and visibility, Weekly Moments, perfect and skunked week announcements, alt lines, line movement, playoff format, payout splits and conference names.',
+        'Changes that only affect new picks (stake limits, min odds, precision, duplicate picks, pick order, market rules, hidden picks) can be applied now instead: Apply now lists the picks already outside the new rules (names when picks are visible, counts when hidden), and those picks stay as they are. Lineup slots, weekly credits, correlation, minimum games and penalties judge whole rosters at the end of the week, so they always wait.',
+        'Everything else applies immediately, including the prize pool settings (buy-in, multipliers, AI teams, tracking week), since the pool is recalculated from history right away: league name and visibility, Weekly Moments, announcements, alt lines, line movement, playoff format, payout splits and conference names. Major changes (money, limits, roster shape, blocked markets, playoff format) get a one-line post in League News.',
       ],
     },
     {
@@ -291,9 +300,9 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
         'League Basics: name, logo, visibility, members and invite code.',
         'Roster & Picks: slots, minimum games, duplicate, correlation and market rules, pick visibility.',
         'Penalties: empty slot minimum loss, invalid roster rule and fee.',
-        'Betting & Buy-In: stake limits, buy-in, payout split, standing multipliers.',
+        'Betting & Buy-In: stake limits, buy-in, the week the pool is tracked from, payout split, standing multipliers (with the change from now to next week when one is scheduled). Number settings use the app keypad with quick chips that only offer amounts the league can actually use, like a minimum bet a full lineup can afford.',
         'Lines & Markets: alt lines and live line movement.',
-        'Playoffs & Conferences: field size, elimination type, conferences.',
+        'Playoffs & Conferences: field size, elimination type, championship week, projected bracket, conferences.',
         'Weekly Moments: weekly awards, custom names, perfect and skunked week announcements.',
       ],
     },

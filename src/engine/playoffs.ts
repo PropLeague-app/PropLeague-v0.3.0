@@ -187,10 +187,6 @@ function resolveSource(bracket: PlayoffBracket, source: MatchSource): string | n
 function isTrueFinal(match: BracketMatch): boolean {
   return match.id === 'TRUE-FINAL';
 }
-function wbSideOfTrueFinal(bracket: PlayoffBracket): MatchSource | null {
-  const tf = bracket.matches.find((m) => m.id === 'TRUE-FINAL');
-  return tf ? tf.sourceA : null; // by construction sourceA is always winnerOf('F'), the WB path
-}
 
 /** Advances the bracket by one settlement pass: resolves any match whose team slots
  * are now known but not yet filled (assigning it to `weekId`), and — for matches whose
@@ -207,16 +203,8 @@ export function advanceBracket(bracket: PlayoffBracket, settledWeek: WeekId | nu
     return { ...m, teamAScore: a, teamBScore: b, winnerId };
   });
 
-  // Reset game only gets created after the true final settles, if the LB side won.
-  const trueFinal = matches.find((m) => m.id === 'TRUE-FINAL' && m.winnerId);
-  const hasReset = matches.some((m) => m.id === 'RESET');
-  if (trueFinal && !hasReset) {
-    const wbSide = wbSideOfTrueFinal(bracket);
-    const wbTeamId = wbSide ? resolveSource({ ...bracket, matches }, wbSide) : null;
-    if (wbTeamId && trueFinal.winnerId !== wbTeamId) {
-      matches = [...matches, bareMatch('RESET', 'RESET', 'Bracket Reset', winnerOf('TRUE-FINAL'), loserOf('TRUE-FINAL'))];
-    }
-  }
+  // No bracket reset (1.2.11): the True Final decides the title, so the championship lands exactly
+  // on the week the commissioner picked. RESET is still read below for brackets saved before.
 
   matches = matches.map((m) => {
     if (m.weekId != null) return m;
@@ -299,6 +287,29 @@ export function regularSeasonWeeksFor(fieldSize: PlayoffFieldSize, eliminationTy
   return 18 - Math.max(0, weeksNeeded - 3);
 }
 
+/** The bracket games set for `week` with both teams known. Each one is a real row in `matchups` for that
+ * week (written by settle-week), so playoff games show and score like any other matchup. Team A and B
+ * keep the bracket's order, which matters for ties (see playoffWinner). */
+export function playoffPairingsForWeek(bracket: PlayoffBracket | null | undefined, week: string): { matchId: string; teamAId: string; teamBId: string }[] {
+  if (!bracket) return [];
+  return bracket.matches
+    .filter((m) => m.weekId != null && String(m.weekId) === week && m.teamAId && m.teamBId)
+    .map((m) => ({ matchId: m.id, teamAId: m.teamAId as string, teamBId: m.teamBId as string }));
+}
+
+/** Whether a `matchups` row is a playoff game. Standings (the regular-season record) skip these. */
+export function isPlayoffPairing(bracket: PlayoffBracket | null | undefined, week: string, teamAId: string, teamBId: string): boolean {
+  return playoffPairingsForWeek(bracket, week).some(
+    (p) => (p.teamAId === teamAId && p.teamBId === teamBId) || (p.teamAId === teamBId && p.teamBId === teamAId),
+  );
+}
+
+/** A playoff game always has a winner: on a tie, team A (the better seed or the winners-bracket side)
+ * advances, the same rule as advanceBracket. */
+export function playoffWinner(teamAId: string, teamBId: string, aScore: number, bScore: number): string {
+  return aScore >= bScore ? teamAId : teamBId;
+}
+
 /** Ordered list of WeekIds the postseason will occupy, always ending in CONF. */
 export function playoffWeekSequence(fieldSize: PlayoffFieldSize, eliminationType: 'single' | 'double'): WeekId[] {
   const weeksNeeded = countPlayoffWeeksNeeded(fieldSize, eliminationType);
@@ -307,6 +318,70 @@ export function playoffWeekSequence(fieldSize: PlayoffFieldSize, eliminationType
   const extra = weeksNeeded - 3;
   const numeric: WeekId[] = Array.from({ length: extra }, (_, i) => 18 - extra + 1 + i);
   return [...numeric, ...named];
+}
+
+// ---- Season calendar (1.2.11) ----
+// A league plays a run of consecutive weeks with no gaps: the regular season from its start week,
+// then the playoff rounds, ending on the championship week the commissioner picks (any week up to the
+// NFL Conference Championship; the Super Bowl has one game, too thin for a lineup). Small fields can
+// play regular-season weeks during the NFL playoffs; a short season can end as early as the field
+// allows (at least one regular-season week).
+
+/** Every week a league can play, in order. */
+export const SEASON_CALENDAR: WeekId[] = [...Array.from({ length: 18 }, (_, i) => i + 1), 'WC', 'DIV', 'CONF'];
+
+/** Position of a week in SEASON_CALENDAR, or -1. Accepts a WeekId or its text form ("7", "WC"). */
+export function calendarIndex(week: WeekId | string | null | undefined): number {
+  if (week == null) return -1;
+  return SEASON_CALENDAR.findIndex((w) => String(w) === String(week));
+}
+
+export interface SeasonPlan {
+  regularWeeks: WeekId[];
+  playoffWeeks: WeekId[];
+  championshipWeek: WeekId;
+}
+
+/** The league's weeks: regular season from `startWeek` (Week 1 when not started), then the playoff
+ * rounds ending on `championshipWeek`. A championship too early to leave one regular-season week is
+ * moved later, as far as the calendar allows. */
+export function seasonPlan(
+  startWeek: WeekId | string | null | undefined,
+  championshipWeek: WeekId | string | null | undefined,
+  fieldSize: PlayoffFieldSize,
+  eliminationType: 'single' | 'double',
+): SeasonPlan {
+  const last = SEASON_CALENDAR.length - 1;
+  const rounds = countPlayoffWeeksNeeded(fieldSize, eliminationType);
+  const startIdx = Math.max(0, calendarIndex(startWeek));
+  let champIdx = calendarIndex(championshipWeek);
+  if (champIdx < 0) champIdx = last;
+  champIdx = Math.min(last, Math.max(champIdx, startIdx + rounds));
+  const firstPlayoff = Math.max(0, champIdx - rounds + 1);
+  return {
+    regularWeeks: SEASON_CALENDAR.slice(startIdx, Math.max(startIdx, firstPlayoff)),
+    playoffWeeks: SEASON_CALENDAR.slice(firstPlayoff, champIdx + 1),
+    championshipWeek: SEASON_CALENDAR[champIdx],
+  };
+}
+
+/** Championship weeks a commissioner can pick: early enough for one regular-season week after the
+ * start, and late enough that the playoffs begin after the current week. */
+export function championshipWeekOptions(
+  startWeek: WeekId | string | null | undefined,
+  currentWeek: WeekId | string | null | undefined,
+  fieldSize: PlayoffFieldSize,
+  eliminationType: 'single' | 'double',
+): WeekId[] {
+  const rounds = countPlayoffWeeksNeeded(fieldSize, eliminationType);
+  const base = Math.max(0, calendarIndex(startWeek), calendarIndex(currentWeek));
+  return SEASON_CALENDAR.slice(Math.min(SEASON_CALENDAR.length - 1, base + rounds));
+}
+
+/** The calendar week after `week`, or null after the last one. */
+export function nextCalendarWeek(week: WeekId | string): WeekId | null {
+  const i = calendarIndex(week);
+  return i >= 0 && i + 1 < SEASON_CALENDAR.length ? SEASON_CALENDAR[i + 1] : null;
 }
 
 /** manual v0.2.1 §3 #2: the playoff field may now reach full league capacity — an

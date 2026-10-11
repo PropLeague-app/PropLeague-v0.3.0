@@ -97,22 +97,21 @@ describe('single-elimination bracket resolution', () => {
   });
 });
 
-describe('double-elimination bracket-reset mechanic', () => {
-  it('gives the losers-bracket finalist a genuine second chance, including a reset game if they beat the WB champ', () => {
-    // seed1 wins everything in the winners bracket, but loses the true final and the reset
-    // to whoever climbed out of the losers bracket -- exercises the full reset path.
+describe('double elimination has no bracket reset (1.2.11)', () => {
+  it('the True Final decides the title even when the losers-bracket side wins it', () => {
     const { bracket } = runToCompletion(8, 'double', (a, b, matchId) => {
-      if (matchId === 'TRUE-FINAL' || matchId === 'RESET') return 'b'; // LB side wins both
+      if (matchId === 'TRUE-FINAL') return 'b'; // LB side wins
       return a < b ? 'a' : 'b';
     });
-    expect(bracket.matches.some((m) => m.id === 'RESET')).toBe(true);
+    expect(bracket.matches.some((m) => m.id === 'RESET')).toBe(false);
     const { championId, runnerUpId } = championAndRunnerUp(bracket);
     expect(championId).not.toBeNull();
     expect(runnerUpId).not.toBeNull();
     expect(championId).not.toBe(runnerUpId);
+    expect(championId).toBe(bracket.matches.find((m) => m.id === 'TRUE-FINAL')?.teamBId);
   });
 
-  it('skips the reset entirely when the winners-bracket champion wins the true final outright', () => {
+  it('crowns seed1 when the winners-bracket champion wins the true final', () => {
     const { bracket } = runToCompletion(4, 'double', (a, b) => (a < b ? 'a' : 'b'));
     expect(bracket.matches.some((m) => m.id === 'RESET')).toBe(false);
     expect(bracket.championId).toBe('seed1');

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LeagueSettings } from '../../types';
 import { settingsInfeasibility } from '../../engine/settingsRules';
-import { NumberField, NullableNumberField } from './SettingsPrimitives';
+import { KeypadField } from './KeypadField';
 
 type LimitsDraft = {
   weeklyCredits: number;
@@ -53,6 +53,16 @@ export function BettingLimitsGroup({
   const reasons = settingsInfeasibility({ ...settings, ...patchFrom(draft) });
   const canSave = dirty && reasons.length === 0 && !saving;
 
+  // A value for one field is refused only for a problem it would add (not one the draft already has),
+  // so a chip or a typed amount is judged on its own. The keypad leaves out chips that would fail.
+  const checkFor = <K extends keyof LimitsDraft>(key: K) => (v: number | null): string | null => {
+    const fresh = settingsInfeasibility({ ...settings, ...patchFrom({ ...draft, [key]: v }) });
+    return fresh.find((r) => !reasons.includes(r)) ?? null;
+  };
+  const totalSlots = Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0);
+  // The highest minimum bet a full lineup can afford with these weekly credits.
+  const maxMinBet = totalSlots > 0 ? Math.floor((draft.weeklyCredits / totalSlots) * 100) / 100 : draft.weeklyCredits;
+
   function set<K extends keyof LimitsDraft>(key: K, value: LimitsDraft[K]) {
     setServerError(null);
     setDraft((d) => ({ ...d, [key]: value }));
@@ -68,22 +78,52 @@ export function BettingLimitsGroup({
 
   return (
     <div className="space-y-2">
-      <NumberField label="Weekly credit allocation" value={draft.weeklyCredits} onChange={(v) => set('weeklyCredits', v)} />
-      <NumberField
-        label="Minimum bet per slot"
-        value={draft.minBetPerSlot}
-        min={0}
-        decimals={2}
-        onChange={(v) => set('minBetPerSlot', v)}
+      <KeypadField
+        label="Weekly credit allocation"
+        unit="$"
+        value={draft.weeklyCredits}
+        presets={[50, 100, 200].map((n) => ({ label: `$${n}`, value: n }))}
+        check={checkFor('weeklyCredits')}
+        onChange={(v) => set('weeklyCredits', v ?? 0)}
       />
-      <NumberField label="Max moneyline/spread bet" value={draft.maxMLBet} onChange={(v) => set('maxMLBet', v)} />
-      <NullableNumberField
+      <KeypadField
+        label="Minimum bet per slot"
+        unit="$"
+        decimals={2}
+        value={draft.minBetPerSlot}
+        presets={[
+          ...[1, 5, 10].filter((n) => n < maxMinBet).map((n) => ({ label: `$${n}`, value: n })),
+          { label: 'Max', value: maxMinBet, inBox: true },
+        ]}
+        sheetHint={`Up to $${maxMinBet.toFixed(2)} with ${totalSlots} slots and $${draft.weeklyCredits} a week`}
+        check={checkFor('minBetPerSlot')}
+        onChange={(v) => set('minBetPerSlot', v ?? 0)}
+      />
+      <KeypadField
+        label="Max moneyline/spread bet"
+        unit="$"
+        value={draft.maxMLBet}
+        presets={[10, 25, 50].map((n) => ({ label: `$${n}`, value: n }))}
+        check={checkFor('maxMLBet')}
+        onChange={(v) => set('maxMLBet', v ?? 0)}
+      />
+      <KeypadField
         label="Max prop bet"
+        unit="$"
+        allowNull
         value={draft.maxPropBet}
-        placeholder="No max"
+        presets={[...[10, 25, 50].map((n) => ({ label: `$${n}`, value: n })), { label: 'No max', value: null, inBox: true }]}
+        check={checkFor('maxPropBet')}
         onChange={(v) => set('maxPropBet', v)}
       />
-      <NumberField label="Max % of weekly credits on one pick" value={draft.capPercent} onChange={(v) => set('capPercent', v)} />
+      <KeypadField
+        label="Max % of weekly credits on one pick"
+        unit="%"
+        value={draft.capPercent}
+        presets={[50, 75, 100].map((n) => ({ label: `${n}%`, value: n }))}
+        check={(v) => (v != null && (v <= 0 || v > 100) ? 'Pick a percent from 1 to 100.' : checkFor('capPercent')(v))}
+        onChange={(v) => set('capPercent', v ?? 0)}
+      />
 
       {dirty && reasons.length > 0 && (
         <ul className="space-y-1" role="alert">
