@@ -79,3 +79,15 @@ describe('P/L color scale', () => {
     expect(seasonAtRisk(-1, { weeklyCredits: 100 })).toBe(0);
   });
 });
+
+describe('mono P/L colors', () => {
+  it('uses plain text colors, the sign carrying the meaning, and ignores the reference', async () => {
+    const { plStyleFor } = await import('../plColor');
+    expect(plStyleFor(12.5, 'mono', 0)).toEqual({ color: 'var(--color-text)' });
+    expect(plStyleFor(-40, 'mono', 100)).toEqual({ color: 'var(--color-text-muted)' });
+    expect(plStyleFor(0, 'mono', 100)).toBeUndefined();
+    // Classic and Scaled are unchanged: gains are never styled.
+    expect(plStyleFor(12.5, 'scaled', 100)).toBeUndefined();
+    expect(plStyleFor(12.5, 'classic', 100)).toBeUndefined();
+  });
+});

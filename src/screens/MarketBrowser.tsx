@@ -17,6 +17,7 @@ import { TeamMark } from '../components/common/TeamMark';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { EmptyState } from '../components/common/EmptyState';
 import { goBack } from '../components/layout/BackHeader';
+import { headerTapToTop } from '../components/layout/shellNav';
 import { findClaimingTeam, claimBlockReason, claimHolders } from '../engine/duplicatePicks';
 import { activeMultipliers } from '../engine/prizePool';
 import { heldTag } from '../engine/pickSwap';
@@ -200,7 +201,7 @@ export function MarketBrowser() {
 
   return (
     <div className="flex flex-col">
-      <div className="px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10 border-b border-border">
+      <div className="px-4 pt-2 pb-2 sticky top-0 bg-bg-raised z-10 border-b border-border" onClick={headerTapToTop}>
         <div className="flex items-center gap-2 mb-3">
           <button onClick={() => goBack(navigate, '/lineup')} className="text-text-muted flex items-center gap-0.5">
             <span className="text-xl leading-none">‹</span>

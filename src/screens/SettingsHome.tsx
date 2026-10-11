@@ -18,7 +18,7 @@ import { fetchNotificationPrefs, getCachedNotificationPrefs, updateNotificationP
 import logoMark from '../assets/logo-mono-muted.png';
 import { LeaveLeagueSheet } from '../components/settings/LeaveLeagueSheet';
 import { VoidRequestsCard } from '../components/settings/VoidRequestsCard';
-import { lossColor, lossIntensity } from '../engine/plColor';
+import { lossColor, lossIntensity, monoColor } from '../engine/plColor';
 import { formatCents } from '../engine/oddsMath';
 import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SettingsRow, SubSection } from '../components/settings/SettingsPrimitives';
 import { meaningfulPending, pendingKeys } from '../engine/settingsRules';
@@ -153,7 +153,7 @@ function AccentDots({ value, tone, onChange }: { value: AccentColor; tone: 'ligh
             className={`w-7 h-7 rounded-full flex items-center justify-center ${selected ? 'ring-2 ring-offset-2 ring-offset-bg-card' : ''}`}
             style={{ background: color, ...(selected ? { ['--tw-ring-color' as string]: color } : {}) }}
           >
-            {selected && <Check size={13} strokeWidth={3} style={{ color: a.onPrimary }} />}
+            {selected && <Check size={13} strokeWidth={3} style={{ color: tone === 'light' ? (a.onPrimaryLight ?? a.onPrimary) : a.onPrimary }} />}
           </button>
         );
       })}
@@ -640,28 +640,35 @@ export function SettingsHome() {
                 <PrefRow label="Accent">
                   <AccentDots value={profile?.accentColor ?? 'blue'} tone={themeTone(resolvedTheme)} onChange={setAccentColor} />
                 </PrefRow>
-                {/* Gains are always solid green; this only changes how losses are tinted (engine/plColor.ts). */}
-                <PrefRow label="Loss colors">
+                {/* How team totals are colored (engine/plColor.ts): Classic green and red, Scaled tints a loss
+                    by its size, Mono uses plain text colors. A single bet's result keeps green and red. */}
+                <PrefRow label="P/L colors">
                   <Seg
                     value={profile?.plColorScale ?? 'classic'}
                     onChange={(mode) => updateProfile({ plColorScale: mode })}
                     options={[
-                      { value: 'classic', label: 'Classic', ariaLabel: 'Every loss red' },
+                      { value: 'classic', label: 'Classic', ariaLabel: 'Gains green, every loss red' },
                       { value: 'scaled', label: 'Scaled', ariaLabel: 'Losses fade from yellow to red' },
+                      { value: 'mono', label: 'Mono', ariaLabel: 'Plain text colors, the sign shows gain or loss' },
                     ]}
                   />
                 </PrefRow>
                 <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-1.5 text-xs font-semibold tabular-nums">
-                  <span className="text-profit">{formatCents(20)}</span>
-                  {[-5, -30, -75].map((amount) => (
-                    <span
-                      key={amount}
-                      className="text-loss"
-                      style={(profile?.plColorScale ?? 'classic') === 'scaled' ? { color: lossColor(lossIntensity(amount, 75)) } : undefined}
-                    >
-                      {formatCents(amount)}
-                    </span>
-                  ))}
+                  {[20, -5, -30, -75].map((amount) => {
+                    const scale = profile?.plColorScale ?? 'classic';
+                    const style =
+                      scale === 'mono'
+                        ? { color: monoColor(amount) }
+                        : scale === 'scaled' && amount < 0
+                          ? { color: lossColor(lossIntensity(amount, 75)) }
+                          : undefined;
+                    return (
+                      <span key={amount} className={amount > 0 ? 'text-profit' : 'text-loss'} style={style}>
+                        {amount > 0 ? '+' : ''}
+                        {formatCents(amount)}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             </div>

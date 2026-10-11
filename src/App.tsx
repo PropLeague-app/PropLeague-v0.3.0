@@ -163,7 +163,8 @@ function App() {
   // The lock screen scores follow the same P/L color choice as the app (classic or scaled).
   const plColorScale = useAppStore((s) => s.profile?.plColorScale) ?? 'classic';
   useEffect(() => {
-    void setLiveActivityColorScale(plColorScale);
+    // The lock screen card knows classic and scaled only; Mono keeps the classic colors there.
+    void setLiveActivityColorScale(plColorScale === 'mono' ? 'classic' : plColorScale);
   }, [plColorScale]);
 
   // Local appearance setting (see chat, Sept 2026 -- light mode) -- lives here

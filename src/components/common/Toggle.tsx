@@ -20,7 +20,7 @@ export function Toggle({
       className={`w-10 h-[22px] rounded-full relative transition-colors shrink-0 disabled:opacity-40 ${value ? 'bg-primary' : 'bg-bg-raised'}`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] bg-white rounded-full transition-transform ${value ? 'translate-x-[18px]' : 'translate-x-0'}`}
+        className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] rounded-full transition-transform ${value ? 'translate-x-[18px] bg-on-primary' : 'translate-x-0 bg-white'}`}
       />
     </button>
   );

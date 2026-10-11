@@ -17,6 +17,11 @@
      doesn't quietly become "the RB color" if either one is ever restyled. */
   --color-gold: #f4c542;
   --color-gold-soft: #7a6423;
+  /* Pinned announcements (pin icon and the card's ring). Gold, which stands apart from most accents;
+     the Orange and Gold accents switch it to blue (below) so it still contrasts. */
+  --color-pin: #f4c542;
+  /* The favorite star is always gold, whatever the accent (only the pin swaps to blue). */
+  --color-star: #f4c542;
   --color-text: #e8ecf5;
   --color-text-muted: #8a94a8;
   /* Readable "ink" versions of the brand blue and money green, for text sitting on a tinted fill of
@@ -196,6 +201,8 @@
 /* Everything a light theme needs beyond its chrome (Light and Linen share it): darker inks, money,
    position and flame colors that stay readable on a pale background. */
 :root[data-tone='light'] {
+  --color-pin: #b07d00;
+  --color-star: #b07d00;
   --color-primary-ink: #1a52c4;
   --color-profit-ink: #0c7a3f;
   --color-loss-ink: #b3261e;
@@ -334,6 +341,28 @@
 :root[data-tone='light'][data-accent='gold'] {
   --color-primary: #a67e00;
   --color-primary-ink: #6b5200;
+}
+/* Mono: black and white. Soft white on dark themes, near-black on light ones, with the text on a solid
+   fill flipped to match. The purple action color stays purple and stands out more against it. */
+:root[data-accent='mono'] {
+  --color-primary: #d4d6dc;
+  --color-primary-ink: #f1f2f5;
+  --color-on-primary: #16171a;
+}
+:root[data-tone='light'][data-accent='mono'] {
+  --color-primary: #2b2f37;
+  --color-primary-ink: #1b1e24;
+  --color-on-primary: #ffffff;
+}
+
+/* The pin is gold, so with a gold or orange accent it turns blue to keep standing apart. */
+:root[data-accent='gold'],
+:root[data-accent='orange'] {
+  --color-pin: #4c8df5;
+}
+:root[data-tone='light'][data-accent='gold'],
+:root[data-tone='light'][data-accent='orange'] {
+  --color-pin: #2a64d6;
 }
 
 html,

@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { shellNavState, type ShellNavState } from './shellNav';
 
 /** Goes back through real router history when there is any (so the back stack feels
  * native), falling back to a sensible parent route when a screen was entered directly
  * (e.g. a refresh) and there's nothing to pop. */
 function goBack(navigate: ReturnType<typeof useNavigate>, fallback: string) {
-  const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-  if (idx > 0) navigate(-1);
+  const history = window.history.state as { idx?: number; usr?: unknown } | null;
+  // A screen the tab bar reopened (shellNav.ts) goes up to its parent, not back to the other tab.
+  if (shellNavState(history?.usr).fromTab) {
+    navigate(fallback, { state: { restoreScroll: true } satisfies ShellNavState });
+    return;
+  }
+  if ((history?.idx ?? 0) > 0) navigate(-1);
   else navigate(fallback);
 }
 

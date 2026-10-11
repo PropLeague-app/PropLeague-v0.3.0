@@ -171,7 +171,7 @@ export function LeagueSwitcherSheet({
                     onClick={() => changeLeaguePref(league.id, { favorite: !isFavorite })}
                     aria-label={isFavorite ? `Unfavorite ${league.name}` : `Favorite ${league.name}`}
                     aria-pressed={isFavorite}
-                    className={`py-2 pl-2 pr-1 ${isFavorite ? 'text-gold' : 'text-text-muted'}`}
+                    className={`py-2 pl-2 pr-1 ${isFavorite ? 'text-star' : 'text-text-muted'}`}
                   >
                     <Star size={15} fill={isFavorite ? 'currentColor' : 'none'} />
                   </button>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { CalendarClock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import type { WeekId } from '../types';
+import { useUIStore } from '../store/useUIStore';
+import { headerTapToTop } from '../components/layout/shellNav';
 import { WeekSelector } from '../components/slate/WeekSelector';
 import { GameCard } from '../components/slate/GameCard';
 import { SkeletonCard } from '../components/common/SkeletonLoader';
@@ -18,7 +19,9 @@ const DAY_ORDER = DAY_SLOT_ORDER;
 export function NFLSlate() {
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
-  const [week, setWeek] = useState<WeekId | null>(null);
+  // In the UI store, not local state, so the picked week survives leaving the tab (see shellNav.ts).
+  const week = useUIStore((s) => s.slateWeek);
+  const setWeek = useUIStore((s) => s.setSlateWeek);
   // Tracks the real_games fetch itself (not a fixed timer) -- see chat, Sept
   // 2026: this screen used to fall back to the fully-fabricated data/seed.ts
   // slate (fake teams, fake odds) for any week The Odds API hasn't posted yet,
@@ -74,7 +77,7 @@ export function NFLSlate() {
 
   return (
     <>
-      <div className="px-4 pt-2 pb-3 space-y-3 sticky top-0 bg-bg-raised z-10">
+      <div className="px-4 pt-2 pb-3 space-y-3 sticky top-0 bg-bg-raised z-10" onClick={headerTapToTop}>
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold flex-1">NFL Slate</h1>
           <button

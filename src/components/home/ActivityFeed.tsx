@@ -22,6 +22,9 @@ import { lazyNamed } from '../../lazyLoad';
 // The full emoji picker carries every emoji category, so it loads on first use (lazyLoad.ts).
 const ReactionPicker = lazyNamed(() => import('./ReactionPicker'), 'ReactionPicker');
 import { haptic } from '../../services/haptics';
+import { usePlStyle } from '../common/usePlStyle';
+import { weekScaleRef } from '../../engine/plColor';
+import type { CSSProperties } from 'react';
 import { CHIP_LOGOS, CHIP_ROW_GAP, QUICK_REACTIONS, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
@@ -34,7 +37,7 @@ const ICONS: Record<ActivityItem['type'], ReactNode> = {
 /** The league's teams, so a reaction chip can show who reacted. Provided by ActivityFeed. */
 const ReactionTeamsContext = createContext<League['teams']>([]);
 
-type ReactionPopup = { kind: 'picker' | 'all'; rect: DOMRect } | { kind: 'who'; rect: DOMRect; emoji: string };
+type ReactionPopup = { kind: 'picker'; rect: DOMRect } | { kind: 'who'; rect: DOMRect; emoji: string | null };
 
 /** One or two overlapping team logos (then "+n"), the "who" on a reaction chip. */
 function ReactorLogos({ group, teamById }: { group: ReactionGroup; teamById: Map<string, League['teams'][number]> }) {
@@ -53,16 +56,44 @@ function ReactorLogos({ group, teamById }: { group: ReactionGroup; teamById: Map
   );
 }
 
-/** A reaction with the teams that picked it, as a list (the "who reacted" bubble and the overview). */
-function ReactorList({ group, teamById }: { group: ReactionGroup; teamById: Map<string, League['teams'][number]> }) {
-  const teams = group.teamIds.map((id) => teamById.get(id)).filter((t): t is League['teams'][number] => !!t);
-  if (teams.length === 0) return <p className="text-[11px] text-text-muted">{group.count} reaction{group.count === 1 ? '' : 's'}</p>;
+/**
+ * Who reacted, as one list: a row per team (logo, name, and its emoji at the right), grouped by emoji,
+ * most-used first. A row of filter chips on top ("All 4", then each emoji with its count) narrows it to
+ * one emoji; tapping a reaction chip opens it already on that emoji, the stack opens it on All.
+ */
+function ReactionsSheet({
+  groups,
+  teamById,
+  initial,
+  mine,
+}: {
+  groups: ReactionGroup[];
+  teamById: Map<string, League['teams'][number]>;
+  /** Tapping one emoji's chip lists just that emoji; the overflow stack lists all of them. */
+  initial: string | null;
+  mine?: string;
+}) {
+  const visible = initial ? groups.filter((g) => g.emoji === initial) : groups;
+  const rows = visible.flatMap((g) =>
+    g.teamIds.map((id) => ({ emoji: g.emoji, team: teamById.get(id) })).filter((r): r is { emoji: string; team: League['teams'][number] } => !!r.team),
+  );
+  if (rows.length === 0) {
+    return <p className="text-[11px] text-text-muted">{visible.map((g) => `${g.emoji} ${g.count}`).join('  ')}</p>;
+  }
   return (
     <ul className="space-y-1">
-      {teams.map((team) => (
-        <li key={team.id} className="flex items-center gap-1.5 min-w-0">
-          <TeamLogo team={team} size="xs" />
-          <span className="text-xs font-medium truncate">{team.teamName}</span>
+      {rows.map(({ emoji, team }) => (
+        <li key={`${emoji}-${team.id}`} className="flex items-center gap-2 min-w-0">
+          <TeamLogo team={team} size="sm" />
+          <span className="text-xs font-medium truncate flex-1 min-w-0">{team.teamName}</span>
+          {/* Fixed square so your own reaction's ring is a true circle centered on the emoji. */}
+          <span
+            className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[15px] leading-none ${
+              team.isUser && emoji === mine ? 'ring-1 ring-primary' : ''
+            }`}
+          >
+            {emoji}
+          </span>
         </li>
       ))}
     </ul>
@@ -102,7 +133,6 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
   if (!onReact) return null;
   const { shown, overflow } = fitChips(groups, available);
   const closePopup = () => setPopup(null);
-  const whoGroup = popup?.kind === 'who' ? groups.find((g) => g.emoji === popup.emoji) : undefined;
   const ring = (emoji: string) => (emoji === item.myReaction ? 'ring-1 ring-primary' : '');
 
   return (
@@ -123,16 +153,23 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
         {overflow.length > 0 && (
           <button
             type="button"
-            onClick={(e) => setPopup({ kind: 'all', rect: e.currentTarget.getBoundingClientRect() })}
-            aria-label="All reactions"
-            className={`shrink-0 inline-flex items-center bg-bg-raised rounded-full pl-1.5 pr-1.5 py-0.5 ${overflow.some((g) => g.emoji === item.myReaction) ? 'ring-1 ring-primary' : ''}`}
+            onClick={(e) => setPopup({ kind: 'who', rect: e.currentTarget.getBoundingClientRect(), emoji: null })}
+            aria-label={`${overflow.reduce((n, g) => n + g.count, 0)} more reactions`}
+            className={`shrink-0 inline-flex items-center gap-1 bg-bg-raised rounded-full pl-1 pr-1.5 py-0.5 ${overflow.some((g) => g.emoji === item.myReaction) ? 'ring-1 ring-primary' : ''}`}
           >
-            {overflow.slice(0, 3).map((g, i) => (
-              <span key={g.emoji} className={`text-[12px] leading-4 ${i > 0 ? '-ml-1' : ''}`}>
-                {g.emoji}
-              </span>
-            ))}
-            <span className="ml-1 text-[10px] font-semibold text-text-muted tabular-nums">+{overflow.length}</span>
+            {/* Up to three emojis, each in its own small disc so the overlap reads as a stack, then how
+                many reactions are inside (people, not kinds). */}
+            <span className="inline-flex items-center">
+              {overflow.slice(0, 3).map((g, i) => (
+                <span
+                  key={g.emoji}
+                  className={`w-4 h-4 rounded-full bg-bg-card ring-1 ring-bg-raised flex items-center justify-center text-[10px] leading-none ${i > 0 ? '-ml-[5px]' : ''}`}
+                >
+                  {g.emoji}
+                </span>
+              ))}
+            </span>
+            <span className="text-[10px] font-semibold text-text-muted tabular-nums">{overflow.reduce((n, g) => n + g.count, 0)}</span>
           </button>
         )}
       </div>
@@ -171,26 +208,9 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
           </Suspense>
         </AnchoredPopover>
       )}
-      {popup?.kind === 'who' && whoGroup && (
-        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={200} align="start">
-          <p className="text-sm font-semibold mb-1.5">
-            {whoGroup.emoji} <span className="text-[11px] font-medium text-text-muted">{whoGroup.count}</span>
-          </p>
-          <ReactorList group={whoGroup} teamById={teamById} />
-        </AnchoredPopover>
-      )}
-      {popup?.kind === 'all' && (
-        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={236}>
-          <div className="space-y-2.5">
-            {groups.map((group) => (
-              <div key={group.emoji}>
-                <p className="text-sm font-semibold mb-1">
-                  {group.emoji} <span className="text-[11px] font-medium text-text-muted">{group.count}</span>
-                </p>
-                <ReactorList group={group} teamById={teamById} />
-              </div>
-            ))}
-          </div>
+      {popup?.kind === 'who' && (
+        <AnchoredPopover anchor={popup.rect} onClose={closePopup} width={224} maxHeight={300}>
+          <ReactionsSheet groups={groups} teamById={teamById} initial={popup.emoji} mine={item.myReaction} />
         </AnchoredPopover>
       )}
     </div>
@@ -321,6 +341,12 @@ function SkunkedWeekCard({
   const team = league.teams.find((t) => t.id === post.teamId);
   const quip = SKUNK_QUIPS[[...post.teamId].reduce((n, c) => n + c.charCodeAt(0), 0) % SKUNK_QUIPS.length];
   const lost = post.pl.startsWith('-');
+  // The week's loss follows the P/L colors setting, scaled against that week's worst score.
+  const plStyle = usePlStyle();
+  const skunkWeek = Number(post.weekLabel.match(/(\d+)/)?.[1]);
+  const skunkAmount = signedAmount(post.pl);
+  const skunkScaled =
+    lost && Number.isInteger(skunkWeek) && !Number.isNaN(skunkAmount) ? plStyle(skunkAmount, weekScaleRef(league, skunkWeek)) : undefined;
   return (
     <Card dense className="pl-slip pl-slip-l pl-slip-r pl-skunk space-y-1">
       <div className="flex flex-col items-center text-center">
@@ -340,7 +366,9 @@ function SkunkedWeekCard({
             {post.record}
             <span className="text-[8px] font-semibold uppercase tracking-wide text-text-muted">W-L</span>
           </span>
-          <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${lost ? 'bg-loss/15 text-loss' : 'bg-black/30 text-text'}`}>{post.pl}</span>
+          <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${lost ? 'bg-loss/15 text-loss' : 'bg-black/30 text-text'}`} style={scaledPillStyle(skunkScaled)}>
+            {post.pl}
+          </span>
         </div>
       </div>
       <div className="flex items-center justify-between">
@@ -393,7 +421,7 @@ function NewsCard({
   const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;
   const showPin = isAnnouncement && (canPin || item.pinned);
   return (
-    <Card className={`flex items-start gap-2.5 ${item.pinned ? 'ring-1 ring-gold/40' : ''}`}>
+    <Card className={`flex items-start gap-2.5 ${item.pinned ? 'ring-1 ring-pin/40' : ''}`}>
       {isAnnouncement ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>}
       <div className="min-w-0 flex-1">
         {(label || showPin) && (
@@ -403,14 +431,14 @@ function NewsCard({
               (canPin && onTogglePin ? (
                 <button
                   onClick={() => onTogglePin(item)}
-                  className={`shrink-0 p-0.5 -mr-0.5 -mt-0.5 ${item.pinned ? 'text-gold' : 'text-text-muted/50 hover:text-text-muted'}`}
+                  className={`shrink-0 p-0.5 -mr-0.5 -mt-0.5 ${item.pinned ? 'text-pin' : 'text-text-muted/50 hover:text-text-muted'}`}
                   aria-label={item.pinned ? 'Unpin announcement' : 'Pin announcement'}
                   aria-pressed={!!item.pinned}
                 >
                   <Pin size={14} fill={item.pinned ? 'currentColor' : 'none'} />
                 </button>
               ) : (
-                <span className="shrink-0 text-gold" aria-label="Pinned">
+                <span className="shrink-0 text-pin" aria-label="Pinned">
                   <Pin size={14} fill="currentColor" />
                 </span>
               ))}
@@ -463,17 +491,36 @@ function HighlightedExtra({ text }: { text: string }) {
  * sentence. Takes the already-formatted text rather than a raw number since most
  * callers already have a formatSigned()'d string straight from momentExtra --
  * color is inferred from its leading sign. */
-function AmountPill({ text, negative, size = 'md' }: { text: string; negative?: boolean; size?: 'sm' | 'md' }) {
+function AmountPill({ text, negative, size = 'md', scaled }: { text: string; negative?: boolean; size?: 'sm' | 'md'; scaled?: CSSProperties }) {
   // Defaults to sniffing a leading +/- sign, which works for every dollar-amount
   // caller (formatSigned always produces one) -- callers with no sign of their own
   // to sniff (the W/L streak pill) pass `negative` explicitly instead.
   const isNegative = negative ?? text.trim().startsWith('-');
   const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5';
   return (
-    <span className={`inline-flex items-center font-bold rounded-full whitespace-nowrap ${isNegative ? 'bg-loss/20 text-loss' : 'bg-profit/20 text-profit'} ${sizeClass}`}>
+    <span
+      className={`inline-flex items-center font-bold rounded-full whitespace-nowrap ${isNegative ? 'bg-loss/20 text-loss' : 'bg-profit/20 text-profit'} ${sizeClass}`}
+      style={scaledPillStyle(scaled)}
+    >
       {text}
     </span>
   );
+}
+
+/** A scaled loss color (P/L colors: Scaled) as a pill: that color for the text and a 20% wash of it
+ * for the fill, matching the classic red pill's recipe. Undefined keeps the classic look. */
+function scaledPillStyle(scaled: CSSProperties | undefined): CSSProperties | undefined {
+  const color = scaled?.color;
+  if (!color) return undefined;
+  return { color, backgroundColor: `color-mix(in oklab, ${color} 20%, transparent)` };
+}
+
+/** "-$13.78" -> -13.78 (NaN for anything that isn't a signed dollar amount). */
+function signedAmount(text: string): number {
+  const m = text.trim().match(/^([+-])\$([\d,]+(?:\.\d+)?)$/);
+  if (!m) return Number.NaN;
+  const n = Number(m[2].replace(/,/g, ''));
+  return m[1] === '-' ? -n : n;
 }
 
 /** Splits settle-week's ticket-style moment extra -- "<bet> @ <odds>, $<stake>
@@ -527,6 +574,16 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
   const isStreak = !!extra && (category === 'hottestBettor' || category === 'coldestBettor') && /^[WL]\d+$/.test(extra);
   const swingParts = category === 'biggestSwing' && extra?.includes(' → ') ? extra.split(' → ') : null;
   const isPlainAmount = !!extra && /^[+-]\$[\d,]+\.\d{2}$/.test(extra);
+  // Week-total amounts (a team's whole-week score) follow the P/L colors setting, scaled against that
+  // week's worst score like the matchup screens. Single-bet results (the ticket categories) keep the
+  // classic red, the same as a bet everywhere else.
+  const plStyle = usePlStyle();
+  const weekNum = Number(item.momentWeek);
+  const refFor = (week: number) => (Number.isInteger(week) && week > 0 ? weekScaleRef(league, week) : 0);
+  const scaledFor = (text: string, week: number) => {
+    const amount = signedAmount(text);
+    return Number.isNaN(amount) ? undefined : plStyle(amount, refFor(week));
+  };
 
   return (
     <div className="bg-bg-card border border-border rounded-xl p-2 space-y-1">
@@ -564,12 +621,13 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
         <AmountPill text={extra!} negative={extra!.startsWith('L')} size="sm" />
       ) : swingParts ? (
         <div className="flex items-center gap-1.5">
-          <AmountPill text={swingParts[0]} size="sm" />
+          {/* The swing runs from last week's score to this week's, each scaled against its own week. */}
+          <AmountPill text={swingParts[0]} size="sm" scaled={scaledFor(swingParts[0], weekNum - 1)} />
           <span className="text-[10px] text-text-muted">→</span>
-          <AmountPill text={swingParts[1]} size="sm" />
+          <AmountPill text={swingParts[1]} size="sm" scaled={scaledFor(swingParts[1], weekNum)} />
         </div>
       ) : isPlainAmount ? (
-        <AmountPill text={extra!} />
+        <AmountPill text={extra!} scaled={scaledFor(extra!, weekNum)} />
       ) : (
         extra && (
           <p className="text-xs font-medium">

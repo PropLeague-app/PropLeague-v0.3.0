@@ -47,7 +47,7 @@ const LOGO_STEP = 10; // logos overlap
 const MORE_TEXT = 16;
 const COUNT_TEXT = 12;
 export const CHIP_ROW_GAP = 4;
-export const STACK_WIDTH = 58;
+export const STACK_WIDTH = 64;
 /** Logos shown on one chip before "+n". */
 export const CHIP_LOGOS = 2;
 

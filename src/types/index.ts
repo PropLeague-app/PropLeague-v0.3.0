@@ -728,10 +728,10 @@ export interface UserProfile {
   matchupDetailMode?: MatchupDetailMode;
   /** How negative P/L is colored: 'classic' (any loss is red) or 'scaled' (tinted by how big the
    * loss is against what was at risk). Local per-device like the two above; undefined means classic. */
-  plColorScale?: 'classic' | 'scaled';
+  plColorScale?: 'classic' | 'scaled' | 'mono';
   /** Accent color for primary buttons, selected pills and links (engine/themes.ts). Local per-device like
    * themeMode; undefined means blue, the original. */
-  accentColor?: 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold';
+  accentColor?: 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold' | 'mono';
 }
 
 // --- Validation --------------------------------------------------------------

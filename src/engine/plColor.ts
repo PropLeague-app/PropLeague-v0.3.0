@@ -14,7 +14,10 @@
 import type { CSSProperties } from 'react';
 import type { League, LeagueSettings } from '../types';
 
-export type PlColorScale = 'classic' | 'scaled';
+/** 'mono' (1.2.10): team totals in plain text color, the +/- sign carrying the meaning and losses a
+ * touch dimmer. Like 'scaled' it only reaches the totals that go through plStyleFor; a single bet's
+ * result and the Won/Lost status pills keep green and red so a lineup still scans at a glance. */
+export type PlColorScale = 'classic' | 'scaled' | 'mono';
 
 /** A loss this share of what was at risk counts as "full red" at the least, so a week where
  * the worst score is only a few dollars down stays yellow instead of painting a small dip red. */
@@ -52,6 +55,7 @@ export function lossColor(intensity: number): string {
 /** Inline style that overrides the default green/red class for a scaled loss, or undefined
  * when the classic look should apply (classic mode, a gain, or no basis to scale against). */
 export function plStyleFor(amount: number, scale: PlColorScale, reference: number): CSSProperties | undefined {
+  if (scale === 'mono') return monoStyle(amount);
   if (scale !== 'scaled' || !(amount < 0) || !(reference > 0)) return undefined;
   return { color: lossColor(lossIntensity(amount, reference)) };
 }
@@ -92,4 +96,16 @@ export function seasonScaleRef(league: Pick<League, 'standings' | 'settings'>): 
   const worst = -Math.min(0, ...league.standings.map((s) => s.totalPL));
   const weeks = Math.max(0, ...league.standings.map((s) => s.wins + s.losses + s.ties));
   return scaleReference(worst, seasonAtRisk(weeks, league.settings));
+}
+
+/** Mono P/L: gains in the body text color, losses in the muted text color, zero left alone. */
+export function monoColor(amount: number): string | undefined {
+  if (amount > 0) return 'var(--color-text)';
+  if (amount < 0) return 'var(--color-text-muted)';
+  return undefined;
+}
+
+function monoStyle(amount: number): CSSProperties | undefined {
+  const color = monoColor(amount);
+  return color ? { color } : undefined;
 }

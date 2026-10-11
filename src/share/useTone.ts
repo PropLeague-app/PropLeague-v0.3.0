@@ -1,5 +1,5 @@
 import { usePlColorScale } from '../components/common/usePlStyle';
-import { lossColor, lossIntensity } from '../engine/plColor';
+import { lossColor, lossIntensity, monoColor } from '../engine/plColor';
 import { C } from './palette';
 
 /** Gives share cards the same P/L coloring the screens use: green for a gain, and for a loss either
@@ -9,6 +9,8 @@ import { C } from './palette';
 export function useTone(): (amount: number, ref?: number) => string {
   const scale = usePlColorScale();
   return (amount: number, ref?: number) => {
+    // Mono: the same plain text colors as the screens (zero falls through to the usual look).
+    if (scale === 'mono' && amount !== 0) return monoColor(amount) === 'var(--color-text)' ? C.text : C.muted;
     if (!(amount < 0)) return C.profit;
     if (scale === 'scaled' && ref != null && ref > 0) return lossColor(lossIntensity(amount, ref));
     return C.loss;

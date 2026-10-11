@@ -1,7 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigationType } from 'react-router-dom';
 import { BOTTOM_TAB_BAR_HEIGHT, BottomTabBar } from './BottomTabBar';
+import { useAppStore } from '../../store/useAppStore';
+import {
+  noteShellLocation,
+  registerShellScroller,
+  saveShellScroll,
+  savedShellScroll,
+  scrollShellToTop,
+  shellNavState,
+} from './shellNav';
 
 export function MobileShell({ children }: { children: ReactNode }) {
   // MobileShell wraps <Outlet/> at the layout-route level, so this component
@@ -11,12 +20,41 @@ export function MobileShell({ children }: { children: ReactNode }) {
   // scrolling partway down one screen and then navigating carried that same
   // scroll offset into the next screen instead of starting at the top.
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
+  const navigationType = useNavigationType();
+  const currentLeagueId = useAppStore((s) => s.currentLeagueId);
+  // Which screen a scroll event belongs to (updated on render, before the new screen's scroll events).
+  const pathRef = useRef(pathname);
+  pathRef.current = pathname;
 
   useEffect(() => {
-    // Default (omitted) behavior is 'auto', i.e. an immediate jump -- not
-    // 'smooth' -- so this doesn't visibly animate on every navigation.
-    scrollRef.current?.scrollTo({ top: 0, left: 0 });
+    registerShellScroller(scrollRef.current);
+    return () => registerShellScroller(null);
+  }, []);
+
+  useEffect(() => {
+    noteShellLocation(pathname, currentLeagueId);
+    const el = scrollRef.current;
+    if (!el) return;
+    // Back, or a tab reopening a remembered screen (shellNav.ts), returns to where you were on that
+    // screen. Everything else starts at the top. Default (omitted) behavior is 'auto', i.e. an
+    // immediate jump -- not 'smooth' -- so this doesn't visibly animate on every navigation.
+    const restore = navigationType === 'POP' || !!shellNavState(location.state).restoreScroll;
+    const target = restore ? savedShellScroll(pathname) : 0;
+    el.scrollTo({ top: target, left: 0 });
+    if (target === 0) return;
+    // The screen may still be filling in, so keep trying for a few frames until it is tall enough.
+    let frames = 0;
+    let raf = 0;
+    const retry = () => {
+      if (el.scrollTop >= target - 1 || ++frames > 20) return;
+      el.scrollTo({ top: target, left: 0 });
+      raf = requestAnimationFrame(retry);
+    };
+    raf = requestAnimationFrame(retry);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   return (
@@ -28,7 +66,8 @@ export function MobileShell({ children }: { children: ReactNode }) {
          * uses that same color so it reads as one continuous bar with whatever
          * header sits right below it in the scroll content, instead of a gap of
          * the page's darker base color sitting between the header and the notch. */}
-        <div className="shrink-0 bg-bg-raised" style={{ height: 'env(safe-area-inset-top)' }} />
+        {/* Tapping it scrolls to the top, like tapping the status bar in a native iOS app. */}
+        <div className="shrink-0 bg-bg-raised" style={{ height: 'env(safe-area-inset-top)' }} onClick={scrollShellToTop} />
         {/* min-h-0 overrides flexbox's default min-height:auto on flex items,
          * which otherwise refuses to let this shrink below its own content's
          * height -- without it, this div (and everything above it, all the way
@@ -42,6 +81,7 @@ export function MobileShell({ children }: { children: ReactNode }) {
          * extra space below the last scrolled item on every screen. */}
         <div
           ref={scrollRef}
+          onScroll={(e) => saveShellScroll(pathRef.current, e.currentTarget.scrollTop)}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
           style={{ paddingBottom: `calc(${BOTTOM_TAB_BAR_HEIGHT + 16}px + env(safe-area-inset-bottom))` }}
         >

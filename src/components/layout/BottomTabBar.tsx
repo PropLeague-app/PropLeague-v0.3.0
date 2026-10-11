@@ -1,10 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { House, ClipboardList, CalendarDays, Settings } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
 import { validateLineup } from '../../engine/validation';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { usePendingVoidRequests } from '../../hooks/usePendingVoidRequests';
+import { inTabSection, isMemoryTab, resetTabMemory, scrollShellToTop, tabReopenPath, type ShellNavState } from './shellNav';
 
 // Simple, uniform line icons rather than emoji -- lucide-react has no
 // dedicated American football icon, so NFL Slate uses a calendar instead,
@@ -53,13 +54,41 @@ export function BottomTabBar() {
   // app has no data-router set up (plain <Routes>), so react-router's navigation
   // blockers aren't available; intercepting the tab bar itself covers the actual way
   // someone leaves the Settings tab mid-edit.
-  function handleClick(e: React.MouseEvent) {
-    if (!hasUnsavedChanges) return;
+  function confirmLeave(e: React.MouseEvent): boolean {
+    if (!hasUnsavedChanges) return true;
     if (!confirm('You have unsaved changes. Discard them?')) {
       e.preventDefault();
-      return;
+      return false;
     }
     setHasUnsavedChanges(false);
+    return true;
+  }
+
+  // Tab taps (shellNav.ts):
+  // - The tab you are already in goes back to its default view (NFL Slate: the list for the current
+  //   week; League Home: the home page), and on that view scrolls to the top.
+  // - NFL Slate and League Home reopen where you left them (an open game or matchup), with the scroll
+  //   position, until the app is quit.
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const setSlateWeek = useUIStore((s) => s.setSlateWeek);
+  function handleClick(e: React.MouseEvent, to: string) {
+    if (!confirmLeave(e)) return;
+    if (inTabSection(to, pathname)) {
+      if (isMemoryTab(to)) resetTabMemory(to);
+      if (to === '/slate') setSlateWeek(null);
+      if (pathname === to) {
+        e.preventDefault();
+        scrollShellToTop();
+      }
+      return;
+    }
+    if (isMemoryTab(to)) {
+      e.preventDefault();
+      const target = tabReopenPath(to, currentLeagueId);
+      const state: ShellNavState = { restoreScroll: true, fromTab: target !== to };
+      navigate(target, { state });
+    }
   }
 
   return (
@@ -74,10 +103,10 @@ export function BottomTabBar() {
         <NavLink
           key={tab.to}
           to={tab.to}
-          onClick={handleClick}
+          onClick={(e) => handleClick(e, tab.to)}
           className={({ isActive }) =>
             `flex-1 flex flex-col items-center justify-center gap-0.5 text-xs ${
-              isActive ? 'text-primary' : 'text-text-muted'
+              isActive || inTabSection(tab.to, pathname) ? 'text-primary' : 'text-text-muted'
             }`
           }
         >

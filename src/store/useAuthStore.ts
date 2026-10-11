@@ -111,7 +111,7 @@ function restoreLocalState(userId: string) {
       themeMode?: ThemeMode;
       accentColor?: UserProfile['accentColor'];
       matchupDetailMode?: MatchupDetailMode;
-      plColorScale?: 'classic' | 'scaled';
+      plColorScale?: 'classic' | 'scaled' | 'mono';
       lastSeenChatByLeague?: Record<string, string>;
       seenMatchupResultIds?: Record<string, true>;
     };

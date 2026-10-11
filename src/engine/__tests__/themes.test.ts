@@ -44,6 +44,12 @@ function hue(hex: string): number {
   if (h < 0) h += 360;
   return h;
 }
+/** How colorful a color is (0 = gray): hue checks mean nothing for a gray like the Mono accent. */
+function saturation(hex: string): number {
+  const v = rgb(hex).map((x) => x / 255);
+  return Math.max(...v) - Math.min(...v);
+}
+const onPrimaryFor = (a: (typeof ACCENTS)[number], tone: 'light' | 'dark') => (tone === 'light' ? (a.onPrimaryLight ?? a.onPrimary) : a.onPrimary);
 function contrast(a: string, b: string): number {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
@@ -93,6 +99,7 @@ describe('accents', () => {
       expect(dark['--color-primary']).toBe(a.dark.primary);
       expect(dark['--color-primary-ink']).toBe(a.dark.ink);
       expect(dark['--color-on-primary']).toBe(a.onPrimary);
+      if (a.onPrimaryLight) expect(light['--color-on-primary']).toBe(a.onPrimaryLight);
       expect(light['--color-primary']).toBe(a.light.primary);
       expect(light['--color-primary-ink']).toBe(a.light.ink);
     }
@@ -106,7 +113,7 @@ describe('accents', () => {
         const label = `${a.id} on ${t.id}`;
         expect(contrast(ink, softButton), `${label}: soft button text`).toBeGreaterThanOrEqual(4.5);
         expect(contrast(primary, t.card), `${label}: primary on card`).toBeGreaterThanOrEqual(3);
-        expect(contrast(a.onPrimary, primary), `${label}: text on a solid fill`).toBeGreaterThanOrEqual(3);
+        expect(contrast(onPrimaryFor(a, t.tone), primary), `${label}: text on a solid fill`).toBeGreaterThanOrEqual(3);
       }
     }
   });
@@ -114,6 +121,7 @@ describe('accents', () => {
   it('keep the purple action color (Void Requests, scheduled changes) distinct from the accent', () => {
     for (const a of ACCENTS) {
       for (const tone of ['dark', 'light'] as const) {
+        if (saturation(a[tone].primary) < 0.1) continue; // a gray accent cannot share a hue with anything
         const secondary = a.secondary?.[tone] ?? DEFAULT_SECONDARY;
         const gap = Math.abs(hue(a[tone].primary) - hue(secondary));
         expect(Math.min(gap, 360 - gap), `${a.id} ${tone}`).toBeGreaterThanOrEqual(40);
@@ -130,6 +138,7 @@ describe('accents', () => {
   it('never use green or red, which mean profit and loss', () => {
     for (const a of ACCENTS) {
       for (const hex of [a.dark.primary, a.light.primary]) {
+        if (saturation(hex) < 0.1) continue; // gray (Mono) is neither green nor red
         const [r, g, b] = rgb(hex).map((v) => v / 255);
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);

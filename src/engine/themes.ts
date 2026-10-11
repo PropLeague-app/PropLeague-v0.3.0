@@ -38,7 +38,7 @@ export function themeTone(theme: ResolvedTheme): Tone {
   return THEME_BY_ID[theme]?.tone ?? 'dark';
 }
 
-export type AccentColor = 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold';
+export type AccentColor = 'blue' | 'teal' | 'indigo' | 'purple' | 'orange' | 'gold' | 'mono';
 
 export interface AccentDef {
   id: AccentColor;
@@ -48,6 +48,8 @@ export interface AccentDef {
   light: { primary: string; ink: string };
   /** Text on a solid primary fill (--color-on-primary). */
   onPrimary: string;
+  /** On light themes, when it differs (Mono flips from light gray to near-black). */
+  onPrimaryLight?: string;
   /** Replaces --color-accent (the purple of the Void Requests card, scheduled-change badges and voided
    * picks) when the accent itself is purple-ish, so those still stand apart from the buttons. */
   secondary?: { dark: string; light: string };
@@ -64,6 +66,7 @@ export const ACCENTS: AccentDef[] = [
   { id: 'purple', label: 'Purple', dark: { primary: '#b16cf7', ink: '#dfc0ff' }, light: { primary: '#8b3fd9', ink: '#6d22b8' }, onPrimary: '#ffffff', secondary: { dark: '#2cc5b4', light: '#0d8f83' } },
   { id: 'orange', label: 'Orange', dark: { primary: '#f7853a', ink: '#ffc49c' }, light: { primary: '#d4600f', ink: '#8a3a06' }, onPrimary: '#1c1006' },
   { id: 'gold', label: 'Gold', dark: { primary: '#e8b923', ink: '#fbe08a' }, light: { primary: '#a67e00', ink: '#6b5200' }, onPrimary: '#1d1a12' },
+  { id: 'mono', label: 'Mono', dark: { primary: '#d4d6dc', ink: '#f1f2f5' }, light: { primary: '#2b2f37', ink: '#1b1e24' }, onPrimary: '#16171a', onPrimaryLight: '#ffffff' },
 ];
 
 export const ACCENT_BY_ID = Object.fromEntries(ACCENTS.map((a) => [a.id, a])) as Record<AccentColor, AccentDef>;
