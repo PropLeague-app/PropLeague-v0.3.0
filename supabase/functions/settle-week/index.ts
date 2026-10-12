@@ -55,6 +55,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { normalizePlayerName } from '../_shared/playerNameMatch.ts';
+import { dnpVoidDecision, teamFromPlayerId } from '../_shared/dnpVoid.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
 import {
   computeRealWeeklyMoments,
@@ -587,6 +588,15 @@ Deno.serve(async (req) => {
     // wagers.player_name and real_player_stats.player_name come from two
     // different upstream sources that don't always agree on formatting.
     const statByPlayerName = new Map<string, StatRow>((statRows ?? []).map((r: StatRow) => [normalizePlayerName(r.player_name), r]));
+    // How many players each NFL team already has ingested this week. A player with no row whose own
+    // teammates are all in did not play, which is a far better DNP signal than a timer (_shared/dnpVoid).
+    const statRowsByTeam = new Map<string, number>();
+    // Read off the raw rows, not StatRow: that type is indexed by STAT_FIELD for the numeric stats,
+    // and a string member on it makes every one of those lookups non-numeric.
+    for (const r of (statRows ?? []) as Array<{ recent_team?: string | null }>) {
+      const team = (r.recent_team ?? '').toUpperCase();
+      if (team) statRowsByTeam.set(team, (statRowsByTeam.get(team) ?? 0) + 1);
+    }
 
     // Manual backfill escape hatch (see chat, Sept 2026 -- generating Week 1 Moments
     // after leagues had already advanced past it): normally this only ever matches a
@@ -772,7 +782,6 @@ Deno.serve(async (req) => {
           const isPlayerMarket = wager.market_key !== 'h2h' && wager.market_key !== 'spreads' && wager.market_key !== 'totals';
           if (isPlayerMarket && !stat) {
             const finalSinceMs = game.final_since ? new Date(game.final_since).getTime() : null;
-            const gracePassed = finalSinceMs != null && now - finalSinceMs >= VOID_GRACE_MS;
             // Voiding requires EITHER the 24h hard ceiling off this game's own
             // final_since, OR the same Tuesday-morning reveal gate as weekComplete (see
             // RESULTS_REVEAL_CUTOFF_HOUR_ET/pastResultsRevealCutoff above) -- whichever
@@ -797,13 +806,20 @@ Deno.serve(async (req) => {
             // week) but still a meaningful guard against voiding too fast if this ever
             // runs somewhere that isn't wall-clock-normal (a manual forceLeagueId
             // backfill, say).
-            const hardCeilingPassed = finalSinceMs != null && now - finalSinceMs >= VOID_HARD_CEILING_MS;
-            const longEnoughToVoid = gracePassed && (hardCeilingPassed || pastResultsRevealCutoff(new Date(now)));
-            if (!longEnoughToVoid) {
-              const reason = !gracePassed
-                ? 'no-stat-row (within 3h grace)'
-                : 'no-stat-row (within 24h ceiling, waiting for Tuesday reveal)';
-              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason });
+            // Both time rules above are kept, with one addition in front of them: if this player's
+            // own teammates are already ingested for the week, the box score is in and he did not
+            // play, so there is nothing left to wait for (see _shared/dnpVoid.ts).
+            const playerTeam = teamFromPlayerId(wager.player_id);
+            const decision = dnpVoidDecision({
+              msSinceFinal: finalSinceMs == null ? null : now - finalSinceMs,
+              playerTeam,
+              teamStatRows: playerTeam ? (statRowsByTeam.get(playerTeam) ?? 0) : 0,
+              pastRevealCutoff: pastResultsRevealCutoff(new Date(now)),
+              graceMs: VOID_GRACE_MS,
+              hardCeilingMs: VOID_HARD_CEILING_MS,
+            });
+            if (!decision.shouldVoid) {
+              skipped.push({ wagerId: wager.id, playerName: wager.player_name ?? null, marketKey: wager.market_key, reason: decision.reason });
               continue; // stat not ingested yet -- could still be a transient gap, leave pending a while longer
             }
             // Game's been final for VOID_GRACE_MS with still no stat row for this

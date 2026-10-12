@@ -1,4 +1,7 @@
-import type { PoolWeekEntry, PrizePool, WeekId } from '../types';
+import type { League, PoolWeekEntry, PrizePool, WeekId } from '../types';
+import { rosterKey } from './rosterSlots';
+import { computeWeeklyScore } from './scoring';
+import { activeMultipliers, advancePoolForWeek, poolTeamCount } from './prizePool';
 
 // Reading the prize pool's stored history (1.2.11): who moved it in a given week, who has moved it most
 // all season, and the week that moved it most. Weeks saved before 1.2.11 have no per-team detail; the
@@ -82,4 +85,43 @@ export function teamWeeklyImpact(pool: Pick<PrizePool, 'history'> | null | undef
 export function findWeek(pool: Pick<PrizePool, 'history'> | null | undefined, week: WeekId | string | null): PoolWeekEntry | undefined {
   if (week == null) return undefined;
   return pool?.history.find((h) => String(h.week) === String(week));
+}
+
+/**
+ * The week in progress as a provisional pool entry, so someone opening the Prize Pool mid-week sees
+ * where it stands rather than a chart that stops at the last settled week (see chat, Oct 2026).
+ *
+ * The same math a closed week gets: each team's weekly score so far, run through advancePoolForWeek
+ * with the live multipliers. The only difference is that the scores are partial, since picks are
+ * still settling, so this moves with every result and is never written to the stored history.
+ *
+ * Null when there is nothing honest to show: the pool is locked, this week has already closed (its
+ * real entry is in the history), or not one pick has settled yet.
+ */
+export function liveWeekEntry(league: League, pool: PrizePool | null | undefined): PoolWeekEntry | null {
+  if (!pool || pool.locked) return null;
+  const week = league.currentWeek;
+  if (pool.history.some((h) => String(h.week) === String(week))) return null;
+
+  const humans = new Set(league.teams.filter((t) => !t.isSimulated).map((t) => t.id));
+  const humansOnly = league.settings.aiTeamsAffectPool === false && humans.size > 0;
+  const teams = humansOnly ? league.teams.filter((t) => humans.has(t.id)) : league.teams;
+
+  const scores = new Map<string, number>();
+  let anySettled = false;
+  for (const team of teams) {
+    const roster = league.rostersByTeamWeek[rosterKey(team.id, week)];
+    if (!roster) continue;
+    if (roster.slots.some((s) => s.wager && s.wager.status !== 'pending')) anySettled = true;
+    scores.set(team.id, computeWeeklyScore(roster, league.settings));
+  }
+  if (!anySettled) return null;
+
+  const advanced = advancePoolForWeek(pool, week, scores, league.settings, poolTeamCount(league), activeMultipliers(league));
+  return advanced.history[advanced.history.length - 1] ?? null;
+}
+
+/** The pool as the screen should draw it: the stored history, plus the week in progress on the end. */
+export function poolWithLiveWeek(pool: PrizePool, live: PoolWeekEntry | null): PrizePool {
+  return live ? { ...pool, history: [...pool.history, live] } : pool;
 }

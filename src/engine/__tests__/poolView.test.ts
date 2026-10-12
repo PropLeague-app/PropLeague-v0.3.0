@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PrizePool } from '../../types';
-import { biggestSwing, findWeek, poolHasDetail, poolHighlights, seasonImpacts, teamWeeklyImpact, weekImpacts } from '../poolView';
+import { DEFAULT_LEAGUE_SETTINGS, type League, type PrizePool } from '../../types';
+import { biggestSwing, findWeek, liveWeekEntry, poolHasDetail, poolHighlights, poolWithLiveWeek, seasonImpacts, teamWeeklyImpact, weekImpacts } from '../poolView';
 
 const pool: PrizePool = {
   initial: 100,
@@ -58,5 +58,73 @@ describe('highlights and one team week by week', () => {
       { week: 2, impact: -1, multiplier: 1 },
     ]);
     expect(teamWeeklyImpact(pool, 'nobody')).toEqual([]);
+  });
+});
+
+describe('the week still being played', () => {
+  // A minimal league: two human teams, one roster each for the current week.
+  function leagueWith(slots: { settled: number | null; stake: number }[][]): League {
+    const teams = ['a', 'b'].map((id, i) => ({ id, teamName: id, abbrev: id, isUser: i === 0, isSimulated: false }) as never);
+    const roster = (teamId: string, picks: { settled: number | null; stake: number }[]) => ({
+      week: 4 as const,
+      teamId,
+      submitted: true,
+      slots: picks.map((p, i) => ({
+        slotId: `QB-${i}`,
+        position: 'QB',
+        wager: {
+          id: `w${i}`,
+          slotId: `QB-${i}`,
+          gameId: 'g',
+          marketKey: 'h2h',
+          side: 'X',
+          oddsAtPlacement: -110,
+          stake: p.stake,
+          placedAt: '',
+          status: p.settled == null ? 'pending' : 'won',
+          settledProfit: p.settled,
+        },
+      })),
+    });
+    return {
+      id: 'L',
+      currentWeek: 4,
+      teams,
+      settings: { ...DEFAULT_LEAGUE_SETTINGS, buyInEnabled: true, buyInAmount: 1000, lineupSlots: { QB: slots[0].length } },
+      standings: [],
+      rostersByTeamWeek: { 'a:4': roster('a', slots[0]), 'b:4': roster('b', slots[1]) },
+    } as unknown as League;
+  }
+
+  const livePool: PrizePool = { initial: 100, current: 100, locked: false, history: [] };
+
+  it('builds a provisional entry once anything has settled', () => {
+    const league = leagueWith([[{ settled: 20, stake: 10 }], [{ settled: -10, stake: 10 }]]);
+    const entry = liveWeekEntry(league, livePool);
+    expect(entry).not.toBeNull();
+    expect(entry?.week).toBe(4);
+    expect(entry?.byTeam?.a?.impact).toBeGreaterThan(0);
+    expect(entry?.byTeam?.b?.impact).toBeLessThan(0);
+  });
+
+  it('shows nothing until a pick has actually settled', () => {
+    const league = leagueWith([[{ settled: null, stake: 10 }], [{ settled: null, stake: 10 }]]);
+    expect(liveWeekEntry(league, livePool)).toBeNull();
+  });
+
+  it('shows nothing once that week is in the stored history, or when the pool is locked', () => {
+    const league = leagueWith([[{ settled: 20, stake: 10 }], [{ settled: -10, stake: 10 }]]);
+    const settled: PrizePool = { ...livePool, history: [{ week: 4, poolBefore: 100, poolAfter: 101, netRealPL: 1 }] };
+    expect(liveWeekEntry(league, settled)).toBeNull();
+    expect(liveWeekEntry(league, { ...livePool, locked: true })).toBeNull();
+  });
+
+  it('hangs the provisional entry on the end of the history without touching the stored one', () => {
+    const league = leagueWith([[{ settled: 20, stake: 10 }], [{ settled: -10, stake: 10 }]]);
+    const entry = liveWeekEntry(league, livePool)!;
+    const view = poolWithLiveWeek(livePool, entry);
+    expect(view.history).toHaveLength(1);
+    expect(livePool.history).toHaveLength(0);
+    expect(poolWithLiveWeek(livePool, null).history).toHaveLength(0);
   });
 });

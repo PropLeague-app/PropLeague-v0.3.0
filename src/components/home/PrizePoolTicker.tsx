@@ -4,13 +4,18 @@ import type { PrizePool } from '../../types';
 import { formatCents } from '../../engine/oddsMath';
 import { usePlStyle } from '../common/usePlStyle';
 
-/** One compact line on League Home: the pool now, how far it has moved, and a tap through to the full
- * screen. The amount stays plain unless the pool is actually above what the league bought in for. */
+/** One compact line on League Home: the pool now, how far it has moved in dollars and as a share of
+ * what the league bought in for, and a tap through to the full screen. The amount stays plain unless
+ * the pool is actually above what the league bought in for. */
 export function PrizePoolTicker({ pool }: { pool: PrizePool }) {
   const navigate = useNavigate();
   const plStyle = usePlStyle();
   const delta = pool.current - pool.initial;
   const up = pool.current > pool.initial;
+  // The same percentage the Prize Pool screen leads with, so the two agree at a glance. Dropped when
+  // there is nothing to compare against, and when it would read as 0% on a move that is not zero.
+  const pct = pool.initial > 0 ? Math.round((delta / pool.initial) * 100) : 0;
+  const showPct = pool.initial > 0 && (pct !== 0 || delta === 0);
   return (
     <button
       type="button"
@@ -28,6 +33,7 @@ export function PrizePoolTicker({ pool }: { pool: PrizePool }) {
       >
         {delta >= 0 ? '+' : ''}
         {formatCents(delta)}
+        {showPct && <span className="font-medium opacity-70"> ({pct > 0 ? '+' : ''}{pct}%)</span>}
       </span>
       <span className="flex-1" />
       {pool.locked && <Lock size={12} className="text-text-muted shrink-0" />}
