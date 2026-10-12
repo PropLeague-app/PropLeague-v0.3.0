@@ -255,20 +255,20 @@ function RichText({ text }: { text: string }) {
           return color ? (
             <span
               key={i}
-              className="font-semibold rounded px-1 py-px"
+              className="font-semibold rounded-[3px] px-[3px]"
               style={{ color, backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)` }}
             >
               {seg.text}
             </span>
           ) : (
-            <span key={i} className="font-semibold text-accent bg-accent/15 rounded px-1 py-px">
+            <span key={i} className="font-semibold text-accent bg-accent/15 rounded-[3px] px-[3px]">
               {seg.text}
             </span>
           );
         }
         if (seg.style === 'italic') {
           return (
-            <em key={i} className="text-text-muted">
+            <em key={i} className="text-[11px] text-text-muted">
               {seg.text}
             </em>
           );
@@ -470,7 +470,10 @@ function NewsCard({
               ))}
           </div>
         )}
-        <p className="text-sm">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
+        {/* Sized against MomentCard (12px title, 9px label) so a feed of announcements and moments
+            reads as one list instead of two. Was text-sm, which made a highlighted player name and
+            an italic note tower over the moment cards beside them (see chat, Oct 2026). */}
+        <p className="text-xs leading-relaxed">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
         <div className="flex items-center justify-between mt-0.5">
           <p className="shrink-0 text-[11px] text-text-muted">
             {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}

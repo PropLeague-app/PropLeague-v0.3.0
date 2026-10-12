@@ -418,7 +418,7 @@ export function BetSlipSheet({
             <>
               <NumericKeypad onKey={onKey} onEnter={() => void confirm()} onEscape={onClose} />
 
-              <div className="flex items-stretch gap-2">
+              <div className="flex items-stretch gap-1.5">
                 {/* Left of Add to Roster, share-button sized: a side door, never the main one. */}
                 <SportsbookChip outcome={target.outcome} enabled={sportsbookLinks} onPress={() => setBookPrompt(true)} />
                 <button

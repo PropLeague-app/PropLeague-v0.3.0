@@ -153,3 +153,44 @@ describe('displayWeeklyScore (penalty only after the last kickoff)', () => {
     expect(expectedScoreDistribution(settledWin, DEFAULT_LEAGUE_SETTINGS).mean).toBe(9);
   });
 });
+
+describe('a matchup that is already decided reads 0 or 100, never a tail', () => {
+  /** Every slot filled, so no phantom bet widens the range. */
+  function fullRoster(fill: (slot: number) => Partial<Wager>) {
+    let roster = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    for (let i = 0; i < roster.slots.length; i++) roster = wagerSlot(roster, i, fill(i));
+    return roster;
+  }
+
+  it('gives a side with nothing left to play 0 when it cannot catch the floor of the other', () => {
+    // The real case (see chat, Oct 2026): everything settled at -$9.92 against a side sitting on
+    // +$37.81 with three pending picks worth $35 of stake. Even losing all three leaves them at
+    // +$2.81, so the trailing side cannot win, yet the curve still showed 3%.
+    const settledBehind = fullRoster(() => ({ status: 'lost', settledProfit: -9.92 / 8, stake: 12.5 }));
+    const aheadWithPicksLive = fullRoster((i) =>
+      i < 3 ? { status: 'pending', stake: 35 / 3, oddsAtPlacement: -110 } : { status: 'won', settledProfit: 37.81 / 5, stake: 13 },
+    );
+    const behind = expectedScoreDistribution(settledBehind, DEFAULT_LEAGUE_SETTINGS);
+    const ahead = expectedScoreDistribution(aheadWithPicksLive, DEFAULT_LEAGUE_SETTINGS);
+
+    expect(behind.max).toBeCloseTo(-9.92, 2); // nothing pending: the range has collapsed
+    expect(ahead.min).toBeCloseTo(2.81, 2); // every pending pick losing still clears it
+    expect(matchupWinProbability(behind, ahead)).toBe(0);
+    expect(matchupWinProbability(ahead, behind)).toBe(1);
+  });
+
+  it('still uses the curve while the gap is reachable', () => {
+    const a = fullRoster((i) => (i < 4 ? { status: 'pending', stake: 10, oddsAtPlacement: -110 } : { status: 'lost', settledProfit: -10, stake: 10 }));
+    const b = fullRoster((i) => (i < 4 ? { status: 'pending', stake: 10, oddsAtPlacement: -110 } : { status: 'won', settledProfit: 9.09, stake: 10 }));
+    const prob = matchupWinProbability(expectedScoreDistribution(a, DEFAULT_LEAGUE_SETTINGS), expectedScoreDistribution(b, DEFAULT_LEAGUE_SETTINGS));
+    expect(prob).toBeGreaterThan(0);
+    expect(prob).toBeLessThan(0.5);
+  });
+
+  it('leaves a week with slots still to fill undecided', () => {
+    const empty = buildEmptyRoster('t1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
+    const ahead = fullRoster(() => ({ status: 'won', settledProfit: 5, stake: 12.5 }));
+    const prob = matchupWinProbability(expectedScoreDistribution(empty, DEFAULT_LEAGUE_SETTINGS), expectedScoreDistribution(ahead, DEFAULT_LEAGUE_SETTINGS));
+    expect(prob).toBeGreaterThan(0);
+  });
+});

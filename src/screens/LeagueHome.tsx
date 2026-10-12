@@ -109,7 +109,7 @@ export function LeagueHome() {
       await Promise.all([
         loadLeagueResults(league.id),
         loadWeekRosters(league.id, league.currentWeek),
-        loadRealGamesForWeek(league.currentWeek),
+        loadRealGamesForWeek(league.currentWeek, { force: true }),
       ]);
     } finally {
       setRefreshing(false);

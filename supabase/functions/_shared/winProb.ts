@@ -52,24 +52,37 @@ function normalCdf(z: number): number {
 export interface ScoreDistribution {
   mean: number;
   variance: number;
+  /** The worst and best totals this side can still finish on. See the client copy in
+   * src/engine/scoring.ts: the normal curve has infinite tails, so without these a side with
+   * nothing left to play still read as having a few percent of winning a matchup it cannot reach. */
+  min: number;
+  max: number;
 }
 
 export function sideDistribution(side: WinProbSide, settings: WinProbSettings, penaltyLive: boolean): ScoreDistribution {
   let mean = 0;
   let variance = 0;
   let allocated = 0;
+  let min = 0;
+  let max = 0;
   const emptySlots = Math.max(0, side.totalSlots - side.picks.length);
 
   for (const w of side.picks) {
     allocated += w.stake;
     if (w.status !== 'pending') {
-      mean += w.settledProfit ?? 0;
+      const known = w.settledProfit ?? 0;
+      mean += known;
+      min += known;
+      max += known;
       continue;
     }
     if (w.odds == null || w.odds === 0) continue;
     const p = impliedProbability(w.odds);
     const profit = profitForStake(w.stake, w.odds);
     variance += p * (1 - p) * (profit + w.stake) ** 2;
+    // A pending pick either wins its profit or loses its whole stake.
+    min += -w.stake;
+    max += profit;
   }
 
   const unallocated = Math.max(0, settings.weeklyCredits - allocated);
@@ -80,20 +93,29 @@ export function sideDistribution(side: WinProbSide, settings: WinProbSettings, p
           ? Math.min(settings.emptySlotFloor, settings.weeklyCredits / side.totalSlots)
           : null;
       const floorLoss = floor != null ? floor * emptySlots : 0;
-      mean += -Math.max(unallocated, floorLoss);
+      const penalty = -Math.max(unallocated, floorLoss);
+      mean += penalty;
+      min += penalty;
+      max += penalty;
     }
-    return { mean, variance };
+    return { mean, variance, min, max };
   }
 
   if (emptySlots > 0) {
     const phantomStake = unallocated / emptySlots;
     variance += emptySlots * phantomStake ** 2;
+    // A slot still to be filled widens the range rather than deciding anything.
+    min -= phantomStake * emptySlots;
+    max += phantomStake * emptySlots;
   }
-  return { mean, variance };
+  return { mean, variance, min, max };
 }
 
 /** P(side A beats side B), 0 to 1. */
 export function winProbability(a: ScoreDistribution, b: ScoreDistribution): number {
+  // Decided first, curve second (see ScoreDistribution.min/max).
+  if (a.max < b.min - 1e-9) return 0;
+  if (a.min > b.max + 1e-9) return 1;
   const meanDiff = a.mean - b.mean;
   const varSum = a.variance + b.variance;
   if (varSum < 1e-9 || Math.abs(meanDiff) < 1e-9) {

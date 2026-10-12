@@ -292,6 +292,20 @@ export async function fetchRealGamesForWeek(week: WeekId): Promise<NFLGame[]> {
   return (gamesResult.data as RealGameRow[]).map((row) => mapRow(row, roster));
 }
 
+/**
+ * The NFL Slate list, carrying only the markets it draws (migration 0040). A week of full rows is
+ * about a megabyte of player props the list never looks at; this is roughly a twentieth of that.
+ *
+ * Falls back to the full read when the function is not there, so a build can ship before the
+ * migration is pushed and simply behave the way it used to. No roster is loaded: with no player
+ * props in the payload, mapBookmaker never reaches the name-resolution path that needs one.
+ */
+export async function fetchSlateForWeek(week: WeekId): Promise<NFLGame[]> {
+  const { data, error } = await supabase.rpc('slate_for_week', { p_week: String(week) });
+  if (error || !data) return fetchRealGamesForWeek(week);
+  return (data as RealGameRow[]).map((row) => mapRow(row, []));
+}
+
 export async function fetchRealGame(gameId: string): Promise<NFLGame | undefined> {
   const [gameResult, roster] = await Promise.all([
     supabase.from('real_games').select('*').eq('id', gameId).single(),

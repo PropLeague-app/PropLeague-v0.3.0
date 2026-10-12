@@ -29,9 +29,15 @@ export function NFLSlate() {
   // WC/DIV/CONF since the real bracket isn't seeded until those rounds are
   // actually reached. That fallback is gone -- a week with no real rows yet
   // shows an honest "not posted" empty state instead of invented matchups.
-  const [gamesLoading, setGamesLoading] = useState(true);
-  const realGamesForWeek = useAppStore((s) => s.realGamesByWeek[String(week ?? league?.currentWeek ?? 1)]);
-  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
+  // This screen reads the trimmed slate, not the full games map: it only draws moneyline, spread
+  // and total, and the full rows carry a megabyte of player props it never looks at (see
+  // loadSlateForWeek and migration 0040).
+  const realGamesForWeek = useAppStore((s) => s.slateByWeek[String(week ?? league?.currentWeek ?? 1)]);
+  // Only a week with nothing cached shows skeletons. Coming back to this tab with the slate already
+  // in hand used to blank the whole list behind a loading state while it refetched (see chat, Oct
+  // 2026); now the games stay on screen and any refresh happens underneath them.
+  const [gamesLoading, setGamesLoading] = useState(() => (realGamesForWeek?.length ?? 0) === 0);
+  const loadSlateForWeek = useAppStore((s) => s.loadSlateForWeek);
 
   const activeWeek = week ?? league?.currentWeek ?? 1;
   // Player-props odds refresh is manual-only (see fetch-nfl-player-props),
@@ -42,13 +48,14 @@ export function NFLSlate() {
   // refresh cooldown is global and server-side, so two buttons hitting it
   // is safe (see useOddsRefresh).
   const { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds } = useOddsRefresh(() => {
-    loadRealGamesForWeek(activeWeek);
+    loadSlateForWeek(activeWeek, { force: true });
   });
 
   useEffect(() => {
     let cancelled = false;
-    setGamesLoading(true);
-    loadRealGamesForWeek(activeWeek).finally(() => {
+    const haveWeek = (useAppStore.getState().slateByWeek[String(activeWeek)]?.length ?? 0) > 0;
+    if (!haveWeek) setGamesLoading(true);
+    loadSlateForWeek(activeWeek).finally(() => {
       if (!cancelled) setGamesLoading(false);
     });
     return () => {
@@ -62,7 +69,7 @@ export function NFLSlate() {
   // Auto-refreshes while any of this week's games are actually in progress,
   // so a game going final while the user is sitting on this screen clears on
   // its own (see chat, Sept 2026).
-  useLiveGamePolling(anyGameLive(games), activeWeek, () => loadRealGamesForWeek(activeWeek));
+  useLiveGamePolling(anyGameLive(games), activeWeek, () => loadSlateForWeek(activeWeek, { force: true }));
 
   const freshness = useOddsFreshness(games);
   const freshnessMessage = oddsFreshnessMessage(freshness);

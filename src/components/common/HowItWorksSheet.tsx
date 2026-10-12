@@ -62,7 +62,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Your leagues',
       body: [
-        'Tap the league name at the top of Home to open Your Leagues and jump between them. Each row shows the week and team count, a CURRENT tag on the one you are in, and a red Lineup needed tag when that league\'s lineup is not finished.',
+        'Tap the league name at the top of Home to open Your Leagues and jump between them. Each row shows the week and team count, a CURRENT tag on the one you are in, and a red Lineup needed tag when that league\'s lineup is not finished. Once a lineup is set the row says so, and once picks start settling it shows that week\'s profit or loss and how many picks are still live.',
         'The star makes a league your favorite, which goes first on your lock screen and Dynamic Island. The bell mutes a league: no pushes of any kind and no live scores for it until you unmute it. The league still works normally in the app, and a muted league is marked Muted. A league is never both, so muting your favorite clears the star. Close the list with the X.',
         'The sliders open League notifications for that league alone: mute, Lineup reminders, Settled-bet alerts, Week results and Live scores on lock screen, plus Void requests if you are its commissioner. Every league starts out following your Notifications switches in Profile & Settings. Change a switch here and it applies to this league only, marked Only this league, and the row in Your Leagues shows Custom alerts. Use these for all my leagues makes this league\'s choices your defaults and puts every league back on them. Void requests are always set per league and stay as they are.',
       ],
@@ -144,7 +144,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
   const scoring: Topic[] = [
     {
       title: 'Weekly score',
-      body: ['Your score is the total profit or loss of every pick, plus any penalties. Higher score wins the matchup, and matchups drive the win-loss standings. Win probability on a matchup is an estimate built from the odds on each side\'s picks and the results so far.'],
+      body: ['Your score is the total profit or loss of every pick, plus any penalties. Higher score wins the matchup, and matchups drive the win-loss standings. Win probability on a matchup is an estimate built from the odds on each side\'s picks and the results so far. Once it is settled either way, it reads 0% or 100%: if the best you can still finish on cannot catch the worst the other side can finish on, the matchup is over and the bar says so.'],
     },
     {
       title: 'Matchup screen: Simple and Advanced',

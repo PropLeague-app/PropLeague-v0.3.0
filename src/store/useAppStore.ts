@@ -32,7 +32,7 @@ import { upsertMatchupRemote, upsertStandingRemote, fetchLeagueMatchups, fetchLe
 import { postAnnouncementRemote, setAnnouncementPinnedRemote, reactToActivityRemote, postSystemActivityRemote, fetchLeagueActivity, deleteAnnouncementRemote } from '../services/supabaseActivity';
 import { postChatMessageRemote, fetchLeagueChat, deleteChatMessageRemote } from '../services/supabaseChat';
 import { getLogoPublicUrl } from '../services/supabaseLogo';
-import { fetchRealGamesForWeek, fetchRealGame } from '../services/supabaseOdds';
+import { fetchRealGamesForWeek, fetchRealGame, fetchSlateForWeek } from '../services/supabaseOdds';
 import { fetchRealPlayerStatsForWeek } from '../services/supabaseStats';
 import type { RealPlayerStatLine } from '../engine/realGameResult';
 import { STORE_VERSION, migratePersistedState, normalizeLeagues } from './migrations';
@@ -65,6 +65,17 @@ interface AppState {
    * callers fall back to the local simulated engine — see chat: touching only
    * MarketBrowser/Lineup for now, not all 13 places that read odds data. */
   realGamesByWeek: Record<string, NFLGame[]>;
+  /** When each week's slate was last pulled, so revisiting a tab does not refetch it (see
+   * loadRealGamesForWeek). Not persisted, like the slate itself. */
+  realGamesFetchedAt: Record<string, number>;
+  /** The NFL Slate list's own copy of a week: the same games carrying only the markets that screen
+   * draws (migration 0040). Deliberately separate from realGamesByWeek/realGamesById, which every
+   * other screen reads and which must keep their player props. Not persisted. */
+  slateByWeek: Record<string, NFLGame[]>;
+  slateFetchedAt: Record<string, number>;
+  /** Open League News windows by league (see queueSettingsNews). Persisted on purpose, so a force
+   * quit inside the hour does not start a second settings post for the same hour. */
+  settingsNewsWindows: Record<string, NewsWindow>;
   realGamesById: Record<string, NFLGame>;
   /** Final real box-score lines, per week -- keyed by player_name.trim().toLowerCase()
    * (same normalization settle-week's own grading map uses), populated only for
@@ -142,7 +153,8 @@ interface AppState {
   deleteChatMessage: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markChatSeen: (leagueId: string) => void;
 
-  loadRealGamesForWeek: (week: WeekId) => Promise<void>;
+  loadRealGamesForWeek: (week: WeekId, options?: { force?: boolean }) => Promise<void>;
+  loadSlateForWeek: (week: WeekId, options?: { force?: boolean }) => Promise<void>;
   loadRealGame: (gameId: string) => Promise<void>;
   loadRealPlayerStatsForWeek: (week: WeekId) => Promise<void>;
   hydrateMyLeagues: () => Promise<void>;
@@ -224,6 +236,16 @@ async function beginSeason(
 // post (the old one is deleted and the merged line goes up), measured from where the settings stood when
 // the hour began. Fiddling with a slider for ten minutes leaves one line, and changes that cancel out
 // leave none. The next change after the hour starts a fresh post.
+//
+// The open window lives in persisted store state rather than in memory, so force quitting the app does
+// not silently start a second post for the same hour (see chat, Oct 2026). It has to be the window and
+// not just the post id: the merged line is computed against where the settings stood when the hour
+// began, and that baseline cannot be recovered from the feed afterwards.
+/** How long a loaded week of real games is reused before another screen's mount refetches it. Long
+ * enough that moving between tabs costs nothing, short enough that odds never look stale: the lines
+ * themselves only change on the hourly cron, and Refresh Odds bypasses this entirely. */
+const REAL_GAMES_TTL_MS = 2 * 60 * 1000;
+
 const NEWS_WINDOW_MS = 60 * 60 * 1000;
 
 interface NewsWindow {
@@ -235,13 +257,31 @@ interface NewsWindow {
   openedAt: number;
 }
 
-const settingsNewsWindow = new Map<string, NewsWindow>();
+// Timers cannot be persisted, and do not need to be: a restart means the 4 second gather already
+// fired and the post is up.
 const settingsNewsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** The league's open window, or undefined once the hour has passed. */
+function openNewsWindow(leagueId: string): NewsWindow | undefined {
+  const win = useAppStore.getState().settingsNewsWindows[leagueId];
+  return win && Date.now() - win.openedAt <= NEWS_WINDOW_MS ? win : undefined;
+}
+
+function setNewsWindow(leagueId: string, win: NewsWindow | null) {
+  useAppStore.setState((state) => {
+    const next: Record<string, NewsWindow> = {};
+    // Drop anything already past its hour while we are here, so this never grows without bound.
+    for (const [id, w] of Object.entries(state.settingsNewsWindows)) {
+      if (id !== leagueId && Date.now() - w.openedAt <= NEWS_WINDOW_MS) next[id] = w;
+    }
+    if (win) next[leagueId] = win;
+    return { settingsNewsWindows: next };
+  });
+}
+
 function queueSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeEffective: LeagueSettings) {
-  const open = settingsNewsWindow.get(leagueId);
-  if (!open || Date.now() - open.openedAt > NEWS_WINDOW_MS) {
-    settingsNewsWindow.set(leagueId, { live: beforeLive, effective: beforeEffective, itemId: null, openedAt: Date.now() });
+  if (!openNewsWindow(leagueId)) {
+    setNewsWindow(leagueId, { live: beforeLive, effective: beforeEffective, itemId: null, openedAt: Date.now() });
   }
   const timer = settingsNewsTimers.get(leagueId);
   if (timer) clearTimeout(timer);
@@ -250,7 +290,7 @@ function queueSettingsNews(leagueId: string, beforeLive: LeagueSettings, beforeE
 
 async function postSettingsNews(leagueId: string, nowOnly = false) {
   settingsNewsTimers.delete(leagueId);
-  const win = settingsNewsWindow.get(leagueId);
+  const win = openNewsWindow(leagueId);
   const league = useAppStore.getState().leagues[leagueId];
   if (!win || !league) return;
   const now = majorSettingsChanges(win.live, league.settings);
@@ -264,7 +304,7 @@ async function postSettingsNews(leagueId: string, nowOnly = false) {
   if (previousId) {
     const gone = await deleteAnnouncementRemote(previousId);
     if (gone.ok) {
-      win.itemId = null;
+      setNewsWindow(leagueId, { ...win, itemId: null });
       useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, activity: l.activity.filter((a) => a.id !== previousId) })));
     }
   }
@@ -272,7 +312,7 @@ async function postSettingsNews(leagueId: string, nowOnly = false) {
   const item: ActivityItem = { id: `settings-${Date.now()}`, ts: new Date().toISOString(), type: 'announcement', message };
   const res = await postSystemActivityRemote(leagueId, item);
   if (!res.ok) return;
-  win.itemId = res.itemId;
+  setNewsWindow(leagueId, { ...win, itemId: res.itemId });
   useAppStore.setState((state) => updateLeague(state, leagueId, (l) => ({ ...l, activity: [{ ...item, id: res.itemId }, ...l.activity] })));
 }
 
@@ -311,6 +351,10 @@ export const useAppStore = create<AppState>()(
       leagues: {},
       currentLeagueId: null,
       realGamesByWeek: {},
+      realGamesFetchedAt: {},
+      slateByWeek: {},
+      slateFetchedAt: {},
+      settingsNewsWindows: {},
       realGamesById: {},
       realPlayerStatsByWeek: {},
       leaguesHydrated: false,
@@ -1104,12 +1148,40 @@ export const useAppStore = create<AppState>()(
       markChatSeen: (leagueId) =>
         set((state) => ({ lastSeenChatByLeague: { ...state.lastSeenChatByLeague, [leagueId]: new Date().toISOString() } })),
 
-      loadRealGamesForWeek: async (week) => {
+      // A week's slate is about a megabyte of odds JSON (every book, every market, every player
+      // prop for ~16 games), and mapping it walks all of that on the main thread. Every screen that
+      // shows games calls this on mount, so without a window here, simply tapping back onto the NFL
+      // Slate tab refetched and remapped the whole week and visibly froze the tab (see chat, Oct
+      // 2026). Inside the window the cached slate is reused; Refresh Odds and the live-score poller
+      // pass force so a deliberate refresh is never skipped.
+      loadRealGamesForWeek: async (week, options) => {
+        const key = String(week);
+        const state0 = get();
+        const fresh = Date.now() - (state0.realGamesFetchedAt[key] ?? 0) < REAL_GAMES_TTL_MS;
+        if (!options?.force && fresh && (state0.realGamesByWeek[key]?.length ?? 0) > 0) return;
         const games = await fetchRealGamesForWeek(week);
         if (games.length === 0) return; // don't overwrite a previously-loaded slate with an empty result
         set((state) => ({
-          realGamesByWeek: { ...state.realGamesByWeek, [String(week)]: games },
+          realGamesByWeek: { ...state.realGamesByWeek, [key]: games },
           realGamesById: { ...state.realGamesById, ...Object.fromEntries(games.map((g) => [g.id, g])) },
+          realGamesFetchedAt: { ...state.realGamesFetchedAt, [key]: Date.now() },
+        }));
+      },
+
+      // The slate list's loader. Same reuse window as loadRealGamesForWeek, and deliberately does
+      // NOT write realGamesById: these rows have no player props, and GameDetail only fetches a
+      // full game when realGamesById has nothing for it. Seeding that map from here would hand
+      // Game Details a prop-less game and it would never go looking for the real one.
+      loadSlateForWeek: async (week, options) => {
+        const key = String(week);
+        const state0 = get();
+        const fresh = Date.now() - (state0.slateFetchedAt[key] ?? 0) < REAL_GAMES_TTL_MS;
+        if (!options?.force && fresh && (state0.slateByWeek[key]?.length ?? 0) > 0) return;
+        const games = await fetchSlateForWeek(week);
+        if (games.length === 0) return;
+        set((state) => ({
+          slateByWeek: { ...state.slateByWeek, [key]: games },
+          slateFetchedAt: { ...state.slateFetchedAt, [key]: Date.now() },
         }));
       },
 
@@ -1252,6 +1324,9 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => {
         const {
           realGamesByWeek: _realGamesByWeek,
+          realGamesFetchedAt: _realGamesFetchedAt,
+          slateByWeek: _slateByWeek,
+          slateFetchedAt: _slateFetchedAt,
           realGamesById: _realGamesById,
           realPlayerStatsByWeek: _realPlayerStatsByWeek,
           leaguesHydrated: _leaguesHydrated,

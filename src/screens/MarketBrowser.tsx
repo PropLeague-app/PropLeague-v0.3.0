@@ -66,7 +66,7 @@ export function MarketBrowser() {
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
   const { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds } = useOddsRefresh(() => {
-    if (league) loadRealGamesForWeek(league.currentWeek);
+    if (league) loadRealGamesForWeek(league.currentWeek, { force: true });
   });
 
   const roster = useMemo(() => {

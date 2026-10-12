@@ -5,11 +5,17 @@ describe('parseRichText', () => {
   it('returns plain text untouched', () => {
     expect(parseRichText('Hello league')).toEqual([{ text: 'Hello league', style: 'plain' }]);
   });
-  it('parses the void notice shape', () => {
-    const segs = parseRichText('All **Rashee Rice** picks for Week 4 have been **voided** due to an early exit (injury). *Only applies to Over and Anytime TD picks.*');
+  it('parses the void notice shape, with the commissioner note in italics', () => {
+    // The tail is the note the commissioner typed (migration 0039), not a fixed line.
+    const segs = parseRichText('All **Rashee Rice** picks for Week 4 have been **voided** due to an early exit (injury). *Left in the first quarter, did not return.*');
     expect(segs.filter((s) => s.style === 'highlight').map((s) => s.text)).toEqual(['Rashee Rice', 'voided']);
-    expect(segs.filter((s) => s.style === 'italic').map((s) => s.text)).toEqual(['Only applies to Over and Anytime TD picks.']);
-    expect(segs.map((s) => s.text).join('')).toBe('All Rashee Rice picks for Week 4 have been voided due to an early exit (injury). Only applies to Over and Anytime TD picks.');
+    expect(segs.filter((s) => s.style === 'italic').map((s) => s.text)).toEqual(['Left in the first quarter, did not return.']);
+    expect(segs.map((s) => s.text).join('')).toBe('All Rashee Rice picks for Week 4 have been voided due to an early exit (injury). Left in the first quarter, did not return.');
+  });
+  it('parses the same notice with no note at all', () => {
+    const segs = parseRichText('All **Rashee Rice** picks for Week 4 have been **voided** due to an early exit (injury).');
+    expect(segs.filter((s) => s.style === 'highlight').map((s) => s.text)).toEqual(['Rashee Rice', 'voided']);
+    expect(segs.filter((s) => s.style === 'italic')).toEqual([]);
   });
   it('reads a team tag off a highlight', () => {
     const segs = parseRichText('All **Rashee Rice|KC** picks have been **voided**.');

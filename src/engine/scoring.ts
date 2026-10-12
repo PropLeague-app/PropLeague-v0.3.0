@@ -134,6 +134,13 @@ function normalCdf(z: number): number {
 export interface ScoreDistribution {
   mean: number;
   variance: number;
+  /** The worst and best totals this side can still finish on, counting settled picks as fixed and
+   * every pending pick at its two real outcomes. The normal curve above has infinite tails, so
+   * without these a side with nothing left to play still showed a few percent of winning a matchup
+   * it cannot reach (see chat, Oct 2026). matchupWinProbability uses them to answer the decided
+   * cases exactly, before any curve is involved. */
+  min: number;
+  max: number;
 }
 
 /**
@@ -169,6 +176,9 @@ export function expectedScoreDistribution(
   let variance = 0;
   let allocated = 0;
   let emptySlots = 0;
+  // The hard range of what this side can still finish on, alongside the curve.
+  let min = 0;
+  let max = 0;
 
   for (const s of roster.slots) {
     if (!s.wager) {
@@ -177,13 +187,19 @@ export function expectedScoreDistribution(
     }
     allocated += s.wager.stake;
     if (s.wager.status !== 'pending') {
-      mean += s.wager.settledProfit ?? 0;
+      const known = s.wager.settledProfit ?? 0;
+      mean += known;
+      min += known;
+      max += known;
       continue;
     }
     if (decided?.isDecided(s.wager.gameId)) {
       const result = decided.resultFor(s.wager.gameId);
       if (result) {
-        mean += settleWager(s.wager, result).profit;
+        const known = settleWager(s.wager, result).profit;
+        mean += known;
+        min += known;
+        max += known;
         continue;
       }
     }
@@ -191,16 +207,24 @@ export function expectedScoreDistribution(
     const profit = profitForStake(s.wager.stake, s.wager.oddsAtPlacement);
     // Mean contribution is exactly 0 (see expectedWeeklyScore); only the spread is real.
     variance += p * (1 - p) * (profit + s.wager.stake) ** 2;
+    // A pending pick either wins its profit or loses its whole stake. Nothing else is reachable.
+    min += -s.wager.stake;
+    max += profit;
   }
 
   if (penaltyLive) {
-    mean += computeIncompleteLineupPenalty(roster, settings);
-    return { mean, variance };
+    const penalty = computeIncompleteLineupPenalty(roster, settings);
+    mean += penalty;
+    return { mean, variance, min: min + penalty, max: max + penalty };
   }
 
   if (emptySlots > 0) {
     const unallocated = Math.max(0, settings.weeklyCredits - allocated);
     const phantomStake = unallocated / emptySlots;
+    // A slot still to be filled could go either way by about its own size, so it widens the range
+    // rather than deciding anything: a week with picks left to make is never already over.
+    min -= phantomStake * emptySlots;
+    max += phantomStake * emptySlots;
     // Same variance formula as a real wager above, just evaluated at an assumed
     // p = 0.5 / profit = stake (a neutral, even-odds coin flip of that size) --
     // deliberately NOT the incomplete-lineup penalty (a certain loss, only ever
@@ -209,7 +233,7 @@ export function expectedScoreDistribution(
     variance += emptySlots * phantomStake ** 2;
   }
 
-  return { mean, variance };
+  return { mean, variance, min, max };
 }
 
 /** P(team A's final score beats team B's), from each side's (mean, variance) --
@@ -244,6 +268,11 @@ export function matchupGive(a: ScoreDistribution, b: ScoreDistribution, settings
 }
 
 export function matchupWinProbability(a: ScoreDistribution, b: ScoreDistribution): number {
+  // Decided first, curve second. Once A's best possible finish still falls short of B's worst, or
+  // A's worst already clears B's best, the matchup is over and no amount of normal-curve tail
+  // should suggest otherwise (see ScoreDistribution.min/max).
+  if (a.max < b.min - 1e-9) return 0;
+  if (a.min > b.max + 1e-9) return 1;
   const meanDiff = a.mean - b.mean;
   const varSum = a.variance + b.variance;
   // Genuine ties (equal means -- e.g. two still-empty rosters) must return

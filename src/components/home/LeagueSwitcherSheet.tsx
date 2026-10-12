@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Bell, BellOff, SlidersHorizontal, Star, X } from 'lucide-react';
-import type { League } from '../../types';
+import type { League, WeeklyRoster } from '../../types';
 import { weekLabel } from '../../types';
 import { LeagueLogo } from '../common/LeagueLogo';
+import { usePlStyle } from '../common/usePlStyle';
+import { formatCents } from '../../engine/oddsMath';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { validateLineup } from '../../engine/validation';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -22,6 +24,21 @@ import {
   type NotificationPrefs,
 } from '../../services/notificationPrefs';
 import { syncLiveActivities } from '../../services/liveActivities';
+
+/**
+ * The one-line state of a league for the switcher, so the tag row is never an empty gap on a league
+ * that is simply in good shape (see chat, Oct 2026). Before anything settles it says the lineup is
+ * in; once results land it shows how the week is actually going, which is the thing worth knowing
+ * at a glance from a list of leagues.
+ */
+function weekTag(roster: WeeklyRoster): { text: string; amount: number | null } {
+  const wagers = roster.slots.map((slot) => slot.wager).filter((w) => w != null);
+  const settled = wagers.filter((w) => w.status !== 'pending');
+  if (settled.length === 0) return { text: 'Lineup set', amount: null };
+  const pl = settled.reduce((sum, w) => sum + (w.settledProfit ?? 0), 0);
+  const live = wagers.length - settled.length;
+  return { text: `${pl >= 0 ? '+' : ''}${formatCents(pl)}${live > 0 ? ` · ${live} live` : ''}`, amount: pl };
+}
 
 /** Standard fantasy-app pattern: tap the league name/logo in the home header to swap
  * `currentLeagueId` (manual v0.2.0 §6 #13). Only lists leagues the user is still
@@ -50,6 +67,7 @@ export function LeagueSwitcherSheet({
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => getCachedNotificationPrefs(profileId) ?? DEFAULT_NOTIFICATION_PREFS);
   const [error, setError] = useState<string | null>(null);
   const [notifLeagueId, setNotifLeagueId] = useState<string | null>(null);
+  const plStyle = usePlStyle();
 
   useEffect(() => {
     if (!profileId) return;
@@ -121,11 +139,13 @@ export function LeagueSwitcherSheet({
             const isFavorite = prefs.favoriteLeagueId === league.id;
             const isMuted = prefs.mutedLeagueIds.includes(league.id);
             let needsLineup = false;
+            let status: ReturnType<typeof weekTag> | null = null;
             if (userTeam && league.seasonPhase !== 'complete') {
               const roster =
                 league.rostersByTeamWeek[rosterKey(userTeam.id, league.currentWeek)] ??
                 buildEmptyRoster(userTeam.id, league.currentWeek, league.settings.lineupSlots);
               needsLineup = !validateLineup(roster, league.settings).valid;
+              if (!needsLineup) status = weekTag(roster);
             }
             return (
               <div
@@ -151,6 +171,16 @@ export function LeagueSwitcherSheet({
                       {!isCurrent && needsLineup && (
                         <span className="text-[10px] text-loss font-semibold bg-loss/10 border border-loss/40 rounded-full px-2 py-0.5">
                           Lineup needed
+                        </span>
+                      )}
+                      {status && (
+                        <span
+                          className={`text-[10px] font-semibold ${
+                            status.amount == null ? 'text-text-muted' : status.amount >= 0 ? 'text-profit' : 'text-loss'
+                          }`}
+                          style={status.amount == null ? undefined : plStyle(status.amount)}
+                        >
+                          {status.text}
                         </span>
                       )}
                       {isMuted && (

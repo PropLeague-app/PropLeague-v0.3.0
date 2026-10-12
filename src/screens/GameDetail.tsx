@@ -13,6 +13,7 @@ import { useLiveGamePolling } from '../hooks/useLiveGamePolling';
 import { TeamMark } from '../components/common/TeamMark';
 import { BackHeader } from '../components/layout/BackHeader';
 import { TopToast } from '../components/common/TopToast';
+import { SkeletonCard } from '../components/common/SkeletonLoader';
 import { heldTagInSlots, swapChoices } from '../engine/pickSwap';
 import type { OddsMarket, OddsOutcome, Position, Wager } from '../types';
 
@@ -41,8 +42,24 @@ export function GameDetail() {
   // without this, a game reached from the (now real-data) NFL Slate screen
   // would only ever look itself up in the simulated dataset, which is exactly
   // why its markets/props were showing up empty.
+  // NFL Slate loads a trimmed week that deliberately leaves realGamesById alone (see
+  // loadSlateForWeek), so arriving here from the slate always fetches this one game in full. The
+  // flag is what keeps that moment from flashing "Game not found": initialised true when there is
+  // nothing cached yet, so even the first render before this effect runs shows the skeleton.
+  const [gameLoading, setGameLoading] = useState<boolean>(() => !!gameId && !realGamesById[gameId]);
   useEffect(() => {
-    if (gameId && !realGamesById[gameId]) loadRealGame(gameId);
+    if (!gameId || realGamesById[gameId]) {
+      setGameLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setGameLoading(true);
+    void loadRealGame(gameId).finally(() => {
+      if (!cancelled) setGameLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
 
@@ -63,7 +80,15 @@ export function GameDetail() {
     return (
       <div className="flex flex-col">
         <BackHeader title="Game Details" fallback="/slate" />
-        <div className="p-4 text-text-muted text-sm">Game not found.</div>
+        {gameLoading ? (
+          <div className="p-4 space-y-2.5">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : (
+          <div className="p-4 text-text-muted text-sm">Game not found.</div>
+        )}
       </div>
     );
   }
