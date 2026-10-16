@@ -149,6 +149,8 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Matchup screen: Simple and Advanced',
       body: [
+        'Under each team sits its season record and current streak. The week\'s own pick record sits at the ends of the win probability bar below. That bar is dropped once the matchup is decided, since there is nothing left to estimate.',
+        'The strip at the top switches between every matchup in the week. The other matchups carry both scores so you can see how the rest of the league is doing; the one you are on leaves them off, since its scores are already right below.',
         'Simple shows each pick as a compact cell. Advanced adds the stake and the stat line behind a result. Tap the Advanced button at the top to switch every pick at once, and your choice is remembered on this device.',
         'To look closer at just one pick, tap it: that slot opens to the Advanced view on both teams at once, since the two picks share a row, and tapping either one again closes them. This works on either team\'s visible picks, in either mode. Empty and hidden picks do not respond. Opened cells reset when you leave the screen, swipe to another matchup, or press the Advanced button.',
       ],

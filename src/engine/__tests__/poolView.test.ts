@@ -119,6 +119,63 @@ describe('the week still being played', () => {
     expect(liveWeekEntry(league, { ...livePool, locked: true })).toBeNull();
   });
 
+  // The regression this guards: liveWeekEntry used computeWeeklyScore, which charges the
+  // unspent-credits penalty. Every other fixture here fills its lineup exactly, so that penalty was
+  // always zero and the bug stayed invisible in tests while being plainly visible in the app -- a
+  // real league with one settled pick showed all eight teams down and the week at -$47.85 (see
+  // chat, Oct 2026). A mid-week lineup is mostly empty by nature, which is the case that matters,
+  // so this one builds its rosters with the empty slots left in.
+  it('ignores unfilled slots mid-week, so only settled picks move the pool', () => {
+    const SLOTS = 8;
+    const openRoster = (teamId: string, pick: { settled: number | null; stake: number } | null) => ({
+      week: 4 as const,
+      teamId,
+      submitted: false,
+      slots: Array.from({ length: SLOTS }, (_, i) => ({
+        slotId: `QB-${i}`,
+        position: 'QB',
+        wager:
+          i === 0 && pick
+            ? {
+                id: `w-${teamId}`,
+                slotId: 'QB-0',
+                gameId: 'g',
+                marketKey: 'h2h',
+                side: 'X',
+                oddsAtPlacement: -110,
+                stake: pick.stake,
+                placedAt: '',
+                status: pick.settled == null ? 'pending' : 'lost',
+                settledProfit: pick.settled,
+              }
+            : null,
+      })),
+    });
+    const league = {
+      id: 'L',
+      currentWeek: 4,
+      teams: ['a', 'b'].map((id, i) => ({ id, teamName: id, abbrev: id, isUser: i === 0, isSimulated: false })),
+      settings: { ...DEFAULT_LEAGUE_SETTINGS, buyInEnabled: true, lineupSlots: { QB: SLOTS } },
+      standings: [],
+      rostersByTeamWeek: {
+        // One settled loss between them; seven empty slots each, and b has not picked at all.
+        'a:4': openRoster('a', { settled: -15, stake: 15 }),
+        'b:4': openRoster('b', null),
+      },
+    } as unknown as League;
+
+    const entry = liveWeekEntry(league, livePool)!;
+    expect(entry).not.toBeNull();
+    // b has settled nothing, so it has not moved the pool at all, empty lineup or not.
+    expect(entry.byTeam?.b?.impact).toBe(0);
+    // a moved it by its one settled loss and nothing else: its whole roster is otherwise empty, and
+    // the old behaviour charged that as roughly the full weekly credit allowance.
+    expect(entry.byTeam?.a?.impact).toBeLessThan(0);
+    expect(entry.netRealPL).toBeCloseTo(entry.byTeam!.a!.impact, 10);
+    // -15 of 100 credits against this team's 1/2 share of a 100 pool.
+    expect(entry.byTeam!.a!.impact).toBeCloseTo((-15 / DEFAULT_LEAGUE_SETTINGS.weeklyCredits) * (100 / 2), 6);
+  });
+
   it('hangs the provisional entry on the end of the history without touching the stored one', () => {
     const league = leagueWith([[{ settled: 20, stake: 10 }], [{ settled: -10, stake: 10 }]]);
     const entry = liveWeekEntry(league, livePool)!;

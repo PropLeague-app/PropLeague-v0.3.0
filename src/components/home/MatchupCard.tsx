@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Triangle } from 'lucide-react';
-import type { League, LeagueTeam, Matchup, RosterSlotState, WeeklyRoster } from '../../types';
+import type { League, LeagueTeam, Matchup, NFLGame, RosterSlotState, WeeklyRoster } from '../../types';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { displayWeeklyScore, expectedScoreDistribution, matchupGive, matchupWinProbability, type DecidedGameLookup } from '../../engine/scoring';
 import { isWagerVisibleToViewer, rosterHasHiddenPicks, weekAllGamesStarted } from '../../engine/stats';
@@ -80,6 +80,18 @@ export function useMatchupView(league: League, matchup: Matchup) {
   // getGame() alone can't see real games at all, which made every real,
   // genuinely-upcoming game read as "decided").
   const realGamesById = useAppStore((s) => s.realGamesById);
+  return buildMatchupView(league, matchup, realGamesById);
+}
+
+/** The same view, with the store read lifted out so it can be built for several matchups at once.
+ * The matchup switcher on MatchupDetail scores every matchup in the week for its pills, which a
+ * hook cannot do inside a loop -- and hand-rolling the scores there would mean a second, separately
+ * wrong copy of the hide-picks masking this already gets right (see chat, Oct 2026). */
+export function buildMatchupView(
+  league: League,
+  matchup: Matchup,
+  realGamesById: Record<string, NFLGame>,
+) {
   const teamA = league.teams.find((t) => t.id === matchup.teamAId);
   const teamB = league.teams.find((t) => t.id === matchup.teamBId);
   if (!teamA || !teamB) return null;
@@ -279,41 +291,7 @@ export function MatchupCard({
             border so they stay visible even against a background close to a team's
             own color. Requires every team to have a real logoColor even in Image
             mode, which IdentityPicker now always collects. */}
-        <div className={`relative ${compact ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden bg-bg-card border border-border`}>
-          <div
-            className="absolute inset-y-0 left-0 h-full transition-all duration-500"
-            style={{ width: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: teamA.logoColor, opacity: prob < 0.5 ? 0.4 : 1 }}
-          />
-          <div
-            className="absolute inset-y-0 right-0 h-full transition-all duration-500"
-            style={{ width: `calc(${(1 - prob) * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: teamB.logoColor, opacity: prob > 0.5 ? 0.4 : 1 }}
-          />
-          {/* The seam between the two fills isn't a fixed 2px line anymore --
-              its width now breathes with `give` (see chat: a fully-undecided week
-              should read as less locked-in than one where only a coinflip prop or
-              two remains). Two overlapping gradients, each fading its own team's
-              (muting-adjusted) color toward transparent over the bar's own
-              background, replace the old flat bg-bg-card divider rect; at give=0
-              they collapse to the same ~2px hard edge the flat divider used to be. */}
-          <div
-            className="absolute inset-y-0 transition-all duration-500"
-            style={{
-              left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
-              width: `${giveWidthPx}px`,
-              background: `linear-gradient(to right, ${teamA.logoColor}, transparent)`,
-              opacity: prob < 0.5 ? 0.4 : 1,
-            }}
-          />
-          <div
-            className="absolute inset-y-0 transition-all duration-500"
-            style={{
-              left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
-              width: `${giveWidthPx}px`,
-              background: `linear-gradient(to left, ${teamB.logoColor}, transparent)`,
-              opacity: prob > 0.5 ? 0.4 : 1,
-            }}
-          />
-        </div>
+        <WinProbBar prob={prob} giveWidthPx={giveWidthPx} colorA={teamA.logoColor} colorB={teamB.logoColor} thin={compact} />
         <div className="flex items-center justify-between text-[11px] text-text-muted mt-1">
           <span>{probHidden ? '–%' : `${Math.round(prob * 100)}%`}</span>
           <span>{isFinal ? 'Final' : probHidden ? '–' : prob === 0.5 ? 'Even' : `${prob > 0.5 ? teamA.abbrev : teamB.abbrev} leads`}</span>
@@ -327,6 +305,62 @@ export function MatchupCard({
         )}
       </div>
     </Card>
+  );
+}
+
+/** The two-sided win-probability bar: each team's own color meeting at a seam whose width breathes
+ * with `give` (see matchupGive). Lifted out of MatchupCard so the matchup screen can show the same
+ * bar the home card does rather than growing a second, drifting copy of this markup (see chat,
+ * Oct 2026). `thin` is the home card's compact variant. */
+export function WinProbBar({
+  prob,
+  giveWidthPx,
+  colorA,
+  colorB,
+  thin,
+}: {
+  prob: number;
+  giveWidthPx: number;
+  colorA: string;
+  colorB: string;
+  thin?: boolean;
+}) {
+  return (
+    <div className={`relative ${thin ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden bg-bg-card border border-border`}>
+        <div
+          className="absolute inset-y-0 left-0 h-full transition-all duration-500"
+          style={{ width: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: colorA, opacity: prob < 0.5 ? 0.4 : 1 }}
+        />
+        <div
+          className="absolute inset-y-0 right-0 h-full transition-all duration-500"
+          style={{ width: `calc(${(1 - prob) * 100}% - ${giveWidthPx / 2}px)`, backgroundColor: colorB, opacity: prob > 0.5 ? 0.4 : 1 }}
+        />
+        {/* The seam between the two fills isn't a fixed 2px line anymore --
+            its width now breathes with `give` (see chat: a fully-undecided week
+            should read as less locked-in than one where only a coinflip prop or
+            two remains). Two overlapping gradients, each fading its own team's
+            (muting-adjusted) color toward transparent over the bar's own
+            background, replace the old flat bg-bg-card divider rect; at give=0
+            they collapse to the same ~2px hard edge the flat divider used to be. */}
+        <div
+          className="absolute inset-y-0 transition-all duration-500"
+          style={{
+            left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
+            width: `${giveWidthPx}px`,
+            background: `linear-gradient(to right, ${colorA}, transparent)`,
+            opacity: prob < 0.5 ? 0.4 : 1,
+          }}
+        />
+        <div
+          className="absolute inset-y-0 transition-all duration-500"
+          style={{
+            left: `calc(${prob * 100}% - ${giveWidthPx / 2}px)`,
+            width: `${giveWidthPx}px`,
+            background: `linear-gradient(to left, ${colorB}, transparent)`,
+            opacity: prob > 0.5 ? 0.4 : 1,
+          }}
+        />
+    </div>
   );
 }
 

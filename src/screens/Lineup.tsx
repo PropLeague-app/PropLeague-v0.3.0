@@ -168,7 +168,7 @@ export function Lineup() {
         )}
       </div>
 
-      <div className="flex flex-col gap-2.5 px-4 pt-3" style={{ paddingBottom: footerHeight + 16 }}>
+      <div className="flex flex-col gap-1.5 px-4 pt-2.5" style={{ paddingBottom: footerHeight + 16 }}>
         {roster.slots.map((slot) => {
           const game = slot.wager
             ? (realGamesById[slot.wager.gameId] ??

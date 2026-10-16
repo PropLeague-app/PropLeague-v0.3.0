@@ -139,7 +139,9 @@ interface AppState {
   updateWagerStake: (leagueId: string, teamId: string, week: WeekId, slotId: string, stake: number) => Promise<{ ok: boolean; error?: string }>;
   clearSlot: (leagueId: string, teamId: string, week: WeekId, slotId: string) => Promise<{ ok: boolean; error?: string }>;
   submitLineup: (leagueId: string, teamId: string, week: WeekId) => Promise<boolean>;
-  loadWeekRosters: (leagueId: string, week: WeekId) => Promise<void>;
+  /** Resolves { ok: false } when the fetch failed, so a caller that asked for fresh data (the Home
+   * refresh button) can say so instead of leaving stale numbers looking current. */
+  loadWeekRosters: (leagueId: string, week: WeekId) => Promise<{ ok: boolean; error?: string }>;
   loadLeagueResults: (leagueId: string) => Promise<void>;
   syncVoidedPicks: (leagueId: string, week: WeekId) => void;
 
@@ -843,24 +845,43 @@ export const useAppStore = create<AppState>()(
 
       loadWeekRosters: async (leagueId, week) => {
         const result = await fetchLeagueRostersForWeek(leagueId, week);
-        if (!result.ok) return;
+        // A failed fetch used to return silently, which left whatever was already on screen sitting
+        // there looking current -- the same way the stale rosters above did, just from a different
+        // cause (see chat, Oct 2026). Nothing here can fix a failed request, but the caller that
+        // asked for it can at least tell the person their numbers did not refresh.
+        if (!result.ok) return { ok: false, error: result.error };
         set((state) =>
           updateLeague(state, leagueId, (league) => {
             const rostersByTeamWeek = { ...league.rostersByTeamWeek };
-            for (const [teamId, { wagers, submitted }] of Object.entries(result.wagersByTeam)) {
+            // Every team in the league gets rebuilt for this week, not just the ones the fetch came
+            // back with. fetchLeagueRostersForWeek keys its result off weekly_rosters rows, so a
+            // team with no row for this week at all -- which is every team at the start of a new
+            // week, and any team whose picks were all cleared -- simply was not in that map, and the
+            // old loop left whatever was in rostersByTeamWeek untouched.
+            //
+            // Nothing else ever prunes that map (it is persisted with the league and grows for the
+            // whole season), so a stale roster for a week that has since rolled over survived every
+            // refresh forever: the home screen kept scoring a lineup the server no longer had, and
+            // the number it showed matched neither the real week nor the finished one (see chat,
+            // Oct 2026: a Week 6 card reading -$4.58 two days before kickoff, with the matchup
+            // screen correctly showing an empty lineup). Rebuilding the full set makes this fetch
+            // authoritative for the week rather than additive.
+            for (const team of league.teams) {
+              const fetched = result.wagersByTeam[team.id];
               // Merge fetched wagers onto a full, correctly-sized roster
               // (buildEmptyRoster) rather than treating the fetched wagers as
               // the whole roster -- a team with only some slots filled (the
               // normal case for most of a season, not an edge case) would
               // otherwise lose every empty slot the instant this ran.
-              const base = buildEmptyRoster(teamId, week, league.settings.lineupSlots);
-              const wagerBySlotId = new Map(wagers.map((w) => [w.slotId, w.wager]));
+              const base = buildEmptyRoster(team.id, week, league.settings.lineupSlots);
+              const wagerBySlotId = new Map((fetched?.wagers ?? []).map((w) => [w.slotId, w.wager]));
               const slots = base.slots.map((slot) => ({ ...slot, wager: wagerBySlotId.get(slot.slotId) ?? null }));
-              rostersByTeamWeek[rosterKey(teamId, week)] = { ...base, slots, submitted };
+              rostersByTeamWeek[rosterKey(team.id, week)] = { ...base, slots, submitted: fetched?.submitted ?? false };
             }
             return { ...league, rostersByTeamWeek };
           }),
         );
+        return { ok: true };
       },
 
       syncVoidedPicks: (leagueId, week) =>

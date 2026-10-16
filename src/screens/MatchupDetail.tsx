@@ -14,8 +14,8 @@ import { describeWagerResult, type RealPlayerStatLine } from '../engine/realGame
 import { BackHeader, BACK_HEADER_HEIGHT } from '../components/layout/BackHeader';
 import { formatCents } from '../engine/oddsMath';
 import { wagerLineDescription, wagerCompactLineShort } from '../data/propsGenerator';
-import { pickProgress, formatProgressLine } from '../components/home/MatchupCard';
-import { isWagerVisibleToViewer, rosterHasHiddenPicks, emptySlotsHidden, weekAllGamesStarted } from '../engine/stats';
+import { pickProgress, formatProgressLine, buildMatchupView, WinProbBar } from '../components/home/MatchupCard';
+import { isWagerVisibleToViewer, rosterHasHiddenPicks, emptySlotsHidden, weekAllGamesStarted, computeTeamStreak } from '../engine/stats';
 import { isPerfectWeek } from '../engine/perfectWeek';
 import { FireAura } from '../components/common/FireAura';
 import { StinkAura } from '../components/common/StinkAura';
@@ -201,6 +201,24 @@ export function MatchupDetail() {
   const progressA = pickProgress(rosterA, totalSlots);
   const progressB = pickProgress(rosterB, totalSlots);
 
+  // Season record and current streak, the identity-level fact about each team, now shown under the
+  // dollar figure. Read off the same standings every other screen uses rather than recounted here.
+  const recordOf = (teamId: string) => {
+    const s = league.standings.find((x) => x.teamId === teamId);
+    return s ? `${s.wins}-${s.losses}${s.ties ? `-${s.ties}` : ''}` : null;
+  };
+  const recordA = recordOf(teamA.id);
+  const recordB = recordOf(teamB.id);
+  const streakA = computeTeamStreak(league, teamA.id);
+  const streakB = computeTeamStreak(league, teamB.id);
+
+  // Win probability comes from the same model the home card uses, built here rather than
+  // recomputed, so the two screens can never disagree about who is favored.
+  const probView = buildMatchupView(league, matchup, realGamesById);
+  const prob = probView?.prob ?? 0.5;
+  const probHidden = probView?.probHidden ?? false;
+  const giveWidthPx = probView?.giveWidthPx ?? 2;
+
   // Center badge should read "Upcoming" until at least one pick has actually
   // gone live -- previously this showed "Live" the instant the matchup wasn't
   // final, even early in the week when every slot on both rosters was still
@@ -288,9 +306,18 @@ export function MatchupDetail() {
         <MatchupTabs league={league} matchups={orderedWeekMatchups} currentMatchupId={matchup.id} onSelect={(id) => navigate(`/matchup/${id}`, { replace: true })} />
       )}
       <div className={`p-4 space-y-4 ${perfectA || perfectB || skunkedA || skunkedB ? 'pl-slip pl-slip-fade' : ''} ${perfectA ? 'pl-slip-l' : ''} ${perfectB ? 'pl-slip-r' : ''} ${skunkedA ? 'pl-skunk-l' : ''} ${skunkedB ? 'pl-skunk-r' : ''}`}>
+        {/* The header and the picks bar are one block, held together at a tighter spacing than the
+            page's own space-y-4. At that spacing the bar floated in the middle of nowhere, reading
+            as unrelated to the teams it describes (see chat, Oct 2026); the full gap stays below it,
+            where it separates the header from the lineup. */}
+        <div className="space-y-1.5">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
-          <TeamHeader team={teamA} score={scoreA} progress={progressA} scaleRef={scaleRef} perfect={perfectA} skunked={skunkedA} hidden={hiddenA} scoreHidden={scoreHiddenA} />
-          <div className="flex flex-col items-center gap-1">
+          <TeamHeader team={teamA} score={scoreA} record={recordA} streak={streakA} scaleRef={scaleRef} perfect={perfectA} skunked={skunkedA} scoreHidden={scoreHiddenA} />
+          {/* pt-6 drops this stack clear of the team names either side of it. The grid centers its
+              columns, and with the score now much larger the team block grew taller, which left
+              these two pills sitting right on top of the names (see chat, Oct 2026). Pushing them
+              down lines them up with the score instead, where they have room. */}
+          <div className="flex flex-col items-center gap-1 pt-5">
             {/* Moved up from under each team's name+P/L (see chat, Sept 2026) --
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
                 muted "Final") rather than a bespoke badge, so this stays in sync
@@ -300,7 +327,40 @@ export function MatchupDetail() {
               {weekLabel(matchup.week)}
             </span>
           </div>
-          <TeamHeader team={teamB} score={scoreB} progress={progressB} scaleRef={scaleRef} perfect={perfectB} skunked={skunkedB} hidden={hiddenB} scoreHidden={scoreHiddenB} reverse />
+          <TeamHeader team={teamB} score={scoreB} record={recordB} streak={streakB} scaleRef={scaleRef} perfect={perfectB} skunked={skunkedB} scoreHidden={scoreHiddenB} reverse />
+        </div>
+
+        {/* The week's pick records used to sit under each team's dollar figure, directly beneath the
+            season record that now lives there -- two different records stacked on each other, which
+            is exactly the ambiguity that made them hard to read (see chat, Oct 2026). They move to
+            the ends of this row, which was empty space on both sides, so the two are separated by
+            position as well as by label: season under the team, picks on the picks bar.
+            The bar itself is dropped once the matchup is decided. A probability on a finished game
+            is noise, and this is prime space; the records stay, since they still describe the week. */}
+        {isFinal ? (
+          <div className="flex items-center justify-between text-[10px] text-text-muted">
+            <span>{formatProgressLine(progressA, hiddenA)}</span>
+            <span className="text-right">{formatProgressLine(progressB, hiddenB)}</span>
+          </div>
+        ) : (
+          // One line instead of three. The bar used to run the full width with the percentages on
+          // their own row and the pick records on a third, which left the whole block floating in
+          // dead space above the picks (see chat, Oct 2026). Shrunk to a short centered bar with its
+          // percentages either side of it and the pick records on the outside, it says the same
+          // things in a third of the height. The "X leads" caption is gone: with both percentages
+          // sitting right there it was saying what the bar already shows.
+          <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
+            <span className="min-w-0 truncate">{formatProgressLine(progressA, hiddenA)}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="tabular-nums">{probHidden ? '–%' : `${Math.round(prob * 100)}%`}</span>
+              <div className="w-20">
+                <WinProbBar prob={prob} giveWidthPx={giveWidthPx} colorA={teamA.logoColor} colorB={teamB.logoColor} thin />
+              </div>
+              <span className="tabular-nums">{probHidden ? '–%' : `${Math.round((1 - prob) * 100)}%`}</span>
+            </div>
+            <span className="min-w-0 truncate text-right">{formatProgressLine(progressB, hiddenB)}</span>
+          </div>
+        )}
         </div>
 
         <div className="space-y-1.5">
@@ -355,6 +415,7 @@ function MatchupTabs({
   onSelect: (matchupId: string) => void;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const realGamesById = useAppStore((s) => s.realGamesById);
 
   // Keeps the active pill in view as you swipe further down the list --
   // without this, tapping the last matchup in a long week can leave the
@@ -371,18 +432,33 @@ function MatchupTabs({
           const teamA = league.teams.find((t) => t.id === m.teamAId);
           const teamB = league.teams.find((t) => t.id === m.teamBId);
           const isActive = m.id === currentMatchupId;
+          // Scores ride on the OTHER pills only. The one you are sitting on has both figures in
+          // large type two inches below, so repeating them here is noise -- while the neighbours
+          // carry the one thing this strip could say and did not, which is how the rest of the
+          // league is doing (see chat, Oct 2026, against ESPN's matchup switcher). The leader's
+          // figure is tinted and the trailer's stays muted, so it scans without being read.
+          // Built for every pill, selected one included, so the figures can stay mounted and
+          // animate out rather than disappearing (see PillScore).
+          const view = buildMatchupView(league, m, realGamesById);
           return (
             <button
               key={m.id}
               ref={isActive ? activeRef : undefined}
               onClick={() => onSelect(m.id)}
-              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-semibold ${
+              // No gap on the row itself: a collapsed figure would still hold its two gaps open and
+              // the pill would never fully shrink. The spacing lives on the figures (which collapse
+              // with them) and on the logo group (which does not move).
+              className={`shrink-0 flex items-center rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 ease-out ${
                 isActive ? 'sel-pill' : 'bg-bg-card border-border text-text-muted'
               }`}
             >
-              {teamA && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamA} size="sm" /></span>}
-              <span className={isActive ? 'opacity-70' : ''}>vs</span>
-              {teamB && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamB} size="sm" /></span>}
+              {view && <PillScore score={view.scoreA} hidden={view.scoreHiddenA} leading={view.leaderId === m.teamAId} collapsed={isActive} side="left" />}
+              <span className="flex items-center gap-1.5">
+                {teamA && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamA} size="sm" /></span>}
+                <span className={isActive ? 'opacity-70' : ''}>vs</span>
+                {teamB && <span className="rounded-full" style={LOGO_RING}><TeamLogo team={teamB} size="sm" /></span>}
+              </span>
+              {view && <PillScore score={view.scoreB} hidden={view.scoreHiddenB} leading={view.leaderId === m.teamBId} collapsed={isActive} side="right" />}
             </button>
           );
         })}
@@ -391,24 +467,61 @@ function MatchupTabs({
   );
 }
 
+/** One side's figure on a switcher pill. Deliberately whole dollars: the pills sit in a horizontal
+ * strip where width is the scarce thing, and "$38" against "$1" tells you what you came for just as
+ * well as the cents would. A side whose picks are still hidden shows a dash rather than a number.
+ *
+ * Always rendered, never conditionally mounted. The selected pill drops its figures, and unmounting
+ * them made the pill snap between its two widths with nothing in between (see chat, Oct 2026).
+ * Collapsing max-width and opacity instead gives the browser something to animate, so the pill
+ * visibly grows as you swipe off it and shrinks as you land on it. */
+function PillScore({
+  score,
+  hidden,
+  leading,
+  collapsed,
+  side,
+}: {
+  score: number;
+  hidden: boolean;
+  leading: boolean;
+  collapsed: boolean;
+  /** Which end of the pill this sits on, so its spacing collapses on the correct side. */
+  side: 'left' | 'right';
+}) {
+  const rounded = Math.round(score);
+  const spacing = collapsed ? 'max-w-0 opacity-0 mr-0 ml-0' : side === 'left' ? 'max-w-[56px] opacity-100 mr-1.5' : 'max-w-[56px] opacity-100 ml-1.5';
+  return (
+    <span
+      aria-hidden={collapsed}
+      className={`tabular-nums overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${spacing} ${
+        hidden ? 'opacity-50' : leading ? 'text-text' : 'opacity-60'
+      }`}
+    >
+      {hidden ? '$–' : `${rounded < 0 ? '-' : ''}$${Math.abs(rounded)}`}
+    </span>
+  );
+}
+
 function TeamHeader({
   team,
   score,
-  progress,
+  record,
+  streak,
   reverse,
   scaleRef,
   perfect = false,
   skunked = false,
-  hidden = false,
   scoreHidden = false,
 }: {
   team: League['teams'][number];
   score: number;
-  /** Opponent with a still-hidden pick: pick counts are withheld. */
-  hidden?: boolean;
   /** No safe score to show yet. */
   scoreHidden?: boolean;
-  progress: { active: number; won: number; lost: number; pushed: number; open: number };
+  /** Season record, "4-0" or "3-1-1". Null before any week has been decided. */
+  record: string | null;
+  /** Current run of results, shown beside the record as "W4". */
+  streak: { type: 'W' | 'L' | 'T' | null; count: number };
   reverse?: boolean;
   scaleRef: number;
   /** A perfect week: the headline number is drawn as fire. */
@@ -432,24 +545,30 @@ function TeamHeader({
       <div className={`flex items-center gap-1.5 mt-1 ${reverse ? 'flex-row-reverse' : ''}`}>
         <FireAura active={perfect}>
           <StinkAura active={skunked}>
-            <TeamLogo team={team} size="sm" />
+            <TeamLogo team={team} size="md" />
           </StinkAura>
         </FireAura>
         <div className="min-w-0">
+          {/* The headline number carries this screen, so it is sized like one. It could not grow
+              while the week's pick record sat directly under it; with that moved down to the
+              probability bar this block is a line shorter and the figure takes the room (see chat,
+              Oct 2026). */}
           {scoreHidden ? (
-            <p className="text-sm font-bold text-text-muted">$–</p>
+            <p className="text-xl font-bold text-text-muted leading-tight">$–</p>
           ) : (
             <p
-              className={`text-sm font-bold ${perfect ? 'pl-fire-hero' : Math.round(score * 100) > 0 ? 'text-profit' : Math.round(score * 100) < 0 ? 'text-loss' : 'text-text'}`}
+              className={`text-xl font-bold leading-tight ${perfect ? 'pl-fire-hero' : Math.round(score * 100) > 0 ? 'text-profit' : Math.round(score * 100) < 0 ? 'text-loss' : 'text-text'}`}
               style={perfect ? undefined : plStyle(score, scaleRef)}
             >
               {formatCents(score)}
             </p>
           )}
-          {/* Same line MatchupCard shows on the Home matchup bubble (see chat, Sept
-              2026) -- now living where the old bare "Live"/"Final" text used to sit,
-              since that moved up next to the Week pill above. */}
-          <p className={`text-[9px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>{formatProgressLine(progress, hidden)}</p>
+          {record && (
+            <p className={`text-[10px] truncate ${perfect ? 'text-text' : 'text-text-muted'}`}>
+              {record}
+              {streak.type && streak.count > 0 ? ` · ${streak.type}${streak.count}` : ''}
+            </p>
+          )}
           {perfect && <p className="text-[8px] font-bold uppercase tracking-wider pl-gold-text mt-0.5">Perfect week</p>}
           {skunked && <p className="text-[8px] font-bold uppercase tracking-wider pl-skunk-name mt-0.5">Skunked</p>}
         </div>

@@ -1,6 +1,6 @@
 import type { League, PoolWeekEntry, PrizePool, WeekId } from '../types';
 import { rosterKey } from './rosterSlots';
-import { computeWeeklyScore } from './scoring';
+import { settledWeeklyPL } from './scoring';
 import { activeMultipliers, advancePoolForWeek, poolTeamCount } from './prizePool';
 
 // Reading the prize pool's stored history (1.2.11): who moved it in a given week, who has moved it most
@@ -91,9 +91,13 @@ export function findWeek(pool: Pick<PrizePool, 'history'> | null | undefined, we
  * The week in progress as a provisional pool entry, so someone opening the Prize Pool mid-week sees
  * where it stands rather than a chart that stops at the last settled week (see chat, Oct 2026).
  *
- * The same math a closed week gets: each team's weekly score so far, run through advancePoolForWeek
- * with the live multipliers. The only difference is that the scores are partial, since picks are
- * still settling, so this moves with every result and is never written to the stored history.
+ * Each team's banked profit so far, run through advancePoolForWeek with the live multipliers, so a
+ * pick moves the pool by exactly its own share of the week's credits. Partial by nature: it moves
+ * with every result and is never written to the stored history.
+ *
+ * What it deliberately leaves out is the week's penalties (see settledWeeklyPL). A slot nobody has
+ * filled yet costs nothing here; it costs something when the week closes and settle-week writes the
+ * real entry, which is the only place that charge belongs.
  *
  * Null when there is nothing honest to show: the pool is locked, this week has already closed (its
  * real entry is in the history), or not one pick has settled yet.
@@ -113,7 +117,9 @@ export function liveWeekEntry(league: League, pool: PrizePool | null | undefined
     const roster = league.rostersByTeamWeek[rosterKey(team.id, week)];
     if (!roster) continue;
     if (roster.slots.some((s) => s.wager && s.wager.status !== 'pending')) anySettled = true;
-    scores.set(team.id, computeWeeklyScore(roster, league.settings));
+    // Settled picks only -- see settledWeeklyPL. The week's penalties are not real until it closes,
+    // and settle-week applies them when it writes the week's own entry.
+    scores.set(team.id, settledWeeklyPL(roster));
   }
   if (!anySettled) return null;
 

@@ -34,6 +34,30 @@ export function computeWeeklyScore(roster: WeeklyRoster, settings: LeagueSetting
   return settledPL + computeIncompleteLineupPenalty(roster, settings) - pen.fee;
 }
 
+/**
+ * What a team has actually banked this week: the profit of every pick that has already settled, and
+ * nothing else.
+ *
+ * Deliberately not computeWeeklyScore. That one folds in the unspent-credits penalty and the
+ * invalid-roster penalties, which are the right answer for a week that is over and the wrong one
+ * for a week still in progress: before the last kickoff those credits can still be spent and an
+ * invalid pick can still be swapped, so charging for them turns "has not picked yet" into a real
+ * movement of the prize pool.
+ *
+ * That is what the Prize Pool screen was showing mid-week (see chat, Oct 2026): a league with one
+ * settled pick, a $15 loss, reported every one of its eight teams down and the week at -$47.85,
+ * because what it was really drawing was seven mostly-empty lineups being penalized. It also moved
+ * in the wrong direction for the wrong reason, easing as people placed bets rather than as results
+ * came in. A pick's share of the pool should track that pick, and an unfilled slot should simply
+ * not move the pool at all until the week closes and the penalty becomes real.
+ */
+export function settledWeeklyPL(roster: WeeklyRoster): number {
+  return roster.slots.reduce(
+    (sum, s) => (s.wager && s.wager.status !== 'pending' ? sum + (s.wager.settledProfit ?? 0) : sum),
+    0,
+  );
+}
+
 export interface DecidedGameLookup {
   /** True once a pending wager's game has revealed its result (final, or pushed early
    * to 'live'/'final' via the dev-panel day-slot stepper — manual v0.03 §5 #11). */

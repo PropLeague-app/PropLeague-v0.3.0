@@ -7,6 +7,7 @@ import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
 import { StandingsPreview } from '../components/home/StandingsPreview';
 import { ActivityFeed } from '../components/home/ActivityFeed';
+import { TopToast } from '../components/common/TopToast';
 import { CountdownTimer } from '../components/common/CountdownTimer';
 import { EmptyState } from '../components/common/EmptyState';
 import { PrizePoolTicker } from '../components/home/PrizePoolTicker';
@@ -41,6 +42,7 @@ export function LeagueHome() {
   const [announceError, setAnnounceError] = useState<string | null>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   // Pulls the real, shared matchup/standings results — matters most for anyone who
   // isn't the commissioner, since they never ran Advance Week themselves.
@@ -105,12 +107,17 @@ export function LeagueHome() {
   async function handleRefresh() {
     if (refreshing || !league) return;
     setRefreshing(true);
+    setRefreshError(null);
     try {
-      await Promise.all([
+      const [, rosters] = await Promise.all([
         loadLeagueResults(league.id),
         loadWeekRosters(league.id, league.currentWeek),
         loadRealGamesForWeek(league.currentWeek, { force: true }),
       ]);
+      // Pressing refresh and getting silence is worse than getting an error: the numbers already on
+      // screen stay exactly as they were and read as freshly confirmed (see chat, Oct 2026). Says so
+      // instead, and clears itself on the next successful press.
+      if (!rosters.ok) setRefreshError('Could not refresh. Check your connection and try again.');
     } finally {
       setRefreshing(false);
     }
@@ -167,6 +174,7 @@ export function LeagueHome() {
         >
           <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
         </button>
+        <TopToast message={refreshError} />
       </div>
 
       {switcherOpen && (

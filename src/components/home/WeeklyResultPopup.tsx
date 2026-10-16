@@ -2,6 +2,8 @@ import type { CSSProperties } from 'react';
 import { Trophy, X } from 'lucide-react';
 import type { PendingResultReveal } from '../../engine/weeklyResults';
 import { TeamLogo } from '../common/TeamLogo';
+import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../common/buttonStyles';
+import { formatCents } from '../../engine/oddsMath';
 import { weekLabel } from '../../types';
 
 /** A dozen small falling bars, staggered by a fixed formula (not Math.random, so this
@@ -90,24 +92,30 @@ export function WeeklyResultPopup({
           <div className="flex flex-col items-center gap-1.5 min-w-0">
             <TeamLogo team={userTeam} size="lg" />
             <p className="text-xs font-medium truncate max-w-[100px]">{userTeam.teamName}</p>
-            <p className={`text-lg font-bold ${won ? 'text-gold' : ''}`}>${(userScore ?? 0).toFixed(2)}</p>
+            <p className={`text-lg font-bold ${won ? 'text-gold' : ''}`}>{formatCents(userScore ?? 0)}</p>
           </div>
           <span className="text-text-muted text-xs font-bold pb-6">VS</span>
           <div className="flex flex-col items-center gap-1.5 min-w-0">
             <TeamLogo team={opponentTeam} size="lg" />
             <p className="text-xs font-medium truncate max-w-[100px]">{opponentTeam.teamName}</p>
-            <p className="text-lg font-bold text-text-muted">${(opponentScore ?? 0).toFixed(2)}</p>
+            <p className="text-lg font-bold text-text-muted">{formatCents(opponentScore ?? 0)}</p>
           </div>
         </div>
 
+        {/* The app's own buttons: the soft tinted recipe for the action and the standard bordered
+            card for the secondary (see common/buttonStyles.ts). This popup was the last place still
+            painting a solid slab -- bg-primary, or bg-gold on a win, which was the only gold button
+            anywhere in the app -- so it read as borrowed from somewhere else (see chat, Oct 2026).
+            A win keeps its celebration in the trophy, the gold heading and the confetti; the button
+            goes green, the same soft profit button Lineup uses for a completed lineup. */}
         <div className="flex gap-2 pt-1">
-          <button onClick={onDismiss} className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium">
+          <button
+            onClick={onDismiss}
+            className="flex-1 bg-bg-card border border-border font-semibold py-2.5 rounded-xl text-sm active:bg-bg-raised"
+          >
             Close
           </button>
-          <button
-            onClick={onViewMatchup}
-            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold ${won ? 'bg-gold text-bg' : 'bg-primary text-on-primary'}`}
-          >
+          <button onClick={onViewMatchup} className={`flex-1 py-2.5 rounded-xl text-sm ${won ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}>
             View matchup
           </button>
         </div>
