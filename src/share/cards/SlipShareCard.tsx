@@ -1,6 +1,6 @@
 import { formatCents } from '../../engine/oddsMath';
 import { layoutRows } from '../fit';
-import { C, POS_COLOR, SHARE_BODY_H, STATUS_COLOR, STATUS_LABEL, clamp, signedMoney, tint, type ShareStatus } from '../palette';
+import { C, DISPLAY, POS_COLOR, SHARE_BODY_H, STATUS_COLOR, STATUS_LABEL, clamp, signedMoney, tint, type ShareStatus } from '../palette';
 import { ShareFrame } from './ShareFrame';
 
 export interface SlipRow {
@@ -175,7 +175,7 @@ export function SlipShareCard({
             }}
           >
             <div style={{ fontSize: 22, letterSpacing: 3, color: C.muted, fontWeight: 700 }}>{t.label}</div>
-            <div style={{ fontSize: 52, fontWeight: 800, color: t.color, whiteSpace: 'nowrap' }}>{t.value}</div>
+            <div style={{ fontSize: 52, ...DISPLAY, color: t.color, whiteSpace: 'nowrap' }}>{t.value}</div>
           </div>
         ))}
       </div>

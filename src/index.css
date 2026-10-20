@@ -1,7 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: Verdana, Geneva, sans-serif;
+  /* The platform's own UI face (SF Pro on iOS), so the app sits in the system's typography instead
+     of a web face. Measured on device against Verdana across the app's real strings: 0.92 of the
+     width on average, 0.84 on a team name, and the only string that grew at all was "-107" by a
+     quarter of a pixel, so nothing can start truncating because of this. Safe only because digits
+     are pinned with font-variant-numeric below: Verdana's digits are uniform by nature, SF Pro's
+     are proportional unless asked. src/share/palette.ts FONT must stay in step with this line --
+     share cards are rendered off their own inline font, not off this variable. */
+  --font-sans: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
 
   --color-bg: #141c29;
   --color-bg-raised: #1b2536;
@@ -411,14 +418,12 @@ body {
      this app is almost entirely numbers, and hunting down each column one at a time would miss
      some. Scores, money, odds, records and percentages all sit in columns or update in place, and a
      figure that changes width as it counts makes the whole row twitch.
-     It is also what makes the font swap off Verdana safe. Verdana is documented as having uniform
-     digits, so a column with no tabular-nums of its own looks fine today and would start drifting
-     under a font with proportional figures (SF Pro, most system faces). Declaring it here means
-     that is already handled rather than discovered afterwards.
-     How much this changes under Verdana specifically was not measured -- Verdana is not installed
-     where this was developed. It was checked under a proportional-figure fallback instead, where it
-     does shift digit widths slightly and every screen still lays out correctly, so the change is
-     safe whichever way Verdana actually behaves.
+     It is also what made the swap off Verdana safe. Verdana's digits are uniform by nature, so a
+     column with no tabular-nums of its own looked fine under it and would have started drifting
+     under a face with proportional figures, which SF Pro and most system faces are. Declaring it
+     here meant that was already handled before the swap rather than discovered after it.
+     Measured on the device afterwards: tabular figures hold under both faces, so no column drifts
+     either way. The system font draws the digits 0-9 about 8% narrower, which only buys room.
      The per-element tabular-nums classes throughout the app are now redundant but harmless, and
      they still say what the author intended. Anywhere proportional figures genuinely read better
      can opt out with Tailwind's proportional-nums. */
@@ -841,6 +846,54 @@ body {
 .btn-solid-primary {
   background: var(--color-primary-solid, var(--color-primary));
   color: var(--color-on-primary);
+}
+
+/* Display type: everything the app sets at text-lg (18px) and above.
+   The system font is optically sized -- past roughly 20px it switches to a cut that is tighter and
+   lighter in the stroke than the one used for body text. Verdana had no such switch and stayed
+   sturdy at every size, so the same font-bold that read as solid under it reads thin and unfinished
+   at a headline size under this one, and the bigger the text the wider the gap. Small text is
+   unaffected, which is exactly how it looked on device (see chat, Oct 2026).
+   So large text takes a heavier cut and tighter tracking: weight and tracking were both picked on
+   device against the app's real headers rather than guessed. The tracking goes on by size alone,
+   since that is an optical correction and applies at any weight; only the bold weights are raised,
+   so a large regular-weight line is left as it is.
+   The two start at different sizes on purpose. The heavier weight begins at text-base, because
+   16px bold is this app's small-heading role (screen and sheet titles, the budget and prize-pool
+   figures, a team name in the feed) and those read thin too. The tracking begins a step later at
+   text-lg, because it corrects for the Display cut and 16px is still drawn in the Text cut, which
+   is spaced for reading and needs no correction. That also leaves the few places with a deliberate
+   tracking-tight of their own alone.
+   Keyed off the size classes rather than applied at each call site, so every heading in the app
+   moves together and anything added later is right without having to remember this. These rules sit
+   outside @layer on purpose: unlayered declarations beat every layered one, which is how they win
+   against Tailwind's own utilities.
+   src/share/palette.ts DISPLAY is the same treatment for share cards, which are inline-styled and
+   inherit nothing from this file. The two have to be changed together. */
+.text-lg,
+.text-xl,
+.text-2xl,
+.text-3xl,
+.text-4xl,
+.text-5xl {
+  letter-spacing: -0.02em;
+}
+
+.text-base.font-bold,
+.text-lg.font-bold,
+.text-xl.font-bold,
+.text-2xl.font-bold,
+.text-3xl.font-bold,
+.text-4xl.font-bold,
+.text-5xl.font-bold,
+.text-base.font-extrabold,
+.text-lg.font-extrabold,
+.text-xl.font-extrabold,
+.text-2xl.font-extrabold,
+.text-3xl.font-extrabold,
+.text-4xl.font-extrabold,
+.text-5xl.font-extrabold {
+  font-weight: 900;
 }
 
 /* Apple's HIG asks for 44x44pt of tappable area. A handful of controls in the app are

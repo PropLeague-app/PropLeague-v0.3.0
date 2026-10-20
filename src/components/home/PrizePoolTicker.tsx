@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, DollarSign, Lock } from 'lucide-react';
+import { ChevronRight, Lock } from 'lucide-react';
 import type { PrizePool } from '../../types';
 import { formatCents } from '../../engine/oddsMath';
 import { usePlStyle } from '../common/usePlStyle';
@@ -22,8 +22,11 @@ export function PrizePoolTicker({ pool }: { pool: PrizePool }) {
       onClick={() => navigate('/prize-pool')}
       className="w-full flex items-center gap-2.5 rounded-xl border border-border bg-bg-card px-3 py-2 text-left active:opacity-80"
     >
-      <span className="shrink-0 w-7 h-7 rounded-full bg-bg-raised flex items-center justify-center text-text-muted">
-        <DollarSign size={15} />
+      {/* A typed "$", not lucide's DollarSign: the icon's dollar sign is drawn by the icon set and
+          matched nothing else on screen, least of all the pool figure sitting right beside it (see
+          chat, Oct 2026). Same treatment BudgetBar's badge already uses. */}
+      <span className="shrink-0 w-7 h-7 rounded-full bg-bg-raised flex items-center justify-center text-text-muted text-sm font-bold leading-none">
+        $
       </span>
       <span className="text-xs text-text-muted shrink-0">Prize pool</span>
       <span className={`text-base font-bold tabular-nums ${up ? 'text-profit' : ''}`}>{formatCents(pool.current)}</span>

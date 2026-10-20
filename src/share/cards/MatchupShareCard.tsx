@@ -1,6 +1,6 @@
 import { layoutRows } from '../fit';
 import type { LogoIdentity } from '../../types';
-import { C, POS_COLOR, SHARE_BODY_H, STATUS_COLOR, STATUS_LETTER, clamp, signedMoney, tint, type ShareStatus } from '../palette';
+import { C, DISPLAY, POS_COLOR, SHARE_BODY_H, STATUS_COLOR, STATUS_LETTER, clamp, signedMoney, tint, type ShareStatus } from '../palette';
 import { useTone } from '../useTone';
 import { ShareFrame } from './ShareFrame';
 import { ShareFlames } from './ShareFlames';
@@ -132,7 +132,7 @@ function Team({
         )}
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: textDim }}>{side.name}</div>
-      <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1, color: scoreColor, whiteSpace: 'nowrap', opacity: textDim }}>{side.scoreHidden ? '$–' : signedMoney(side.score)}</div>
+      <div style={{ fontSize: 64, ...DISPLAY, lineHeight: 1, color: scoreColor, whiteSpace: 'nowrap', opacity: textDim }}>{side.scoreHidden ? '$–' : signedMoney(side.score)}</div>
       <div style={{ fontSize: 20, color: side.perfect ? C.goldText : side.skunked ? C.skunkText : C.muted, whiteSpace: 'nowrap' }}>
         {side.perfect ? 'PERFECT WEEK' : side.skunked ? 'SKUNKED' : side.progress}
       </div>
@@ -179,7 +179,7 @@ export function MatchupShareCard({
     <ShareFrame leagueName={leagueName} title="Matchup" subtitle={`${weekText} · ${statusText}`} bodyHeight={HEAD_H + 24 + area}>
       <div style={{ height: HEAD_H, display: 'flex', alignItems: 'stretch', gap: 12 }}>
         <Team side={a} winner={winner === 'a'} loser={winner === 'b'} plRef={plRef} />
-        <div style={{ width: 90, alignSelf: 'center', textAlign: 'center', fontSize: 30, fontWeight: 800, color: C.muted }}>VS</div>
+        <div style={{ width: 90, alignSelf: 'center', textAlign: 'center', fontSize: 30, ...DISPLAY, color: C.muted }}>VS</div>
         <Team side={b} winner={winner === 'b'} loser={winner === 'a'} plRef={plRef} />
       </div>
       <div style={{ height: area, marginTop: 24, display: 'flex', flexDirection: 'column', gap: ROW_GAP }}>

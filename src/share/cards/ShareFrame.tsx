@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 // ?inline embeds the PNG as a data URL so the image export never has to fetch it.
 import logoMark from '../../assets/logo-mono-muted.png?inline';
-import { C, FONT, SHARE_BODY_H, SHARE_CHROME_H, SHARE_HEADER_H, SHARE_W, tint } from '../palette';
+import { C, DISPLAY, FONT, SHARE_BODY_H, SHARE_CHROME_H, SHARE_HEADER_H, SHARE_W, tint } from '../palette';
 
 /** The shared shell: PropLeague mark and league name on top, a title panel (title plus the subtitle as
  * chips), the card's own content in a body, a small footer. The card is 1080 wide and 1350 tall at minimum; a card with a lot to show passes a
@@ -13,15 +13,36 @@ const CHIP_GAP = 10;
 /** Room for chips: card width minus the bar's side padding. */
 const CHIP_ROOM = SHARE_W - 112;
 
-/** Rough rendered width of a chip (Verdana is wide), so chips can be split into rows ahead of time
- * and the frame height can include any extra row. */
-const chipWidth = (text: string) => Math.ceil(text.length * CHIP_FS * 0.66) + 40;
+/** Rendered width of a chip, so chips can be split into rows ahead of time and the frame height can
+ * include any extra row.
+ *
+ * Measured, not estimated. This used to be `length * CHIP_FS * 0.66`, a per-character constant
+ * tuned by eye for Verdana. Measuring the real strings on device showed it was wrong in both
+ * directions even in Verdana -- 0.60 per character for a long league name against 0.70 for
+ * "Week 6" -- because caps and digits run wider per character than lowercase, so no single constant
+ * fits both. Measuring also means the font swap needed no re-fit here: the number follows whatever
+ * FONT is. A chip that estimates too wide wraps a row early and makes the whole picture taller than
+ * it needs to be; too narrow and the last chip overhangs the card. */
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+function chipTextWidth(text: string, weight: number): number {
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d');
+  // No 2d context (jsdom under test, or a canvas-less environment): fall back to the old estimate
+  // rather than throwing. Share cards are not rendered in that environment anyway.
+  if (!measureCtx) return text.length * CHIP_FS * 0.66;
+  measureCtx.font = `${weight} ${CHIP_FS}px ${FONT}`;
+  return measureCtx.measureText(text).width;
+}
+
+/** The first chip is the lead one and is drawn heavier (see the render below), so it measures wider
+ * than the rest at the same length. */
+const chipWidth = (text: string, lead: boolean) => Math.ceil(chipTextWidth(text, lead ? 800 : 600)) + 40;
 
 function chipRows(chips: string[]): string[][] {
   const rows: string[][] = [[]];
   let used = 0;
-  for (const c of chips) {
-    const w = chipWidth(c);
+  for (let i = 0; i < chips.length; i += 1) {
+    const c = chips[i];
+    const w = chipWidth(c, i === 0);
     const row = rows[rows.length - 1];
     if (row.length > 0 && used + CHIP_GAP + w > CHIP_ROOM) {
       rows.push([c]);
@@ -102,7 +123,9 @@ export function ShareFrame({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, height: 44 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img src={logoMark} alt="" style={{ width: 60, height: 60, objectFit: 'contain', margin: '-8px 0 -8px -8px' }} />
-            <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: 0.5, color: C.text }}>PropLeague</span>
+            {/* Takes DISPLAY's weight but keeps its own positive tracking: this is the wordmark in
+                the card's lockup, where the letters are spaced apart on purpose. */}
+            <span style={{ fontSize: 30, fontWeight: DISPLAY.fontWeight, letterSpacing: 0.5, color: C.text }}>PropLeague</span>
           </div>
           <span
             style={{
@@ -119,7 +142,7 @@ export function ShareFrame({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ fontSize: 58, fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ fontSize: 58, ...DISPLAY, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {title}
           </div>
           {text && (

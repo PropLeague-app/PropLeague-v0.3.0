@@ -247,7 +247,10 @@ export function Lineup() {
               setSubmitting(false);
             }
           }}
-          className={`w-full py-3 rounded-xl ${roster.submitted && validation.valid ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}
+          // text-lg font-bold so the screen's main action carries the same display treatment as a
+          // heading: the soft button styles set their own weight at body size, which left this one
+          // looking thin next to everything else after the font change (see chat, Oct 2026).
+          className={`w-full py-3 rounded-xl text-lg font-bold ${roster.submitted && validation.valid ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}
         >
           {submitting ? 'Saving…' : roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>

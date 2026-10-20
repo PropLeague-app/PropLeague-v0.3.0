@@ -1,8 +1,12 @@
 import type { NFLTeam } from '../../types';
 
 /** Badge size in px, ring thickness (a 1px dark rim plus the secondary band), and the abbreviation
- * font size for two-letter and three-letter teams. Verdana is wide, so three-letter teams (WAS, NYJ,
- * MIN) get a smaller font to stay inside the ring instead of spilling over it. */
+ * font size for two-letter and three-letter teams: three-letter teams (WAS, NYJ, MIN) get a smaller
+ * font to stay inside the ring instead of spilling over it.
+ *
+ * These sizes were set against Verdana and are unchanged by the move to the system font. All-caps
+ * is where the two faces agree most closely -- measured on device, "AAM" is only 5% narrower and
+ * "DEJ" 3% -- so the abbreviations still fill their rings. */
 const SIZES = {
   xs: { px: 26, ring: 2, font2: 10, font3: 8 },
   sm: { px: 32, ring: 3, font2: 11, font3: 9 },

@@ -1,5 +1,5 @@
 import type { LogoIdentity } from '../../types';
-import { C, SHARE_BODY_H, signedMoney, tint } from '../palette';
+import { C, DISPLAY, SHARE_BODY_H, signedMoney, tint } from '../palette';
 import { useTone } from '../useTone';
 import { ShareFrame } from './ShareFrame';
 import { ShareLogo } from './ShareLogo';
@@ -49,13 +49,13 @@ export function StatsShareCard(d: StatsCardData) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
           <ShareLogo identity={d.identity} initials={d.initials} size={90} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 38, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 800 }}>{d.name}</div>
+            <div style={{ fontSize: 38, ...DISPLAY, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 800 }}>{d.name}</div>
             <div style={{ fontSize: 22, color: C.muted, letterSpacing: 3, marginTop: 4 }}>TOTAL P/L</div>
           </div>
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 124, fontWeight: 800, lineHeight: 1, color: plColor, whiteSpace: 'nowrap' }}>{signedMoney(d.totalPL)}</div>
+          <div style={{ fontSize: 124, ...DISPLAY, lineHeight: 1, color: plColor, whiteSpace: 'nowrap' }}>{signedMoney(d.totalPL)}</div>
           <div
             style={{
               display: 'inline-block',
@@ -89,7 +89,7 @@ export function StatsShareCard(d: StatsCardData) {
                 padding: '0 8px',
               }}
             >
-              <div style={{ fontSize: 36, fontWeight: 800, color: t.amount != null ? tone(t.amount, t.ref) : toneColor(t.tone), whiteSpace: 'nowrap' }}>{t.value}</div>
+              <div style={{ fontSize: 36, ...DISPLAY, color: t.amount != null ? tone(t.amount, t.ref) : toneColor(t.tone), whiteSpace: 'nowrap' }}>{t.value}</div>
               <div style={{ fontSize: 20, color: C.muted, letterSpacing: 1, whiteSpace: 'nowrap' }}>{t.label}</div>
             </div>
           ))}

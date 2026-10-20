@@ -1,5 +1,5 @@
 import type { LogoIdentity } from '../../types';
-import { C, SHARE_BODY_H } from '../palette';
+import { C, DISPLAY, SHARE_BODY_H } from '../palette';
 import { useTone } from '../useTone';
 import { ShareFrame } from './ShareFrame';
 import { ShareLogo } from './ShareLogo';
@@ -110,7 +110,7 @@ function Tiles({ block }: { block: Extract<TabBlock, { kind: 'tiles' }> }) {
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${block.cols}, 1fr)`, gridAutoRows: TILE_H, gap: TILE_GAP }}>
       {block.tiles.map((t) => (
         <div key={t.label} style={{ ...panel, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 8px' }}>
-          <div style={{ fontSize: 40, fontWeight: 800, color: t.amount != null ? tone(t.amount, t.ref) : toneColor(t.tone), whiteSpace: 'nowrap' }}>{t.value}</div>
+          <div style={{ fontSize: 40, ...DISPLAY, color: t.amount != null ? tone(t.amount, t.ref) : toneColor(t.tone), whiteSpace: 'nowrap' }}>{t.value}</div>
           <div style={{ fontSize: 21, color: C.muted, letterSpacing: 1, whiteSpace: 'nowrap' }}>{t.label}</div>
         </div>
       ))}
@@ -138,9 +138,9 @@ function Highlights({ block }: { block: Extract<TabBlock, { kind: 'highlights' }
           }}
         >
           <div style={{ fontSize: 20, letterSpacing: 2, color: C.muted, whiteSpace: 'nowrap' }}>{h.label}</div>
-          <div style={{ fontSize: 32, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
+          <div style={{ fontSize: 32, ...DISPLAY, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <span style={{ fontSize: 40, fontWeight: 800, whiteSpace: 'nowrap', color: h.amount != null ? tone(h.amount, h.ref) : C.text }}>{h.value}</span>
+            <span style={{ fontSize: 40, ...DISPLAY, whiteSpace: 'nowrap', color: h.amount != null ? tone(h.amount, h.ref) : C.text }}>{h.value}</span>
             {h.sub && <span style={{ fontSize: 22, color: C.muted, whiteSpace: 'nowrap' }}>{h.sub}</span>}
           </div>
         </div>

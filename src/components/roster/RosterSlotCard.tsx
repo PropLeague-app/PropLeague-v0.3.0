@@ -285,8 +285,11 @@ export function RosterSlotCard({
               </button>
               <span className="text-text-muted text-[11px]">→</span>
               {/* whitespace-nowrap, not width: a hyphen is a break opportunity, so "-$12.50" split
-                  across two lines while "+$17.88" never did -- only losses looked broken. */}
-              <span className={`w-[52px] shrink-0 whitespace-nowrap text-right text-[12px] leading-4 font-semibold tabular-nums ${payout.className}`}>
+                  across two lines while "+$17.88" never did -- only losses looked broken.
+                  60px, not the 52 it was: measured on device, "+$142.99" draws 65.9px in Verdana
+                  and 59.2px in the system font, so the old box was too narrow for an eight-character
+                  payout in either and the number overhung it toward the arrow. */}
+              <span className={`w-[60px] shrink-0 whitespace-nowrap text-right text-[12px] leading-4 font-semibold tabular-nums ${payout.className}`}>
                 {payout.text}
               </span>
             </div>

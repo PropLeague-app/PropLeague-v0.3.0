@@ -56,19 +56,40 @@ export function pickProgress(roster: WeeklyRoster | undefined, totalSlots: numbe
  * screen's narrower team-header column, that extra dead text is exactly what
  * pushed the line into mid-word truncation (see chat, Sept 2026: "we just
  * need the pure record, and how many unsettled... if any of those categories
- * are empty... those should be removed"). The settled W-L-P record is the
- * "pure record" and always shows; active/left are the "how many unsettled"
- * piece and only show up when there's actually something left to report. */
+ * are empty... those should be removed"). The W-L-P record is the "pure
+ * record" and always shows; active/left are the "how many unsettled" piece
+ * and only show up when there's actually something left to report.
+ *
+ * The word "settled" is gone (see chat, Oct 2026). A W-L-P triple already
+ * reads as a record, so the word was carrying no meaning while costing eight
+ * characters, and on a matchup with live picks on both sides that was the
+ * difference between the line fitting and truncating mid-word.
+ *
+ * `side` mirrors the two ends of a matchup. The record is the part that is
+ * always there, so it takes the outer edge on both sides and the live counts
+ * sit against the middle: "4-3-0 · 1 active" on the left reads outward-in,
+ * "5 active · 1-2-0" on the right reads inward-out, and the two records line
+ * up with the edges of the row instead of both running the same direction. */
 export function formatProgressLine(
   progress: { active: number; won: number; lost: number; pushed: number; open: number },
   /** An opponent with hidden picks: active and left counts would reveal how many they placed. */
   hideCounts = false,
+  /** Which end of the matchup this line sits on. */
+  side: 'left' | 'right' = 'left',
 ): string {
-  const segments: string[] = [];
-  if (!hideCounts && progress.active > 0) segments.push(`${progress.active} active`);
-  segments.push(`${progress.won}-${progress.lost}-${progress.pushed} settled`);
-  if (!hideCounts && progress.open > 0) segments.push(`${progress.open} left`);
-  return segments.join(' · ');
+  const record = `${progress.won}-${progress.lost}-${progress.pushed}`;
+  // At most one live count, never both. Three parts ("1-1-0 · 2 active · 3 left") is wider than the
+  // half of the row each side gets once the probability bar has taken the middle, which is the
+  // truncation this is meant to end. Active wins when there is any, because a pick in flight is the
+  // live thing to know; open slots only surface before kickoff, when they are the whole story and
+  // the line is short anyway. An unfilled lineup is flagged on the Lineup tab regardless.
+  const live = !hideCounts && progress.active > 0
+    ? `${progress.active} active`
+    : !hideCounts && progress.open > 0
+      ? `${progress.open} left`
+      : null;
+  if (!live) return record;
+  return side === 'left' ? `${record} · ${live}` : `${live} · ${record}`;
 }
 
 /** Everything a matchup card shows, worked out once for any card that shows a matchup (the full card
@@ -300,7 +321,7 @@ export function MatchupCard({
         {!compact && (
           <div className="flex items-center justify-between text-[9px] text-text-muted mt-1">
             <span>{formatProgressLine(progressA, hiddenA)}</span>
-            <span className="text-right">{formatProgressLine(progressB, hiddenB)}</span>
+            <span className="text-right">{formatProgressLine(progressB, hiddenB, 'right')}</span>
           </div>
         )}
       </div>

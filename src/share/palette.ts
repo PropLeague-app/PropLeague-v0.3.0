@@ -47,7 +47,23 @@ export const POS_COLOR: Record<string, string> = {
   ML: 'var(--color-pos-ml, #facc15)',
 };
 
-export const FONT = 'Verdana, Geneva, sans-serif';
+/** Kept in step with --font-sans in index.css by hand: share cards are rendered through
+ * html-to-image off inline styles, so they never inherit the stylesheet's font. If these two drift,
+ * the picture comes out in a different face than the screen it was shared from. */
+export const FONT = "-apple-system, system-ui, 'Segoe UI', Roboto, sans-serif";
+
+/** Display type: anything on a share card set at 30px or above.
+ *
+ * The system font is optically sized -- past roughly 20px it switches to a cut that is tighter and
+ * lighter in the stroke than the one used for body text. Verdana has no such switch and stays
+ * sturdy at every size, so a weight that looked solid under it reads thin and unfinished at a
+ * headline size under this one (see chat, Oct 2026). Large text therefore takes a heavier cut and
+ * tighter tracking than the app's default, chosen on device against the real headers.
+ *
+ * The screen gets this from a rule in index.css keyed off Tailwind's size classes. A share card is
+ * inline-styled and inherits nothing from the stylesheet, so it spreads this instead. The two have
+ * to agree, or a shared picture looks different from the screen it came from. */
+export const DISPLAY = { fontWeight: 900, letterSpacing: '-0.02em' } as const;
 
 export type ShareStatus = 'won' | 'lost' | 'push' | 'voided' | 'pending' | 'live';
 

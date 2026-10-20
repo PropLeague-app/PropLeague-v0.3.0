@@ -3,7 +3,7 @@ import { weekLabel } from '../../types';
 import { formatCents } from '../../engine/oddsMath';
 import { poolTeamCount } from '../../engine/prizePool';
 import type { PoolImpactRow } from '../../engine/poolView';
-import { C, SHARE_BODY_H, tint } from '../palette';
+import { C, DISPLAY, SHARE_BODY_H, tint } from '../palette';
 import { useTone } from '../useTone';
 import { ShareFrame } from './ShareFrame';
 import { ShareLogo } from './ShareLogo';
@@ -91,10 +91,10 @@ export function PoolShareCard({
         >
           <div>
             <div style={{ fontSize: 24, color: C.muted }}>{week ? `After ${weekLabel(week.week)}` : 'Current pool'}</div>
-            <div style={{ fontSize: 86, fontWeight: 800, lineHeight: 1.05 }}>{formatCents(headline)}</div>
+            <div style={{ fontSize: 86, ...DISPLAY, lineHeight: 1.05 }}>{formatCents(headline)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 52, fontWeight: 800, color: tone(delta, ref) }}>{signed(delta)}</div>
+            <div style={{ fontSize: 52, ...DISPLAY, color: tone(delta, ref) }}>{signed(delta)}</div>
             <div style={{ fontSize: 22, color: C.muted }}>{week ? 'that week' : `from ${formatCents(pool.initial)}`}</div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export function PoolShareCard({
                 {Math.abs(r.multiplier - 1) > 0.004 && (
                   <span style={{ fontSize: 22, fontWeight: 700, color: C.muted, flexShrink: 0 }}>{r.multiplier.toFixed(2)}x</span>
                 )}
-                <span style={{ fontSize: 30, fontWeight: 800, color: tone(r.impact, impactRef), flexShrink: 0 }}>{signed(r.impact)}</span>
+                <span style={{ fontSize: 30, ...DISPLAY, color: tone(r.impact, impactRef), flexShrink: 0 }}>{signed(r.impact)}</span>
               </div>
             );
           })}

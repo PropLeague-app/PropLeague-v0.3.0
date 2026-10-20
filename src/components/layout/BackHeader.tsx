@@ -51,7 +51,10 @@ export function BackHeader({
         <span className="text-xl leading-none">‹</span>
         <span className="text-sm">Back</span>
       </button>
-      <h1 className="text-base font-bold truncate flex-1">{title}</h1>
+      {/* text-xl to match every other screen's own <h1>: this header sat a size below them, so a
+          detail screen's title read smaller than the tab screen it was opened from (see chat, Oct
+          2026). truncate and flex-1 keep a long title from crowding whatever `right` holds. */}
+      <h1 className="text-xl font-bold truncate flex-1">{title}</h1>
       {right}
       {below}
     </div>

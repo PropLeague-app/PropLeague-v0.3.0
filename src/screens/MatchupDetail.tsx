@@ -340,7 +340,7 @@ export function MatchupDetail() {
         {isFinal ? (
           <div className="flex items-center justify-between text-[10px] text-text-muted">
             <span>{formatProgressLine(progressA, hiddenA)}</span>
-            <span className="text-right">{formatProgressLine(progressB, hiddenB)}</span>
+            <span className="text-right">{formatProgressLine(progressB, hiddenB, 'right')}</span>
           </div>
         ) : (
           // One line instead of three. The bar used to run the full width with the percentages on
@@ -350,7 +350,12 @@ export function MatchupDetail() {
           // things in a third of the height. The "X leads" caption is gone: with both percentages
           // sitting right there it was saying what the bar already shows.
           <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
-            <span className="min-w-0 truncate">{formatProgressLine(progressA, hiddenA)}</span>
+            {/* flex-1 on both ends, not content width: the two records are different lengths ("8
+                active · 0-0-0 settled" against "4-4-0 settled") and with justify-between alone that
+                difference pushed the bar off-centre, so it sat somewhere different on every matchup
+                (see chat, Oct 2026). Equal shares either side pin it to the middle of the row
+                whatever the records say. */}
+            <span className="flex-1 min-w-0 truncate">{formatProgressLine(progressA, hiddenA)}</span>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="tabular-nums">{probHidden ? '–%' : `${Math.round(prob * 100)}%`}</span>
               <div className="w-20">
@@ -358,7 +363,7 @@ export function MatchupDetail() {
               </div>
               <span className="tabular-nums">{probHidden ? '–%' : `${Math.round((1 - prob) * 100)}%`}</span>
             </div>
-            <span className="min-w-0 truncate text-right">{formatProgressLine(progressB, hiddenB)}</span>
+            <span className="flex-1 min-w-0 truncate text-right">{formatProgressLine(progressB, hiddenB, 'right')}</span>
           </div>
         )}
         </div>
