@@ -55,7 +55,7 @@ export function ApplyNowSheet({
               <p className="font-bold leading-tight">Apply now</p>
               <p className="text-xs text-text-muted mt-0.5">{describePendingKeys(keys)}</p>
             </div>
-            <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 shrink-0">
+            <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 shrink-0 tap-44">
               <X size={20} />
             </button>
           </div>

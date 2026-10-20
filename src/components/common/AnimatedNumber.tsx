@@ -56,7 +56,7 @@ export function AnimatedNumber({
   const flashClass = flash === 'profit' ? 'flash-profit' : flash === 'loss' ? 'flash-loss' : '';
 
   return (
-    <span className={`${colorClass} ${flashClass} rounded px-0.5 ${className}`} style={perfect || shownCents === 0 ? undefined : plStyle(displayed, scaleRef)}>
+    <span className={`${colorClass} ${flashClass} tabular-nums rounded px-0.5 ${className}`} style={perfect || shownCents === 0 ? undefined : plStyle(displayed, scaleRef)}>
       {formatCents(displayed)}
     </span>
   );

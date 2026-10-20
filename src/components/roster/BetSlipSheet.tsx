@@ -360,7 +360,7 @@ export function BetSlipSheet({
               <span className="text-sm font-bold">
                 <OddsDisplay odds={target.outcome.price} />
               </span>
-              <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1">
+              <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 tap-44">
                 <X size={20} />
               </button>
             </div>

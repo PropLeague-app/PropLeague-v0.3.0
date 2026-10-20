@@ -24,6 +24,8 @@ export function Lineup() {
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   // Why the server refused a stake edit, per slot; cleared by the next accepted edit.
   const [stakeErrors, setStakeErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateWagerStake = useAppStore((s) => s.updateWagerStake);
@@ -206,7 +208,7 @@ export function Lineup() {
           <div className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 space-y-0.5">
             <div className="flex items-center justify-between text-xs font-semibold">
               <span>If it locked now</span>
-              <span className="text-loss">-${penaltyTotal.toFixed(2)}</span>
+              <span className="text-loss tabular-nums">-${penaltyTotal.toFixed(2)}</span>
             </div>
             {incompleteLoss > 0 && (
               <p className="text-[11px] text-text-muted">
@@ -226,12 +228,28 @@ export function Lineup() {
         <div className="flex items-center justify-end text-xs text-text-muted px-1">
           <span>{validation.distinctGames} game(s) used</span>
         </div>
+        {/* submitLineup returns a boolean that this button used to throw away: no pending state, no
+            failure, and nothing stopping a second press while the first was in flight (see chat,
+            Oct 2026). Marking complete is not cosmetic -- it is what waives the unspent-credits
+            penalty on a full lineup (see computeIncompleteLineupPenalty) -- so a press that silently
+            did nothing could cost real credits at kickoff. */}
+        {submitError && <p className="text-loss text-xs px-1">{submitError}</p>}
         <button
-          disabled={!validation.valid}
-          onClick={() => submitLineup(league.id, userTeam.id, league.currentWeek)}
+          disabled={!validation.valid || submitting}
+          onClick={async () => {
+            if (submitting) return;
+            setSubmitting(true);
+            setSubmitError(null);
+            try {
+              const ok = await submitLineup(league.id, userTeam.id, league.currentWeek);
+              if (!ok) setSubmitError('Could not mark your lineup complete. Check your connection and try again.');
+            } finally {
+              setSubmitting(false);
+            }
+          }}
           className={`w-full py-3 rounded-xl ${roster.submitted && validation.valid ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}
         >
-          {roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
+          {submitting ? 'Saving…' : roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
         </button>
       </div>
 

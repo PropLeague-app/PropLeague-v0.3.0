@@ -278,6 +278,16 @@
   --color-pos-ml: #7a6b00;
 }
 
+/* Blue is the default accent and carries no data-accent attribute at all (applyAccent deletes it),
+   so its deepened slab fill has to hang off :root:not([data-accent]) rather than plain :root. On
+   plain :root every other accent would inherit it and get a blue button, since the var() fallback
+   in .btn-solid-primary only applies when the property is not set anywhere. White on the brand
+   #4c8df5 is 3.26:1, under the 4.5 needed for normal-size text; everything else in the app keeps
+   the brand color. Matches both tones, blue being the same hue in each. */
+:root:not([data-accent]) {
+  --color-primary-solid: #2f6fd8;
+}
+
 /* Accents (1.2.10, Settings > Accent). Blue is the original and needs no block. Each accent sets the
    primary color and its readable ink, with darker versions for light themes. Green and red are never
    accents. Values are mirrored in src/engine/themes.ts (ACCENTS). */
@@ -294,6 +304,7 @@
   --color-primary: #7477f5;
   --color-primary-ink: #c3c5ff;
   --color-on-primary: #ffffff;
+  --color-primary-solid: #5b5ee8; /* white on #7477f5 is 3.68:1 */
   /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
      changes, voided picks), so those switch to teal. */
   --color-accent: #2cc5b4;
@@ -311,6 +322,8 @@
   --color-primary: #b16cf7;
   --color-primary-ink: #dfc0ff;
   --color-on-primary: #ffffff;
+  /* white on #b16cf7 is 3.30:1; this is the same value the light tone already uses. */
+  --color-primary-solid: #8b3fd9;
   /* Purple-ish accents would blend with the purple action color (Void Requests, scheduled
      changes, voided picks), so those switch to teal. */
   --color-accent: #2cc5b4;
@@ -394,6 +407,22 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Every digit the same width, everywhere, for the same reason the input rule above is global:
+     this app is almost entirely numbers, and hunting down each column one at a time would miss
+     some. Scores, money, odds, records and percentages all sit in columns or update in place, and a
+     figure that changes width as it counts makes the whole row twitch.
+     It is also what makes the font swap off Verdana safe. Verdana is documented as having uniform
+     digits, so a column with no tabular-nums of its own looks fine today and would start drifting
+     under a font with proportional figures (SF Pro, most system faces). Declaring it here means
+     that is already handled rather than discovered afterwards.
+     How much this changes under Verdana specifically was not measured -- Verdana is not installed
+     where this was developed. It was checked under a proportional-figure fallback instead, where it
+     does shift digit widths slightly and every screen still lays out correctly, so the change is
+     safe whichever way Verdana actually behaves.
+     The per-element tabular-nums classes throughout the app are now redundant but harmless, and
+     they still say what the author intended. Anywhere proportional figures genuinely read better
+     can opt out with Tailwind's proportional-nums. */
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -805,6 +834,39 @@ body {
   border-color: color-mix(in oklab, var(--color-profit) 50%, var(--color-bg));
 }
 .btn-soft-profit:active:not(:disabled) { background: color-mix(in oklab, var(--color-profit) 28%, var(--color-bg)); }
+/* The solid slab (onboarding's primary action). Both halves come from the theme so an accent that
+   asks for dark text gets dark text. --color-primary-solid is an optional deepened fill, set only
+   for the accents whose white label would otherwise sit under 4.5:1 on the plain primary; every
+   other accent falls through to --color-primary unchanged. */
+.btn-solid-primary {
+  background: var(--color-primary-solid, var(--color-primary));
+  color: var(--color-on-primary);
+}
+
+/* Apple's HIG asks for 44x44pt of tappable area. A handful of controls in the app are
+   painted much smaller on purpose -- the ✕ in a sheet header, the ⇄/✕ pair on a lineup
+   pick -- and growing them would push the layouts they sit in around. These two utilities
+   extend the touch area past the painted box with a pseudo-element instead, so a control
+   keeps the size it looks and still catches a thumb.
+
+   This only goes on a control with 44pt of clear space around it -- a sheet's Close. The
+   overlay is invisible but it does catch taps, so on a control with a close neighbour it
+   would reach over and swallow the neighbour's taps instead. The lineup card's ⇄/✕ pair is
+   exactly that case and is deliberately left alone. */
+.tap-44 {
+  position: relative;
+}
+
+.tap-44::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
 /* Destructive actions (leave, void, log out) in the same soft recipe, tinted red. */
 .btn-soft-loss {
   font-weight: 600;

@@ -34,12 +34,12 @@ export function StandingsPreview({ league }: { league: League }) {
           return (
             <div key={s.teamId} className={`flex items-center justify-between text-xs ${team.isUser ? 'text-primary font-semibold' : ''}`}>
               <span className="flex items-center gap-1.5 min-w-0">
-                <span className="shrink-0">{i + 1}.</span>
+                <span className="shrink-0 tabular-nums">{i + 1}.</span>
                 <TeamLogo team={team} size="sm" />
                 <span className="truncate">{team.teamName}</span>
                 <ClinchIcon status={clinch.get(team.id)} />
               </span>
-              <span className="text-text-muted shrink-0">
+              <span className="text-text-muted shrink-0 tabular-nums">
                 {s.wins}-{s.losses}
                 {s.ties ? `-${s.ties}` : ''} · {formatCents(s.totalPL)}
               </span>
@@ -49,12 +49,12 @@ export function StandingsPreview({ league }: { league: League }) {
         {!userInTop4 && userTeam && (
           <div className="flex items-center justify-between text-xs text-primary font-semibold pt-1 border-t border-border">
             <span className="flex items-center gap-1.5">
-              <span>{userRank}.</span>
+              <span className="tabular-nums">{userRank}.</span>
               <TeamLogo team={userTeam} size="sm" />
               {userTeam.teamName}
               <ClinchIcon status={clinch.get(userTeam.id)} />
             </span>
-            <span className="text-text-muted">
+            <span className="text-text-muted tabular-nums">
               {ranked[userRank - 1]?.wins}-{ranked[userRank - 1]?.losses}
             </span>
           </div>

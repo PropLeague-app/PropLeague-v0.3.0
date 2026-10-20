@@ -127,7 +127,7 @@ export function LeagueSwitcherSheet({
       >
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-bold">Your Leagues</h2>
-          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1">
+          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 tap-44">
             <X size={20} />
           </button>
         </div>
@@ -175,7 +175,7 @@ export function LeagueSwitcherSheet({
                       )}
                       {status && (
                         <span
-                          className={`text-[10px] font-semibold ${
+                          className={`text-[10px] font-semibold tabular-nums ${
                             status.amount == null ? 'text-text-muted' : status.amount >= 0 ? 'text-profit' : 'text-loss'
                           }`}
                           style={status.amount == null ? undefined : plStyle(status.amount)}

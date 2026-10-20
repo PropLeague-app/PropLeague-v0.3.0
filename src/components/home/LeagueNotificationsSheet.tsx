@@ -74,7 +74,7 @@ export function LeagueNotificationsSheet({
               <p className="text-[11px] text-text-muted truncate">{league.name}</p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 shrink-0">
+          <button onClick={onClose} aria-label="Close" className="text-text-muted -mr-1 p-1 shrink-0 tap-44">
             <X size={20} />
           </button>
         </div>

@@ -20,5 +20,5 @@ export function CountdownTimer({ target, prefix = 'Kickoff in ' }: { target: str
   }, []);
 
   const remaining = new Date(target).getTime() - now;
-  return <span>{remaining <= 0 ? 'Kicked off' : `${prefix}${formatRemaining(remaining)}`}</span>;
+  return <span className="tabular-nums">{remaining <= 0 ? 'Kicked off' : `${prefix}${formatRemaining(remaining)}`}</span>;
 }

@@ -134,7 +134,7 @@ export function ScheduleView() {
                       {mySkunked && <SkunkIcon size={11} style={{ color: 'var(--pl-skunk-icon)' }} />}
                       {won ? 'W' : tied ? 'T' : 'L'}
                     </p>
-                    <p className="text-[11px] text-text-muted">
+                    <p className="text-[11px] text-text-muted tabular-nums">
                       <span className={myPerfect ? 'pl-gold-text font-semibold' : mySkunked ? 'text-loss font-semibold' : ''}>{formatCents(myScore!)}</span>
                       {' - '}
                       <span className={oppPerfect ? 'pl-gold-text font-semibold' : oppSkunked ? 'text-loss font-semibold' : ''}>{formatCents(oppScore!)}</span>

@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { House, ClipboardList, CalendarDays, Settings } from 'lucide-react';
+import { ConfirmSheet } from '../common/ConfirmSheet';
 import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
 import { validateLineup } from '../../engine/validation';
@@ -54,15 +56,11 @@ export function BottomTabBar() {
   // app has no data-router set up (plain <Routes>), so react-router's navigation
   // blockers aren't available; intercepting the tab bar itself covers the actual way
   // someone leaves the Settings tab mid-edit.
-  function confirmLeave(e: React.MouseEvent): boolean {
-    if (!hasUnsavedChanges) return true;
-    if (!confirm('You have unsaved changes. Discard them?')) {
-      e.preventDefault();
-      return false;
-    }
-    setHasUnsavedChanges(false);
-    return true;
-  }
+  //
+  // ConfirmSheet is async, so the tap cannot be answered inline the way window.confirm
+  // answered it: the tap is cancelled outright, the destination is parked here, and the
+  // navigation is replayed by goToTab() if the sheet is confirmed.
+  const [pendingLeave, setPendingLeave] = useState<string | null>(null);
 
   // Tab taps (shellNav.ts):
   // - The tab you are already in goes back to its default view (NFL Slate: the list for the current
@@ -72,8 +70,35 @@ export function BottomTabBar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const setSlateWeek = useUIStore((s) => s.setSlateWeek);
+  // The same tab-tap rules as handleClick, but driven by navigate() rather than by letting
+  // the NavLink's own default through, for the replay-after-confirm path where there is no
+  // click event left to allow.
+  function goToTab(to: string) {
+    if (inTabSection(to, pathname)) {
+      if (isMemoryTab(to)) resetTabMemory(to);
+      if (to === '/slate') setSlateWeek(null);
+      if (pathname === to) {
+        scrollShellToTop();
+        return;
+      }
+      navigate(to);
+      return;
+    }
+    if (isMemoryTab(to)) {
+      const target = tabReopenPath(to, currentLeagueId);
+      const state: ShellNavState = { restoreScroll: true, fromTab: target !== to };
+      navigate(target, { state });
+      return;
+    }
+    navigate(to);
+  }
+
   function handleClick(e: React.MouseEvent, to: string) {
-    if (!confirmLeave(e)) return;
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      setPendingLeave(to);
+      return;
+    }
     if (inTabSection(to, pathname)) {
       if (isMemoryTab(to)) resetTabMemory(to);
       if (to === '/slate') setSlateWeek(null);
@@ -92,6 +117,7 @@ export function BottomTabBar() {
   }
 
   return (
+    <>
     <nav
       className="fixed bottom-0 w-full max-w-md bg-bg-raised border-t border-border flex z-40"
       style={{
@@ -122,5 +148,18 @@ export function BottomTabBar() {
         </NavLink>
       ))}
     </nav>
+    {pendingLeave && (
+      <ConfirmSheet
+        title="Discard unsaved changes?"
+        description="You have changes that have not been saved. Leaving this screen will discard them."
+        confirmLabel="Discard"
+        onConfirm={async () => {
+          setHasUnsavedChanges(false);
+          goToTab(pendingLeave);
+        }}
+        onClose={() => setPendingLeave(null)}
+      />
+    )}
+    </>
   );
 }

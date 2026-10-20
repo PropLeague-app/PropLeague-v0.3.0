@@ -70,7 +70,7 @@ export function WeeklyResultPopup({
         onClick={(e) => e.stopPropagation()}
       >
         {won && <ConfettiBurst />}
-        <button onClick={onDismiss} className="absolute top-3 right-3 text-text-muted p-1" aria-label="Close">
+        <button onClick={onDismiss} className="absolute top-3 right-3 text-text-muted p-1 tap-44" aria-label="Close">
           <X size={18} />
         </button>
 

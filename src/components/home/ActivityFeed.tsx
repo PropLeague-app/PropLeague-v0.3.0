@@ -752,7 +752,8 @@ export function ActivityFeed({
       small badge on the Chat tab pill itself. */
   chatUnreadCount?: number;
   onReact?: (itemId: string, emoji: string) => void;
-  onSendChat?: (message: string) => void;
+  /** Resolves false when the send failed, which keeps the typed message in the box. */
+  onSendChat?: (message: string) => Promise<boolean>;
   /** Called whenever the Chat tab is the active tab and there are messages to
       have seen -- both right when the user switches to it, and again if a new
       message arrives while they're still looking at it. */
@@ -791,6 +792,25 @@ export function ActivityFeed({
     if (!res.ok) setPinError(res.error ?? 'Could not update the pin.');
   };
   const [chatText, setChatText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  // The box used to be cleared on the keypress, before the send had resolved, so a failed send took
+  // the message with it and said nothing (see chat, Oct 2026). Now the text only leaves the box once
+  // it has actually been posted, and stays put, selected and retryable, when it has not.
+  async function send() {
+    const message = chatText.trim();
+    if (!message || !onSendChat) return;
+    setSending(true);
+    setChatError(null);
+    try {
+      const ok = await onSendChat(message);
+      if (ok) setChatText('');
+      else setChatError('Message not sent. Check your connection and try again.');
+    } finally {
+      setSending(false);
+    }
+  }
   // Which week groups are collapsed on the Moments tab (see chat, Sept 2026: "the
   // weeks should be collapsible"). Keyed by groupMomentsByWeek's own group.key, not
   // week number, so the synthetic "earlier" bucket collapses independently too.
@@ -909,29 +929,29 @@ export function ActivityFeed({
       {tab === 'chat' && (
         <div className="space-y-3">
           {onSendChat && (
-            <div className="flex gap-2">
-              <input
-                value={chatText}
-                onChange={(e) => setChatText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || !chatText.trim()) return;
-                  onSendChat(chatText.trim());
-                  setChatText('');
-                }}
-                placeholder="Message the league…"
-                maxLength={500}
-                className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
-              />
-              <button
-                disabled={!chatText.trim()}
-                onClick={() => {
-                  onSendChat(chatText.trim());
-                  setChatText('');
-                }}
-                className="btn-soft-primary text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
-              >
-                <Send size={16} />
-              </button>
+            <div className="space-y-1.5">
+              <div className="flex gap-2">
+                <input
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' || !chatText.trim() || sending) return;
+                    void send();
+                  }}
+                  placeholder="Message the league…"
+                  maxLength={500}
+                  className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  disabled={!chatText.trim() || sending}
+                  onClick={() => void send()}
+                  aria-label="Send message"
+                  className="btn-soft-primary text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
+                >
+                  <Send size={16} />
+                </button>
+              </div>
+              {chatError && <p className="text-[11px] text-loss px-1">{chatError}</p>}
             </div>
           )}
           {chatItems.length === 0 ? (

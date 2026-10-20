@@ -74,6 +74,10 @@ export function ShareFrame({
         flexDirection: 'column',
         gap: 24,
         fontFamily: FONT,
+        // Every share card is a fixed-size poster of scores, stakes and results in columns, so
+        // fixed-width digits belong at the root here rather than being added card by card. The app
+        // itself mixes prose with data and gets this per element instead (see chat, Oct 2026).
+        fontVariantNumeric: 'tabular-nums',
         color: C.text,
         background: `radial-gradient(900px 600px at 100% 0%, ${C.glow}, transparent 70%), linear-gradient(160deg, ${C.bg2}, ${C.bg})`,
         overflow: 'hidden',

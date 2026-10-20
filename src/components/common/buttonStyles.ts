@@ -7,10 +7,17 @@ export const SOFT_PRIMARY_BTN = 'btn-soft-primary disabled:opacity-40';
 export const SOFT_PROFIT_BTN = 'btn-soft-profit disabled:opacity-40';
 export const SOFT_LOSS_BTN = 'btn-soft-loss disabled:opacity-40';
 
-/** Onboarding buttons: the solid primary slab, an outlined secondary and a plain text link, all with the
- * same quick pressed feedback (a slight shrink) so every tap on the first screens registers. */
+/** Onboarding buttons: the solid primary slab, an outlined secondary and a plain text link, all with
+ * the same quick pressed feedback (a slight shrink) so every tap on the first screens registers.
+ *
+ * It used to hardcode `bg-primary text-white`, which ignored --color-on-primary entirely. That is
+ * the right answer only for the accents whose text is meant to be white: on Gold, Mono, Teal and
+ * Orange the theme asks for dark text, and the button painted white on a light fill anyway. Mono in
+ * dark mode came out at 1.45:1 and Gold at 1.84:1, which is barely visible (see chat, Oct 2026).
+ * `.btn-solid-primary` takes both the fill and the text from the theme, so every accent gets the
+ * pairing it actually defines. */
 export const ONBOARDING_PRIMARY_BTN =
-  'w-full bg-primary text-white font-semibold py-3.5 rounded-xl transition active:brightness-90 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100 disabled:active:brightness-100';
+  'w-full btn-solid-primary font-semibold py-3.5 rounded-xl transition active:brightness-90 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100 disabled:active:brightness-100';
 export const ONBOARDING_SECONDARY_BTN =
   'w-full bg-bg-card border border-border font-semibold py-3.5 rounded-xl transition active:bg-bg-raised active:scale-[0.98] disabled:opacity-40';
 /** The smaller outlined button used for Google and Apple sign-in. */

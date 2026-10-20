@@ -20,6 +20,14 @@ function summarizeOddsError(raw: string): string {
   return `${status}: ${body.slice(0, 60)}`;
 }
 
+/** A 404 from The Odds API is not a failure, it is an answer: that event has no odds posted yet.
+ * It is the normal state for a game early in its week, and it used to be reported in red alongside
+ * genuine errors, naming every affected game -- a wall of alarming text describing nothing wrong
+ * (see chat, Oct 2026). Split out so it can be said quietly, in one line, without the matchups. */
+function isNotPostedYet(reason: string): boolean {
+  return reason.startsWith('404');
+}
+
 /** Most batches that have any failures at all fail for the SAME reason (e.g. a
  * handful of far-out games whose event ids haven't stabilized yet) -- listing
  * that reason once instead of once per game is what keeps this readable. */
@@ -55,11 +63,14 @@ export function useOddsRefresh(onSuccess?: () => void) {
   // the batch failed, even though the refresh itself genuinely succeeded).
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [refreshErrorDetail, setRefreshErrorDetail] = useState<string | null>(null);
+  /** Not an error: games whose odds simply are not out yet. Rendered muted, not red. */
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
 
   async function handleRefreshOdds() {
     setRefreshing(true);
     setRefreshMessage(null);
     setRefreshErrorDetail(null);
+    setRefreshNote(null);
     const result = await refreshPlayerProps();
     setRefreshing(false);
     if (result.onCooldown) {
@@ -77,10 +88,18 @@ export function useOddsRefresh(onSuccess?: () => void) {
     // was invisible without a direct SQL check. Condensed and deduped (see the
     // helpers above) rather than dumping each game's full raw API error body.
     if (result.gameErrors && result.gameErrors.length > 0) {
-      setRefreshErrorDetail(summarizeGameErrors(result.gameErrors));
+      const withReason = result.gameErrors.map((e) => ({ ...e, reason: summarizeOddsError(e.error) }));
+      const notPosted = withReason.filter((e) => isNotPostedYet(e.reason));
+      const realFailures = withReason.filter((e) => !isNotPostedYet(e.reason));
+      if (realFailures.length > 0) setRefreshErrorDetail(summarizeGameErrors(realFailures));
+      if (notPosted.length > 0) {
+        setRefreshNote(
+          `Odds are not posted yet for ${notPosted.length} game${notPosted.length === 1 ? '' : 's'} later this week.`,
+        );
+      }
     }
     onSuccess?.();
   }
 
-  return { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds };
+  return { refreshing, refreshMessage, refreshErrorDetail, refreshNote, handleRefreshOdds };
 }

@@ -47,7 +47,7 @@ export function NFLSlate() {
   // no such requirement, so it's a natural second entry point; the 15-min
   // refresh cooldown is global and server-side, so two buttons hitting it
   // is safe (see useOddsRefresh).
-  const { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds } = useOddsRefresh(() => {
+  const { refreshing, refreshMessage, refreshErrorDetail, refreshNote, handleRefreshOdds } = useOddsRefresh(() => {
     loadSlateForWeek(activeWeek, { force: true });
   });
 
@@ -96,10 +96,12 @@ export function NFLSlate() {
           </button>
         </div>
         {freshnessMessage && <p className="text-[11px] text-warning font-medium">{freshnessMessage}</p>}
-        {(refreshMessage || refreshErrorDetail) && (
+        {(refreshMessage || refreshErrorDetail || refreshNote) && (
           <div className="space-y-0.5">
             {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}
             {refreshErrorDetail && <p className="text-xs text-loss">{refreshErrorDetail}</p>}
+            {/* Odds not posted yet is normal, not a problem: muted, and never red. */}
+            {refreshNote && <p className="text-xs text-text-muted">{refreshNote}</p>}
           </div>
         )}
         <WeekSelector value={activeWeek} onChange={setWeek} />

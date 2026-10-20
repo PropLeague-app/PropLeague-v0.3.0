@@ -1,4 +1,5 @@
 import { Suspense, useEffect } from 'react';
+import { CloudOff } from 'lucide-react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
@@ -41,6 +42,8 @@ const PrizePool = lazyNamed(() => import('./screens/PrizePool'), 'PrizePool');
 const MyStats = lazyNamed(() => import('./screens/MyStats'), 'MyStats');
 const Leaderboards = lazyNamed(() => import('./screens/Leaderboards'), 'Leaderboards');
 import { BootLoader } from './components/common/BootLoader';
+import { EmptyState } from './components/common/EmptyState';
+import { SOFT_PRIMARY_BTN } from './components/common/buttonStyles';
 
 /** manual v0.2.0 §6 #15: the Welcome splash only ever appears when no profile exists
  * (the Factory Reset case) — a profile'd user who's between leagues (e.g. just left
@@ -59,7 +62,9 @@ function RootRedirect() {
   const leagues = useAppStore((s) => s.leagues);
   const setCurrentLeague = useAppStore((s) => s.setCurrentLeague);
   const leaguesHydrated = useAppStore((s) => s.leaguesHydrated);
+  const leaguesHydrateError = useAppStore((s) => s.leaguesHydrateError);
   const hydrateMyLeagues = useAppStore((s) => s.hydrateMyLeagues);
+  const retryHydrateMyLeagues = useAppStore((s) => s.retryHydrateMyLeagues);
 
   // A league only counts as "the user's" if their team is still in it — otherwise
   // Leave This League (manual §6 #12) could hand the user right back into a league
@@ -111,8 +116,44 @@ function RootRedirect() {
     return <BootLoader />;
   }
 
+  // "No leagues" and "could not find out" are different answers, and only one of them means the
+  // user should be making a league. The comment above guards the TIMING version of this (do not
+  // decide before hydration has run); this guards the FAILURE version. A returning user whose
+  // membership fetch failed on a fresh install used to land on Create League, with their real
+  // leagues sitting untouched on the server (see chat, Oct 2026).
+  //
+  // Only reached with nothing cached to fall back on: a device that already has leagues persisted
+  // has a targetLeague and goes straight Home, failed fetch or not.
+  if (!targetLeague && leaguesHydrateError) {
+    return <LeagueLoadFailed error={leaguesHydrateError} onRetry={retryHydrateMyLeagues} />;
+  }
+
   if (!targetLeague) return redirect('/create-league');
   return redirect('/home');
+}
+
+/** Shown when hydration finished because the membership lookup failed and this device has no cached
+ * league to fall back on. The alternative was sending the user to Create League, which quietly
+ * misreports a network problem as "you have no leagues". */
+function LeagueLoadFailed({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="min-h-screen bg-bg flex items-center justify-center">
+      <EmptyState
+        icon={<CloudOff size={36} strokeWidth={1.5} />}
+        title="Could not load your leagues"
+        subtitle={`${error} Your leagues are safe; this device just could not reach them.`}
+        action={
+          <button
+            type="button"
+            onClick={onRetry}
+            className={`px-5 py-2.5 rounded-xl text-sm ${SOFT_PRIMARY_BTN}`}
+          >
+            Try again
+          </button>
+        }
+      />
+    </div>
+  );
 }
 
 function AppShellLayout() {

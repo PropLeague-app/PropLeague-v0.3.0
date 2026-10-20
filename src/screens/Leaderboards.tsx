@@ -58,7 +58,7 @@ function RankChip({ rank }: { rank: number }) {
           : null;
   return (
     <span
-      className={`w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold ${podium ? '' : 'text-text-muted'}`}
+      className={`w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold tabular-nums ${podium ? '' : 'text-text-muted'}`}
       style={podium ?? undefined}
     >
       {rank}
@@ -147,7 +147,7 @@ function Board({
             >
               <RankChip rank={rankOf(rows, i)} />
               <TeamCell team={teamById(row.teamId)} flame={flameFor?.(row.teamId)} />
-              <span className="shrink-0 whitespace-nowrap text-right">{renderValue(row)}</span>
+              <span className="shrink-0 whitespace-nowrap text-right tabular-nums">{renderValue(row)}</span>
               <ChevronRight size={12} className="text-text-muted shrink-0 -mr-1" />
             </button>
           ))}

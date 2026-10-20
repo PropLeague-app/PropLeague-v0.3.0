@@ -409,9 +409,9 @@ export function BetHistory() {
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span>
-                      Stake ${wager.stake.toFixed(2)} @ <OddsDisplay odds={wager.oddsAtPlacement} />
+                      Stake <span className="tabular-nums">${wager.stake.toFixed(2)}</span> @ <OddsDisplay odds={wager.oddsAtPlacement} />
                     </span>
-                    <span className={wager.settledProfit == null ? 'text-text-muted' : wager.settledProfit >= 0 ? 'text-profit' : 'text-loss'}>
+                    <span className={`tabular-nums ${wager.settledProfit == null ? 'text-text-muted' : wager.settledProfit >= 0 ? 'text-profit' : 'text-loss'}`}>
                       {wager.settledProfit == null ? 'Pending' : formatCents(wager.settledProfit)}
                     </span>
                   </div>
@@ -436,7 +436,7 @@ function Stat({ label, value, valueClass = '' }: { label: string; value: string;
 
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <button onClick={onClear} className="flex items-center gap-1 bg-primary/10 text-primary text-[11px] font-semibold rounded-full pl-2.5 pr-1.5 py-1">
+    <button onClick={onClear} aria-label={`Clear the ${label} filter`} className="flex items-center gap-1 bg-primary/10 text-primary text-[11px] font-semibold rounded-full pl-2.5 pr-1.5 py-1">
       {label}
       <X size={12} />
     </button>

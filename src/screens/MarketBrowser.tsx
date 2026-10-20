@@ -16,6 +16,7 @@ import { GameLinesTable } from '../components/roster/GameLinesTable';
 import { TeamMark } from '../components/common/TeamMark';
 import { BetSlipSheet, type BetSlipTarget } from '../components/roster/BetSlipSheet';
 import { EmptyState } from '../components/common/EmptyState';
+import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
 import { goBack } from '../components/layout/BackHeader';
 import { headerTapToTop } from '../components/layout/shellNav';
 import { findClaimingTeam, claimBlockReason, claimHolders } from '../engine/duplicatePicks';
@@ -65,7 +66,7 @@ export function MarketBrowser() {
   const [propTypeFilter, setPropTypeFilter] = useState<MarketKey | 'all'>('all');
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<BetSlipTarget | null>(null);
-  const { refreshing, refreshMessage, refreshErrorDetail, handleRefreshOdds } = useOddsRefresh(() => {
+  const { refreshing, refreshMessage, refreshErrorDetail, refreshNote, handleRefreshOdds } = useOddsRefresh(() => {
     if (league) loadRealGamesForWeek(league.currentWeek, { force: true });
   });
 
@@ -107,6 +108,31 @@ export function MarketBrowser() {
     );
   const validMarketKeys = slot?.position === 'ML' ? (['h2h', 'spreads'] as MarketKey[]) : MARKETS_BY_POSITION[slot?.position as keyof typeof MARKETS_BY_POSITION] ?? [];
   const propTypeOptions = propTypeFilter === 'all' ? validMarketKeys : [propTypeFilter];
+
+  // What the player-prop list will actually draw, worked out once up here instead of inside the map.
+  // The map used to return null for a game whose groups were all filtered out, while the empty state
+  // asked filteredGames.length -- which counts games, not visible results. A search matching no
+  // player therefore rendered a column of nothing, under a header, with no explanation (see chat,
+  // Oct 2026). ML is unaffected: its search filters whole games, so filteredGames is the right
+  // question there.
+  const searchTerm = search.trim().toLowerCase();
+  const visibleGames =
+    slot && slot.position !== 'ML'
+      ? filteredGames
+          .map((game) => ({
+            game,
+            groups: getPlayerPropGroups(game)
+              .filter((g) => g.position === slot.position)
+              .filter((g) => g.playerName.toLowerCase().includes(searchTerm))
+              .map((g) => ({ ...g, markets: g.markets.filter((m) => propTypeOptions.includes(m.key)) }))
+              .filter((g) => g.markets.length > 0),
+          }))
+          .filter((x) => x.groups.length > 0)
+      : [];
+  const nothingToShow = slot?.position === 'ML' ? filteredGames.length === 0 : visibleGames.length === 0;
+  // Whether the person narrowed it themselves, which decides whether we offer to undo that or
+  // explain that the week itself has nothing left.
+  const narrowed = searchTerm !== '' || gameFilter !== 'all' || propTypeFilter !== 'all';
 
   if (!league || !userTeam || !roster || !slot) {
     return (
@@ -246,10 +272,12 @@ export function MarketBrowser() {
           </div>
         )}
         {freshnessMessage && <p className="mb-1.5 text-[11px] text-warning font-medium">{freshnessMessage}</p>}
-        {(refreshMessage || refreshErrorDetail) && (
+        {(refreshMessage || refreshErrorDetail || refreshNote) && (
           <div className="mb-2 space-y-0.5">
             {refreshMessage && <p className="text-xs text-text-muted">{refreshMessage}</p>}
             {refreshErrorDetail && <p className="text-xs text-loss">{refreshErrorDetail}</p>}
+            {/* Odds not posted yet is normal, not a problem: muted, and never red. */}
+            {refreshNote && <p className="text-xs text-text-muted">{refreshNote}</p>}
           </div>
         )}
         <div className="space-y-2">
@@ -286,13 +314,33 @@ export function MarketBrowser() {
       </div>
 
       <div className="px-4 pt-3 pb-2 space-y-3">
-        {filteredGames.length === 0 && (
-          <EmptyState
-            icon={<Search size={36} strokeWidth={1.5} />}
-            title="No games available"
-            subtitle="Every game for this week has already kicked off, or odds haven't posted for this week yet -- try the refresh button above."
-          />
-        )}
+        {nothingToShow &&
+          (narrowed ? (
+            <EmptyState
+              icon={<Search size={36} strokeWidth={1.5} />}
+              title="No matches"
+              subtitle="Nothing here fits your search and filters."
+              action={
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('');
+                    setGameFilter('all');
+                    setPropTypeFilter('all');
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm ${SOFT_PRIMARY_BTN}`}
+                >
+                  Clear search and filters
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<Search size={36} strokeWidth={1.5} />}
+              title="No games available"
+              subtitle="Every game for this week has already kicked off, or odds haven't posted for this week yet -- try the refresh button above."
+            />
+          ))}
 
         {slot.position === 'ML'
           ? filteredGames.map((game) => {
@@ -343,13 +391,7 @@ export function MarketBrowser() {
                 </div>
               );
             })
-          : filteredGames.map((game) => {
-              const groups = getPlayerPropGroups(game)
-                .filter((g) => g.position === slot.position)
-                .filter((g) => g.playerName.toLowerCase().includes(search.toLowerCase()))
-                .map((g) => ({ ...g, markets: g.markets.filter((m) => propTypeOptions.includes(m.key)) }))
-                .filter((g) => g.markets.length > 0);
-              if (groups.length === 0) return null;
+          : visibleGames.map(({ game, groups }) => {
               const home = nflTeamById(game.homeTeamId);
               const away = nflTeamById(game.awayTeamId);
               return (

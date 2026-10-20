@@ -357,7 +357,7 @@ export function LeagueHome() {
             chat={league.chat}
             chatUnreadCount={chatUnreadCount}
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
-            onSendChat={(message) => postChatMessage(league.id, message)}
+            onSendChat={async (message) => (await postChatMessage(league.id, message)).ok}
             onDeleteAnnouncement={(itemId) => deleteAnnouncement(league.id, itemId)}
             onTogglePin={(itemId, pinned) => setAnnouncementPinned(league.id, itemId, pinned)}
             onDeleteChat={(itemId) => deleteChatMessage(league.id, itemId)}

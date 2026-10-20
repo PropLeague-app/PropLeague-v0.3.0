@@ -101,7 +101,7 @@ function StandingsRows({
             <div className={`rounded-lg text-xs ${team.isUser ? 'bg-primary/10' : 'bg-bg-card'}`}>
               <div className={`grid ${PRIMARY_GRID} gap-1 items-center px-2 py-2`}>
                 <span className="truncate font-medium flex items-center gap-1.5 min-w-0">
-                  <span className="shrink-0 text-text-muted">{i + 1}.</span>
+                  <span className="shrink-0 text-text-muted tabular-nums">{i + 1}.</span>
                   <TeamLogo team={team} size="sm" />
                   <span className="truncate">{team.teamName}</span>
                   <ClinchIcon status={clinch.get(team.id)} />

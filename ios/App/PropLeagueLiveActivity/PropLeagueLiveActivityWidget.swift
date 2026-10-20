@@ -534,16 +534,24 @@ struct SlotPips: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(height: 6)
+        .frame(height: 8)
     }
 
+    /// A live pick used to be a filled accent circle, and PL.accent and PL.win are the same hex
+    /// (#34D399), so on the strip a pick still playing looked exactly like a pick that had already
+    /// won. The only way to tell them apart was to expand the card (see chat, Oct 2026).
+    ///
+    /// It now draws the way the expanded rows already draw it in StatusMark: live is an open accent
+    /// ring, settled results are filled. It is also a size larger than the rest, so the difference
+    /// survives a glance at a lock screen rather than depending on seeing a 2px hole. Empty stays a
+    /// faint thin ring, which the accent color and the heavier stroke keep it distinct from.
     @ViewBuilder
     private func pip(_ status: String) -> some View {
         switch status {
         case "won": Circle().fill(PL.win).frame(width: 6, height: 6)
         case "lost": Circle().fill(PL.loss).frame(width: 6, height: 6)
         case "push": Circle().fill(Color.white.opacity(0.45)).frame(width: 6, height: 6)
-        case "live": Circle().fill(PL.accent).frame(width: 6, height: 6)
+        case "live": Circle().strokeBorder(PL.accent, lineWidth: 2).frame(width: 8, height: 8)
         case "empty": Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1).frame(width: 6, height: 6)
         default: Circle().fill(PL.warn.opacity(0.8)).frame(width: 6, height: 6)
         }

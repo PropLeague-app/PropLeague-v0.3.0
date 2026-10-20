@@ -26,5 +26,5 @@ export function WagerProfitPill({ status, profit }: { status: Exclude<WagerStatu
           : status === 'push'
             ? 'bg-primary/20 text-primary'
             : 'bg-bg-raised text-text-muted';
-  return <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${styleClass}`}>{amountText}</span>;
+  return <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap tabular-nums ${styleClass}`}>{amountText}</span>;
 }

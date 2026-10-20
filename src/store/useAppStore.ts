@@ -90,6 +90,9 @@ interface AppState {
    * even checked, and gets reset on sign-out so a different person logging in
    * on the same device gets their own leagues, not a stale skip. */
   leaguesHydrated: boolean;
+  /** Set when hydration finished because the membership fetch FAILED, rather than because the
+   * account genuinely has no leagues. Lets the root tell those two apart (see hydrateMyLeagues). */
+  leaguesHydrateError: string | null;
   /** Per-league "last time the user looked at the Chat tab" timestamp (ISO
       string), used only to compute an unread-count badge on that tab (see
       chat, Sept 2026: "unread chats" bubble, distinct from the lineup-needed
@@ -151,7 +154,9 @@ interface AppState {
   deleteAnnouncement: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markMatchupResultSeen: (matchupId: string) => void;
   reactToActivity: (leagueId: string, itemId: string, emoji: string) => Promise<void>;
-  postChatMessage: (leagueId: string, message: string) => Promise<void>;
+  /** Resolves { ok: false } when the send failed, so the composer can keep the typed message
+   * instead of clearing a draft that never reached anyone. */
+  postChatMessage: (leagueId: string, message: string) => Promise<{ ok: boolean; error?: string }>;
   deleteChatMessage: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markChatSeen: (leagueId: string) => void;
 
@@ -160,6 +165,9 @@ interface AppState {
   loadRealGame: (gameId: string) => Promise<void>;
   loadRealPlayerStatsForWeek: (week: WeekId) => Promise<void>;
   hydrateMyLeagues: () => Promise<void>;
+  /** Clears a failed hydration and runs it again. hydrateMyLeagues itself returns early once
+   * leaguesHydrated is set, so a retry has to go through here. */
+  retryHydrateMyLeagues: () => void;
 }
 
 function updateLeague(
@@ -360,6 +368,7 @@ export const useAppStore = create<AppState>()(
       realGamesById: {},
       realPlayerStatsByWeek: {},
       leaguesHydrated: false,
+      leaguesHydrateError: null,
       lastSeenChatByLeague: {},
       seenMatchupResultIds: {},
 
@@ -1145,15 +1154,19 @@ export const useAppStore = create<AppState>()(
 
       postChatMessage: async (leagueId, message) => {
         const userTeam = get().leagues[leagueId]?.teams.find((t) => t.isUser);
-        if (!userTeam) return;
+        if (!userTeam) return { ok: false, error: 'Could not find your team in this league.' };
         const result = await postChatMessageRemote(leagueId, message);
-        if (!result.ok) return;
+        // Used to return silently here, while the composer had already cleared the box the moment
+        // the key was pressed: a failed send ate the message with nothing to show for it (see chat,
+        // Oct 2026). The composer now waits for this and keeps the text when it comes back false.
+        if (!result.ok) return { ok: false, error: result.error ?? 'Message not sent.' };
         set((state) =>
           updateLeague(state, leagueId, (league) => ({
             ...league,
             chat: [...league.chat, { id: result.itemId, ts: new Date().toISOString(), teamId: userTeam.id, message }].slice(-100),
           })),
         );
+        return { ok: true };
       },
 
       // manual v0.3.0 §6: "a person should be able to delete their own chats too" --
@@ -1226,11 +1239,24 @@ export const useAppStore = create<AppState>()(
       // TestFlight tester's actual situation) or after signing back in
       // would see no leagues at all despite having real ones, and could
       // end up creating a duplicate team by going through Create/Join again.
+      // Deliberately only resets the flags rather than calling hydrateMyLeagues itself. App already
+      // runs it whenever leaguesHydrated is false, so calling it here as well would start two
+      // overlapping fetches (the flag cannot tell them apart while the first is still in the air).
+      // Letting the one existing caller do the work keeps a single path in and needs no in-flight
+      // latch, which would wedge hydration for the whole session if anything in it ever threw.
+      retryHydrateMyLeagues: () => {
+        set({ leaguesHydrated: false, leaguesHydrateError: null });
+      },
+
       hydrateMyLeagues: async () => {
         if (get().leaguesHydrated) return;
         const membershipsResult = await fetchMyLeagueMemberships();
         if (!membershipsResult.ok) {
-          set({ leaguesHydrated: true }); // don't loop forever retrying on a real error
+          // Still marks hydration done so this does not loop forever on a real error, but records
+          // WHY it finished. Without that, the root could not tell a failed lookup from an account
+          // with no leagues, so a returning user on a flaky connection was sent to Create League as
+          // though their memberships did not exist (see chat, Oct 2026).
+          set({ leaguesHydrated: true, leaguesHydrateError: membershipsResult.error ?? 'Could not load your leagues.' });
           return;
         }
 
@@ -1329,6 +1355,7 @@ export const useAppStore = create<AppState>()(
           return {
             leagues: merged,
             leaguesHydrated: true,
+            leaguesHydrateError: null,
             currentLeagueId: state.currentLeagueId && !validLeagueIds.has(state.currentLeagueId) ? null : state.currentLeagueId,
           };
         });
@@ -1351,6 +1378,7 @@ export const useAppStore = create<AppState>()(
           realGamesById: _realGamesById,
           realPlayerStatsByWeek: _realPlayerStatsByWeek,
           leaguesHydrated: _leaguesHydrated,
+          leaguesHydrateError: _leaguesHydrateError,
           ...rest
         } = state;
         return rest;

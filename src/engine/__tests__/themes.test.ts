@@ -50,6 +50,22 @@ function saturation(hex: string): number {
   return Math.max(...v) - Math.min(...v);
 }
 const onPrimaryFor = (a: (typeof ACCENTS)[number], tone: 'light' | 'dark') => (tone === 'light' ? (a.onPrimaryLight ?? a.onPrimary) : a.onPrimary);
+/** What .btn-solid-primary actually paints: the accent's own --color-primary-solid when it declares
+ * one, otherwise its plain primary (the var() fallback in index.css). Blue declares it under
+ * :root:not([data-accent]), since the default accent has no attribute to hang a block on. */
+function solidFillFor(a: (typeof ACCENTS)[number], t: (typeof THEMES)[number]): string {
+  const selectors =
+    a.id === 'blue'
+      ? [':root:not([data-accent])']
+      : t.tone === 'light'
+        ? [`:root[data-tone='light'][data-accent='${a.id}']`, `:root[data-accent='${a.id}']`]
+        : [`:root[data-accent='${a.id}']`];
+  for (const sel of selectors) {
+    const declared = block(sel)['--color-primary-solid'];
+    if (declared) return declared;
+  }
+  return a[t.tone].primary;
+}
 function contrast(a: string, b: string): number {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
@@ -113,7 +129,12 @@ describe('accents', () => {
         const label = `${a.id} on ${t.id}`;
         expect(contrast(ink, softButton), `${label}: soft button text`).toBeGreaterThanOrEqual(4.5);
         expect(contrast(primary, t.card), `${label}: primary on card`).toBeGreaterThanOrEqual(3);
-        expect(contrast(onPrimaryFor(a, t.tone), primary), `${label}: text on a solid fill`).toBeGreaterThanOrEqual(3);
+        // The solid slab (.btn-solid-primary) takes --color-primary-solid when an accent sets one
+        // and --color-primary otherwise, so check whichever it will actually paint. 4.5, not 3:
+        // these are normal-size button labels, and 3 is the large-text threshold. Holding this at 3
+        // is what let the onboarding button ship at 3.26:1 on the default accent (see chat, Oct
+        // 2026). The soft buttons above have always been held to 4.5.
+        expect(contrast(onPrimaryFor(a, t.tone), solidFillFor(a, t)), `${label}: text on a solid fill`).toBeGreaterThanOrEqual(4.5);
       }
     }
   });

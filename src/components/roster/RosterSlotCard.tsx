@@ -6,18 +6,18 @@ import { nflTeamById } from '../../data/nflTeams';
 import { PositionBadge, positionFillClasses } from '../common/PositionBadge';
 import { OddsDisplay } from '../common/OddsDisplay';
 import { StatusPill } from '../common/StatusPill';
-import { MARKET_LABELS, MARKET_SHORT_LABELS } from '../../data/propsGenerator';
+import { MARKET_LABELS, wagerLineDescription } from '../../data/propsGenerator';
 import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { currentOddsForWager } from '../../services/oddsService';
 
-/** "CLE@NYJ Sun 1:02p".
+/** "CLE@NYJ Sun 1:02pm".
  *
- * Deliberately tighter than it reads: the roomier "CLE @ NYJ · Sun 1:02 PM" shares row 2 with the
- * market label and the money, and at that width the kickoff was the part that got truncated away on
- * almost every card (see chat, Oct 2026) -- which is the one thing on the line a person setting a
- * lineup actually needs. Dropping the spaces around @, the middle dot and the M off AM/PM buys back
- * roughly the 35px that was costing. */
+ * Deliberately tighter than it reads: the roomier "CLE @ NYJ · Sun 1:02 PM" was wide enough that
+ * the kickoff got truncated away on almost every card (see chat, Oct 2026), which is the one thing
+ * on it a person setting a lineup actually needs. Dropping the spaces around @ and the middle dot
+ * buys back most of that width. The m on am/pm came back once the kickoff moved up to row 1 and
+ * had the room for it. */
 function gameInfo(game: NFLGame): string {
   const home = nflTeamById(game.homeTeamId).abbrev;
   const away = nflTeamById(game.awayTeamId).abbrev;
@@ -25,8 +25,8 @@ function gameInfo(game: NFLGame): string {
   const day = at.toLocaleString(undefined, { weekday: 'short' });
   const time = at
     .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' })
-    .replace(/\s*AM$/i, 'a')
-    .replace(/\s*PM$/i, 'p');
+    .replace(/\s*AM$/i, 'am')
+    .replace(/\s*PM$/i, 'pm');
   return `${away}@${home} ${day} ${time}`;
 }
 
@@ -150,21 +150,29 @@ export function RosterSlotCard({
   const nickname = wager.marketKey === 'h2h' || wager.marketKey === 'spreads' ? mlTeamNickname(wager, game) : null;
   const displayName = wager.playerName ? abbreviatePlayerName(wager.playerName) : null;
 
-  // "Packers +1.5" for a Spread pick, just "Packers" for a Moneyline pick (no
-  // point value to show); "M. Stafford Over 1.5 pass yds" for a player prop.
+  // The pick reads as two lines: who it is on, then what was taken. One line could not hold both
+  // -- "P. Mahomes Over 1.5 pass yds" is wider than the column once the price, the verdict and the
+  // controls have taken their share, so nearly every pick on the screen truncated mid-word (see
+  // chat, Oct 2026). Splitting it costs no height, because the row below already stands as tall as
+  // the stake button; the subject gets the first line and the terms drop underneath it at a smaller
+  // size, the way a bet slip reads.
   //
-  // The units used to live on their own muted row below as the full MARKET_LABELS text ("Passing
-  // Yards"). On the two-line card that row also carries the kickoff and the money, and three things
-  // did not fit: whichever one was allowed to truncate looked broken (see chat, Oct 2026). Folding
-  // the short label into the title removes the redundancy instead of shuffling it -- "Over 31.5" and
-  // "Pass Attempts" were always two halves of one phrase -- and matches wagerCompactLabel, which is
-  // how the matchup screen, weekly moments, bet history and the activity feed already read a pick.
-  const shortLabel = MARKET_SHORT_LABELS[wager.marketKey];
-  const titleLine = nickname
-    ? `${nickname}${wager.point != null ? ` ${formatSignedPoint(wager.point)}` : ''}${wager.marketKey === 'h2h' ? ' ML' : ''}`
-    : wager.marketKey === 'player_anytime_td'
-      ? `${displayName ?? marketLabel} anytime TD`
-      : `${displayName ?? marketLabel} ${wager.point != null ? `${wager.side} ${wager.point}` : wager.side}${shortLabel ? ` ${shortLabel}` : ''}`;
+  // wagerLineDescription is the same name-less phrase the rest of the app already uses as a
+  // subtitle under a player heading, so this card says "over 1.5 pass yds" exactly as bet history
+  // and the activity feed do. It lowercases the side for use mid-sentence; standing on its own
+  // line here, it gets its capital back.
+  // Which market it is decides the split, not whether the nickname lookup happened to resolve: on
+  // a moneyline or spread pick the subject is the team and the terms are the price, and keying off
+  // `nickname` alone put those the wrong way round ("Moneyline" over "Chiefs ML") whenever the
+  // lookup came back empty.
+  const gameLevel = wager.marketKey === 'h2h' || wager.marketKey === 'spreads';
+  const subjectLine = gameLevel ? (nickname ?? wager.side) : (displayName ?? marketLabel);
+  const rawTerms = gameLevel
+    ? wager.marketKey === 'h2h'
+      ? 'Moneyline'
+      : `Spread ${wager.point != null ? formatSignedPoint(wager.point) : ''}`.trim()
+    : wagerLineDescription(wager);
+  const termsLine = rawTerms.charAt(0).toUpperCase() + rawTerms.slice(1);
 
   const showMovement = !locked && settings?.lineMovementEnabled && currentWeek != null && wager.status === 'pending';
   const liveOdds = showMovement
@@ -210,21 +218,15 @@ export function RosterSlotCard({
         </div>
 
         <div className="min-w-0 flex-1">
-          {/* Row 1: the pick and its price, then its state and its controls. */}
+          {/* Row 1: who the pick is on and when that game kicks off, then its state and controls.
+              The kickoff is grouped with the pill rather than following the name, so it sits in the
+              same place on every card instead of starting wherever that card's name happened to end
+              (see chat, Oct 2026). */}
           <div className="flex items-center gap-1.5">
-            <p className="min-w-0 truncate text-[13px] font-semibold leading-tight">{titleLine}</p>
-            <div className="flex items-center gap-0.5 shrink-0">
-              <OddsDisplay odds={wager.oddsAtPlacement} className="text-[11px] text-text-muted" />
-              {movement && (
-                <span
-                  title={`Line moved from ${wager.oddsAtPlacement} to ${liveOdds} since you placed this`}
-                  className={`text-[11px] ${movement === 'up' ? 'text-profit' : 'text-loss'}`}
-                >
-                  {movement === 'up' ? '↑' : '↓'}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1 shrink-0 ml-auto">
+            <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight">{subjectLine}</p>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {game && <p className="text-[10px] text-text-muted leading-tight">{gameInfo(game)}</p>}
+            <div className="flex items-center gap-1 shrink-0">
               {statusPill}
               {locked ? (
                 <span title="Locked" className="text-text-muted"><Lock size={13} /></span>
@@ -246,12 +248,26 @@ export function RosterSlotCard({
                 </>
               )}
             </div>
+            </div>
           </div>
 
-          {/* Row 2: which game, then the money. With the units folded into the title above, the
-              kickoff gets this row to itself and never has to truncate. */}
-          <div className="flex items-center gap-1.5 mt-1">
-            {game && <p className="text-[11px] text-text-muted leading-tight truncate min-w-0">{gameInfo(game)}</p>}
+          {/* Row 2: the terms of the bet and its price, then the money. The kickoff moved up beside
+              the subject on row 1, which had the width to spare once the price came down here. */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="min-w-0 truncate text-[11px] leading-tight">{termsLine}</p>
+            {/* leading-tight on the price too: at the same font size but a taller line box, centering
+                the two put their baselines a pixel apart, so the odds read as sitting off the line. */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <OddsDisplay odds={wager.oddsAtPlacement} className="text-[11px] leading-tight text-text-muted" />
+              {movement && (
+                <span
+                  title={`Line moved from ${wager.oddsAtPlacement} to ${liveOdds} since you placed this`}
+                  className={`text-[11px] ${movement === 'up' ? 'text-profit' : 'text-loss'}`}
+                >
+                  {movement === 'up' ? '↑' : '↓'}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1 shrink-0 ml-auto">
               {/* Same look as the stake box on the bet slip: bordered card-colored box, $ prefix, right-aligned semibold number.
                   Tapping it opens the in-app keypad (StakeEditSheet), never the OS keyboard. */}
@@ -268,7 +284,9 @@ export function RosterSlotCard({
                 <span className="block w-[38px] h-4 text-[12px] leading-4 font-semibold text-right tabular-nums">{wager.stake.toFixed(2)}</span>
               </button>
               <span className="text-text-muted text-[11px]">→</span>
-              <span className={`w-[52px] shrink-0 text-right text-[12px] leading-4 font-semibold tabular-nums ${payout.className}`}>
+              {/* whitespace-nowrap, not width: a hyphen is a break opportunity, so "-$12.50" split
+                  across two lines while "+$17.88" never did -- only losses looked broken. */}
+              <span className={`w-[52px] shrink-0 whitespace-nowrap text-right text-[12px] leading-4 font-semibold tabular-nums ${payout.className}`}>
                 {payout.text}
               </span>
             </div>

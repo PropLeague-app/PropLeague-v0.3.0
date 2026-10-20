@@ -58,9 +58,70 @@ const PLAYER_PROP_MARKETS = [
 ].join(',');
 const ALL_MARKETS = `h2h,spreads,totals,${PLAYER_PROP_MARKETS}`;
 
-// Only refresh games happening soon -- props for a game 10 weeks out aren't
-// actionable yet and would just multiply cost for no real benefit.
-const LOOKAHEAD_DAYS = 8;
+// Only refresh games in the PropLeague week currently being played, which ends when results reveal
+// on Tuesday morning (RESULTS_REVEAL_CUTOFF_HOUR_ET in settle-week).
+//
+// This used to be a flat 8-day window. On a Sunday afternoon that reached into the following
+// Thursday through Sunday, so the batch asked The Odds API for events it does not publish yet and
+// got a 404 for each one: a refresh mid-week returned "13 games failed (404: Event not found)"
+// listing most of next week's slate (see chat, Oct 2026). Those games were never actionable anyway,
+// since a pick cannot be made for a week that has not opened.
+const REVEAL_CUTOFF_HOUR_ET = 10;
+
+/** The end of the week being played now: the coming Tuesday at 10am ET. Tuesday before 10am still
+ * belongs to the week that is finishing, so that morning returns the same day's cutoff rather than
+ * jumping a week forward.
+ *
+ * All of the day arithmetic happens on Eastern calendar fields, never on the UTC date. Adding the
+ * day offset straight onto the UTC date is wrong for any evening ET time, because after 8pm ET the
+ * UTC date is already tomorrow: a Thursday 9pm refresh computed 5 days from an ET Thursday and
+ * added them to a UTC Friday, landing the cutoff on a Wednesday.
+ *
+ * Intl rather than a fixed offset so it does not drift across the EST/EDT change, and the hour is
+ * normalized for the ICU quirk where hour12:false can format midnight as "24" (same reasoning as
+ * pastResultsRevealCutoff in settle-week). */
+function etFields(d: Date): { weekday: string; hour: number; year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    hour12: false,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const rawHour = get('hour') || '0';
+  return {
+    weekday: get('weekday') || 'Sun',
+    hour: rawHour === '24' ? 0 : Number(rawHour),
+    year: Number(get('year')),
+    month: Number(get('month')),
+    day: Number(get('day')),
+  };
+}
+
+function weekCutoff(now: Date): Date {
+  const et = etFields(now);
+  const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const TUE = 2;
+  let days = (TUE - Math.max(0, order.indexOf(et.weekday)) + 7) % 7;
+  // Tuesday itself: before the reveal the week is still running and ends today; after it, the new
+  // week has opened and runs to next Tuesday.
+  if (days === 0 && et.hour >= REVEAL_CUTOFF_HOUR_ET) days = 7;
+
+  // Calendar arithmetic on the ET date, carried out in UTC purely as a counter so month and year
+  // rollovers are handled for us, then read back as plain y/m/d.
+  const target = new Date(Date.UTC(et.year, et.month - 1, et.day) + days * 86_400_000);
+
+  // That ET date at 10am ET, as an instant. Start from the EST guess and correct once if the date
+  // actually falls in EDT, rather than hardcoding either offset.
+  let cutoff = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate(), REVEAL_CUTOFF_HOUR_ET + 5));
+  const drift = etFields(cutoff).hour - REVEAL_CUTOFF_HOUR_ET;
+  if (drift !== 0) cutoff = new Date(cutoff.getTime() - drift * 3_600_000);
+  return cutoff;
+}
+
 
 interface UpcomingGame {
   id: string;
@@ -150,11 +211,16 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const cutoff = new Date(Date.now() + LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date();
+  const cutoff = weekCutoff(now).toISOString();
   const { data: games, error: fetchError } = await supabase
     .from('real_games')
     .select('id, home_team, away_team')
     .eq('status', 'upcoming')
+    // A game that has already kicked off is gone from The Odds API's events feed, so asking for its
+    // odds is a guaranteed 404. status alone does not catch that: it is written by a cron that runs
+    // every 15 minutes, so there is always a window where a started game is still marked upcoming.
+    .gt('kickoff', now.toISOString())
     .lte('kickoff', cutoff)
     .returns<UpcomingGame[]>();
 
