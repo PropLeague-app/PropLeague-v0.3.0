@@ -33,6 +33,7 @@ import { SettingsHome } from './screens/SettingsHome';
 // The four tabs, Matchup, the market list and Game Details stay in the main bundle. These deeper
 // screens load on first visit (and are prefetched right after launch, so the tap is still instant).
 const LeagueSettingsScreen = lazyNamed(() => import('./screens/LeagueSettingsScreen'), 'LeagueSettingsScreen');
+const AccountSecurity = lazyNamed(() => import('./screens/AccountSecurity'), 'AccountSecurity');
 const FullStandings = lazyNamed(() => import('./screens/FullStandings'), 'FullStandings');
 const ScheduleView = lazyNamed(() => import('./screens/ScheduleView'), 'ScheduleView');
 const LeagueMatchups = lazyNamed(() => import('./screens/LeagueMatchups'), 'LeagueMatchups');
@@ -40,6 +41,8 @@ const LeagueMembers = lazyNamed(() => import('./screens/LeagueMembers'), 'League
 const BetHistory = lazyNamed(() => import('./screens/BetHistory'), 'BetHistory');
 const PrizePool = lazyNamed(() => import('./screens/PrizePool'), 'PrizePool');
 const MyStats = lazyNamed(() => import('./screens/MyStats'), 'MyStats');
+const Profile = lazyNamed(() => import('./screens/Profile'), 'Profile');
+const PowerRankings = lazyNamed(() => import('./screens/PowerRankings'), 'PowerRankings');
 const Leaderboards = lazyNamed(() => import('./screens/Leaderboards'), 'Leaderboards');
 import { BootLoader } from './components/common/BootLoader';
 import { EmptyState } from './components/common/EmptyState';
@@ -251,15 +254,25 @@ function App() {
         <Route path="/slate/game/:gameId" element={<GameDetail />} />
         <Route path="/settings" element={<SettingsHome />} />
         <Route path="/settings/league" element={<LeagueSettingsScreen />} />
+        <Route path="/settings/account" element={<AccountSecurity />} />
         <Route path="/standings" element={<FullStandings />} />
         <Route path="/schedule" element={<ScheduleView />} />
+        <Route path="/schedule/:teamId" element={<ScheduleView />} />
         <Route path="/matchups" element={<LeagueMatchups />} />
         <Route path="/members" element={<LeagueMembers />} />
         {/* The old Playoff Bracket screen is now the playoff weeks of Matchups. */}
         <Route path="/bracket" element={<Navigate to="/matchups" replace />} />
         <Route path="/bet-history" element={<BetHistory />} />
+        <Route path="/bet-history/:teamId" element={<BetHistory />} />
         <Route path="/prize-pool" element={<PrizePool />} />
         <Route path="/my-stats" element={<MyStats />} />
+        <Route path="/my-stats/:teamId" element={<MyStats />} />
+        {/* A member's own page. No teamId means the signed-in user's own. */}
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/profile/:teamId" element={<Profile />} />
+        {/* Opens on the team named, or on your own. */}
+        <Route path="/power-rankings" element={<PowerRankings />} />
+        <Route path="/power-rankings/:teamId" element={<PowerRankings />} />
         <Route path="/leaderboards" element={<Leaderboards />} />
       </Route>
 

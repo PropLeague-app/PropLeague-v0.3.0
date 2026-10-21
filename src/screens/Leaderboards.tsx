@@ -257,7 +257,9 @@ export function Leaderboards() {
   const boards = computeLeagueLeaderboards(league, gameLookup, userTeam?.id);
   const skills = computeSkillBoards(league, gameLookup);
   const teamById = (id: string) => league.teams.find((t) => t.id === id);
-  const openTeam = (teamId: string) => navigate('/my-stats', { state: { team: teamId } });
+  // Opens that member's profile rather than dropping straight into their stats with the team
+  // hidden in router state: same destination, but linkable and with the person named on it.
+  const openTeam = (teamId: string) => navigate(`/profile/${teamId}`);
   const seasonRef = seasonScaleRef(league);
 
   const weeksWithScores = Object.keys(league.matchupsByWeek)

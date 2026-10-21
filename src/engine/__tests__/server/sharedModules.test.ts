@@ -116,7 +116,7 @@ describe('roster penalties: server matches the client', () => {
 
   it('flags a roster spread over too few games, and never an empty roster', () => {
     const one = [{ slotId: 'a', gameId: 'g1', marketKey: 'h2h', side: 'KC', stake: 10, placedAt: 't' }];
-    expect(srvPen.checkRosterRules(one, { ...DEFAULT_LEAGUE_SETTINGS, correlationBlockEnabled: false, minGamesPerRoster: null } as never).tooFewGames).toBe(true);
+    expect(srvPen.checkRosterRules(one, { ...DEFAULT_LEAGUE_SETTINGS, correlationBlockEnabled: false, minGamesPerRoster: 2 } as never).tooFewGames).toBe(true);
     expect(srvPen.checkRosterRules([], { ...DEFAULT_LEAGUE_SETTINGS, minGamesPerRoster: 5 } as never)).toEqual({ invalidSlotIds: [], tooFewGames: false, feeApplies: false });
   });
 });

@@ -96,7 +96,7 @@ export function checkRosterRules(picks: PenaltyPick[], s: PenaltySettings): Rule
   }
 
   const games = new Set(picks.map((p) => p.gameId));
-  const need = s.minGamesPerRoster ?? 2;
+  const need = s.minGamesPerRoster ?? 1;
   const tooFewGames = picks.length > 0 && games.size < need;
   if (tooFewGames) reasons.push(`Needs picks from at least ${need} different games`);
 

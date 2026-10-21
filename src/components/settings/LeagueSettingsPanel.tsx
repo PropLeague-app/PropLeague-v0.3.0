@@ -349,7 +349,7 @@ export function LeagueSettingsPanel({
           help={['lineup', 'Duplicate and correlated picks']}
           readOnly={readOnly}
           badge={pillFor(ROSTER_KEYS)}
-          summary={`${totalSlots} slots: ${slotSummary} · min ${settings.minGamesPerRoster ?? 2} games · duplicates ${settings.maxDuplicatePicks != null ? `capped at ${settings.maxDuplicatePicks}` : 'allowed'}`}
+          summary={`${totalSlots} slots: ${slotSummary} · min ${settings.minGamesPerRoster ?? 1} games · duplicates ${settings.maxDuplicatePicks != null ? `capped at ${settings.maxDuplicatePicks}` : 'allowed'}`}
         >
           {errorNote}
           <SubSection title={`Lineup slots (${totalSlots})`}>
@@ -394,10 +394,10 @@ export function LeagueSettingsPanel({
           <SubSection title="Rules">
             <Stepper
               label="Min games per roster"
-              value={settings.minGamesPerRoster ?? 2}
-              min={2}
-              max={Math.max(2, totalSlots - 1)}
-              onChange={(v) => update({ minGamesPerRoster: v <= 2 ? null : v })}
+              value={settings.minGamesPerRoster ?? 1}
+              min={1}
+              max={Math.max(1, totalSlots - 1)}
+              onChange={(v) => update({ minGamesPerRoster: v <= 1 ? null : v })}
             />
             <ToggleRow
               label="Cap teams per pick"

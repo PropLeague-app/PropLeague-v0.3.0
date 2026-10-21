@@ -45,6 +45,16 @@ interface AuthState {
   updateProfile: (partial: { username?: string; avatarEmoji?: string }) => Promise<{ ok: boolean; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ ok: boolean; error?: string }>;
   updatePassword: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Checks a password against the signed-in account without disturbing the session, so a password
+   *  change can ask for the current one first. */
+  verifyPassword: (password: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Starts an email change. Supabase mails the new address a confirmation link and the account
+   *  keeps the old address until that link is followed. */
+  updateEmail: (newEmail: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Ends every session on every device, not just this one. */
+  signOutEverywhere: () => Promise<{ ok: boolean; error?: string }>;
+  /** Deletes the account for good (see the delete-account edge function). */
+  deleteAccount: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 interface ProfileRow {
@@ -100,6 +110,17 @@ function stashLocalState(userId: string) {
     );
   } catch {
     // Storage unavailable: the user just starts fresh, same as before.
+  }
+}
+
+/** Drops that stash for good. Sign-out keeps it on purpose, so signing back in picks up where you
+ *  left off; a deleted account has nothing to come back to, so leaving its theme and read-receipts
+ *  on the device would just be litter under an id that no longer exists. */
+function clearStashedState(userId: string) {
+  try {
+    localStorage.removeItem(LOCAL_STATE_KEY(userId));
+  } catch {
+    // Storage unavailable: nothing was stashed either, so there is nothing to clear.
   }
 }
 
@@ -262,6 +283,50 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   updatePassword: async (newPassword) => {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+
+  // A re-auth check, not a sign-in: it succeeds against the same account that is already signed in,
+  // so the session it returns is an equivalent one and nothing visible changes. Supabase has no
+  // "check this password" call, which is why it goes through signInWithPassword.
+  verifyPassword: async (password) => {
+    const email = get().user?.email;
+    if (!email) return { ok: false, error: 'This account has no password to check.' };
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: 'That password is not right.' };
+    return { ok: true };
+  },
+
+  updateEmail: async (newEmail) => {
+    const { error } = await supabase.auth.updateUser({ email: newEmail });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+
+  signOutEverywhere: async () => {
+    const signingOutId = get().user?.id;
+    if (signingOutId) stashLocalState(signingOutId);
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (error) return { ok: false, error: error.message };
+    set({ session: null, user: null, profile: null });
+    useAppStore.getState().factoryReset();
+    return { ok: true };
+  },
+
+  // The league side of this runs on the server (migration 0042 via the delete-account edge
+  // function), because handing over a commissioner role and turning teams into bot teams has to
+  // happen whether or not this device is still listening. All this does afterwards is forget the
+  // session locally: there is nothing left on the server to sign out of.
+  deleteAccount: async () => {
+    const userId = get().user?.id;
+    if (!userId) return { ok: false, error: 'Not signed in.' };
+    const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+    const failed = error ? error.message : data && data.ok === false ? String(data.error ?? 'Could not delete your account.') : null;
+    if (failed) return { ok: false, error: failed };
+    clearStashedState(userId);
+    await supabase.auth.signOut().catch(() => undefined);
+    set({ session: null, user: null, profile: null });
+    useAppStore.getState().factoryReset();
     return { ok: true };
   },
 }));

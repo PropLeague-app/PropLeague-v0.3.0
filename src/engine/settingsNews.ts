@@ -56,7 +56,7 @@ export function majorSettingsChanges(before: LeagueSettings, after: LeagueSettin
   for (const [k, r] of beforeRules) if (!afterRules.has(k)) out.push(`${MARKET_LABELS[r.market] ?? r.market}${r.side ? ` ${r.side}` : ''} allowed again`);
 
   if (a.correlationBlockEnabled !== b.correlationBlockEnabled) out.push(a.correlationBlockEnabled ? 'Correlated picks blocked' : 'Correlated picks allowed');
-  if ((a.minGamesPerRoster ?? 2) !== (b.minGamesPerRoster ?? 2)) out.push(`Min games per lineup ${b.minGamesPerRoster ?? 2} → ${a.minGamesPerRoster ?? 2}`);
+  if ((a.minGamesPerRoster ?? 1) !== (b.minGamesPerRoster ?? 1)) out.push(`Min games per lineup ${b.minGamesPerRoster ?? 1} → ${a.minGamesPerRoster ?? 1}`);
   if (a.emptySlotFloor !== b.emptySlotFloor) out.push(a.emptySlotFloor == null ? 'Empty slot penalty off' : `Empty slot penalty ${money(a.emptySlotFloor)}`);
   if (a.invalidRosterPenaltyEnabled !== b.invalidRosterPenaltyEnabled || (a.invalidRosterPenaltyEnabled && a.invalidRosterFee !== b.invalidRosterFee)) {
     out.push(a.invalidRosterPenaltyEnabled ? `Invalid roster fee ${money(a.invalidRosterFee)}` : 'Invalid roster fee off');

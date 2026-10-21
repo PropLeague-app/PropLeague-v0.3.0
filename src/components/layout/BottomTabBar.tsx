@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { House, ClipboardList, CalendarDays, Settings } from 'lucide-react';
+import { House, ClipboardList, CalendarDays, UserRound } from 'lucide-react';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
@@ -17,7 +17,12 @@ const TABS = [
   { to: '/home', label: 'League Home', Icon: House },
   { to: '/lineup', label: 'Lineup', Icon: ClipboardList },
   { to: '/slate', label: 'NFL Slate', Icon: CalendarDays },
-  { to: '/settings', label: 'Profile', Icon: Settings },
+  // Profile replaces Settings on the bar. Settings is the lowest-traffic surface in the app and was
+  // holding a quarter of the tab bar, while the things people actually came to it for (their stats,
+  // their bets, other members) were buried in a list inside it. Settings now sits behind the gear on
+  // your own profile, which also puts "what my team looks like" and "change what my team looks like"
+  // in one place instead of two tabs apart (see chat, Oct 2026).
+  { to: '/profile', label: 'Profile', Icon: UserRound },
 ];
 
 // Explicit height (rather than intrinsic content height from py-2.5) so any other
@@ -138,7 +143,7 @@ export function BottomTabBar() {
         >
           <span className="relative">
             <tab.Icon size={22} strokeWidth={2} />
-            {((tab.to === '/lineup' && lineupIncomplete) || (tab.to === '/settings' && voidWaiting)) && (
+            {((tab.to === '/lineup' && lineupIncomplete) || (tab.to === '/profile' && voidWaiting)) && (
               <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
                 !
               </span>

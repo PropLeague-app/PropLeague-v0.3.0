@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Flame } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { weekLabel, type WeekId } from '../types';
@@ -43,7 +42,9 @@ export function ScheduleView() {
 
   // manual v0.1.1 §6 #10: view any league member's full season schedule, defaulting to
   // the signed-in user's own team.
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  // Whose schedule, from the route, so a profile can link straight to it (see chat, Oct 2026).
+  const { teamId: selectedTeamId } = useParams();
+  const setSelectedTeamId = (id: string) => navigate(`/schedule/${id}`, { replace: true });
   // Past weeks' rosters are what tell us whether a week was perfect (the flame on its score).
   useEnsureSettledWeekRosters(league);
 

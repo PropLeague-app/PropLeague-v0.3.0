@@ -6,6 +6,7 @@ import { fillScheduleGaps, useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
 import { StandingsPreview } from '../components/home/StandingsPreview';
+import { LeagueLinks } from '../components/home/LeagueLinks';
 import { ActivityFeed } from '../components/home/ActivityFeed';
 import { TopToast } from '../components/common/TopToast';
 import { CountdownTimer } from '../components/common/CountdownTimer';
@@ -252,30 +253,33 @@ export function LeagueHome() {
                 same real win-probability/score computation as the featured card above,
                 just smaller, rather than a separately hand-rolled (and, last round,
                 subtly wrong) simplified version. */}
-            <button
-              onClick={() => setShowAll((v) => !v)}
-              className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-bg-raised border border-border/60 mb-2"
-            >
-              <span className="text-xs font-medium text-text-muted">
-                Other Matchups <span className="font-normal">({otherMatchups.length})</span>
-              </span>
-              {showAll ? <ChevronUp size={14} className="text-text-muted" /> : <ChevronDown size={14} className="text-text-muted" />}
-            </button>
+            {/* Expanding and going to the full week are two different intentions, so they are two
+                controls on one row rather than the second being hidden inside the first. The league
+                links below used to carry a Matchups entry as well, which made three ways to the same
+                screen stacked on top of each other (see chat, Oct 2026). */}
+            <div className="w-full flex items-stretch gap-2 mb-2">
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                aria-expanded={showAll}
+                className="flex-1 min-w-0 flex items-center justify-between px-3 py-1.5 rounded-lg bg-bg-raised border border-border/60"
+              >
+                <span className="text-xs font-medium text-text-muted truncate">
+                  Other Matchups <span className="font-normal">({otherMatchups.length})</span>
+                </span>
+                {showAll ? <ChevronUp size={14} className="text-text-muted shrink-0" /> : <ChevronDown size={14} className="text-text-muted shrink-0" />}
+              </button>
+              <button
+                onClick={() => navigate('/matchups')}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-bg-raised border border-border/60 text-xs font-medium text-primary"
+              >
+                {league.seasonPhase === 'playoffs' ? 'Bracket →' : 'All weeks →'}
+              </button>
+            </div>
             {showAll && (
               <div className="space-y-2">
                 {otherMatchups.map((m) => (
                   <MatchupCard key={m.id} league={league} matchup={m} compact />
                 ))}
-                {/* Escape hatch to the full, non-compact view of every matchup this
-                    week (see chat) -- "in the original format" means the same
-                    full-size MatchupCard the featured card above uses, not this
-                    compact one. */}
-                <button
-                  onClick={() => navigate('/matchups')}
-                  className="w-full text-center text-xs text-primary font-medium py-1.5"
-                >
-                  See all matchups →
-                </button>
               </div>
             )}
           </div>
@@ -284,6 +288,8 @@ export function LeagueHome() {
         {league.settings.buyInEnabled && league.prizePool && <PrizePoolTicker pool={league.prizePool} />}
 
         <StandingsPreview league={league} />
+
+        <LeagueLinks league={league} />
 
         <div>
           <div className="flex items-center justify-between mb-2">

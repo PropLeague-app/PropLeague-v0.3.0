@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Search, Ticket, X } from 'lucide-react';
 import { ShareButton } from '../share/ShareButton';
 import { SlipShareCard, type SlipRow } from '../share/cards/SlipShareCard';
@@ -57,6 +57,9 @@ const POSITION_OPTIONS: { value: PositionFilter; label: string }[] = [
 
 export function BetHistory() {
   const navigate = useNavigate();
+  // Whose bets these are lives in the route (/bet-history/:teamId), so the screen can be linked to
+  // and keeps its own header and share button (see chat, Oct 2026).
+  const { teamId: teamParam } = useParams();
   // A tapped stat row on My Stats lands here with a preset (see engine/betFilters BetPreset): the
   // bets behind that number, already filtered, with the filters showing so they can be changed.
   const preset = (useLocation().state as { preset?: BetPreset } | null)?.preset;
@@ -73,10 +76,14 @@ export function BetHistory() {
   // signed-in user's own team. LEAGUE_VIEW_ID (Sept 2026 chat: "league aggregate
   // stats") is a third option alongside "my own team" and "another single team" --
   // it folds every team's bets into one list instead of picking a viewedTeam at all.
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(preset?.team ?? null);
+  const selectedTeamId = teamParam ?? preset?.team ?? null;
+  // Picking someone else moves the route rather than setting local state.
+  const setSelectedTeamId = (id: string) => navigate(`/bet-history/${id}`, { replace: true });
   const isLeagueView = selectedTeamId === LEAGUE_VIEW_ID;
   const viewedTeam = isLeagueView ? undefined : (league?.teams.find((t) => t.id === selectedTeamId) ?? userTeam);
   const isOwnTeam = !!viewedTeam && !!userTeam && viewedTeam.id === userTeam.id;
+  // Back goes to the profile these bets belong to.
+  const backTo = isLeagueView || !viewedTeam || !userTeam || viewedTeam.id === userTeam.id ? '/profile' : `/profile/${viewedTeam.id}`;
 
   // A bet's game might span any past week, not just the current one -- unlike
   // Lineup.tsx (which only ever needs the current week's wagered games), bet
@@ -259,7 +266,7 @@ export function BetHistory() {
     <div className="flex flex-col">
       <BackHeader
         title={title}
-        fallback="/home"
+        fallback={backTo}
         right={
           <ShareButton
             title={title}
@@ -280,8 +287,10 @@ export function BetHistory() {
           <Stat label="Net P/L" value={formatCents(totalPL)} valueClass={totalPL >= 0 ? 'text-profit' : 'text-loss'} />
         </div>
 
+        {/* Carries the team across, so viewing someone else's bets leads to their stats rather than
+            quietly switching back to yours. */}
         <button
-          onClick={() => navigate('/my-stats', isLeagueView ? { state: { view: 'league' } } : undefined)}
+          onClick={() => navigate(selectedTeamId ? `/my-stats/${selectedTeamId}` : '/my-stats')}
           className="text-xs text-primary font-medium"
         >
           {isLeagueView ? 'View league stats →' : 'View advanced stats →'}

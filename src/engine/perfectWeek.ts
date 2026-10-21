@@ -26,7 +26,7 @@ export function isPerfectWeek(roster: WeeklyRoster | undefined, settings: League
   }
   if (wins === 0) return false;
   if (Math.abs(staked - settings.weeklyCredits) > EPS) return false; // credits left unplaced, or overspent
-  if (games.size < (settings.minGamesPerRoster ?? 2)) return false;
+  if (games.size < (settings.minGamesPerRoster ?? 1)) return false;
   // A roster the invalid-roster penalty hit (when that is on) is not a clean week.
   const pen = rosterPenalties(roster, settings);
   if (pen.invalidSlotIds.size > 0 || pen.fee > 0) return false;

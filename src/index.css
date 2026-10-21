@@ -929,6 +929,23 @@ body {
 }
 .btn-soft-loss:active:not(:disabled) { background: color-mix(in oklab, var(--color-loss) 26%, var(--color-bg)); }
 
+/* The fourth soft tone, for "unfinished, nothing wrong" (the lineup status bar's "!"). Warning has no
+   separate -ink variable because it does not need one: it is already a light amber in dark mode and a
+   deep amber in light mode, so the same value reads as text against either background. */
+.btn-soft-warning {
+  font-weight: 600;
+  color: var(--color-warning);
+  background: color-mix(in oklab, var(--color-warning) 14%, var(--color-bg));
+  border: 1px solid color-mix(in oklab, var(--color-warning) 50%, var(--color-bg));
+}
+
+/* A soft tone worn as a round status mark rather than a button: same fill and tinted glyph, with a
+   heavier ring, because at 40px a 1px hairline reads as a faint outline instead of a deliberate
+   badge. Sits after the .btn-soft-* rules so it overrides their border shorthand. */
+.mark-chip {
+  border-width: 2px;
+}
+
 /* Selected state for stand-alone pills (week picker, position filter, matchup and member pickers). */
 .sel-pill {
   color: var(--color-primary-ink);

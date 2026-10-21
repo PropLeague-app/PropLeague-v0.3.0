@@ -95,11 +95,11 @@ describe('invalid roster rules', () => {
     const r = roster(six([{ game: 'g' }, { game: 'g' }, { game: 'g' }, { game: 'g' }, { game: 'g' }, { game: 'g' }]));
     const c = checkRosterRules(
       r.slots.map((s) => ({ slotId: s.slotId, gameId: s.wager!.gameId, marketKey: s.wager!.marketKey, side: s.wager!.side, playerId: s.wager!.playerId, stake: s.wager!.stake, placedAt: s.wager!.placedAt })),
-      pen,
+      { ...pen, minGamesPerRoster: 2 },
     );
     expect(c.tooFewGames).toBe(true);
     expect(c.invalidSlotIds).toEqual([]);
-    expect(rosterPenalties(r, pen).fee).toBe(5);
+    expect(rosterPenalties(r, { ...pen, minGamesPerRoster: 2 }).fee).toBe(5);
   });
   it('voids the later pick of a correlated pair when that rule is on', () => {
     const rules = [{ id: 'r', label: 'QB over + WR over', marketA: 'player_pass_yds', sideA: 'Over', marketB: 'player_reception_yds', sideB: 'Over', scope: 'same-team' }] as LeagueSettings['correlationRules'];

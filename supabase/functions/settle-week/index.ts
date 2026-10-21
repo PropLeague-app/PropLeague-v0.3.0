@@ -1129,7 +1129,7 @@ Deno.serve(async (req) => {
         if (!ws.some((w) => w.status === 'won')) return false;
         const staked = ws.reduce((sum, w) => sum + (w.stake ?? 0), 0);
         if (Math.abs(staked - settings.weeklyCredits) > 0.01) return false;
-        return new Set(ws.map((w) => w.game_id)).size >= (settings.minGamesPerRoster ?? 2);
+        return new Set(ws.map((w) => w.game_id)).size >= (settings.minGamesPerRoster ?? 1);
       };
 
       if (weekComplete) {

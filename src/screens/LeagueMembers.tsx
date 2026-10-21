@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { useUIStore } from '../store/useUIStore';
 import { conferencesBalanced } from '../engine/conferences';
@@ -13,6 +14,7 @@ import { TeamLogo } from '../components/common/TeamLogo';
  * conferencesBalanced (engine/conferences.ts), and reassignment locks entirely once
  * the season has begun (week 1 settled) rather than staying open indefinitely. */
 export function LeagueMembers() {
+  const navigate = useNavigate();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const setTeamConference = useAppStore((s) => s.setTeamConference);
@@ -76,15 +78,25 @@ export function LeagueMembers() {
           const standing = league.standings.find((s) => s.teamId === team.id);
           return (
             <Card key={team.id} className="flex flex-col items-center text-center gap-1.5 py-4">
-              <TeamLogo team={team} size="lg" />
-              <p className="text-sm font-semibold truncate max-w-full">{team.teamName}</p>
-              <p className="text-[11px] text-text-muted">{team.ownerName}</p>
-              {standing && (
-                <p className="text-xs text-text-muted">
-                  {standing.wins}-{standing.losses}
-                  {standing.ties ? `-${standing.ties}` : ''}
-                </p>
-              )}
+              {/* Only the identity opens the profile, not the whole card: the conference pills below
+                  are their own controls, and a tappable card wrapping them would swallow their taps
+                  and nest a button inside a button. */}
+              <button
+                type="button"
+                onClick={() => navigate(`/profile/${team.id}`)}
+                aria-label={`View ${team.teamName}'s profile`}
+                className="flex flex-col items-center gap-1.5 w-full min-w-0 active:opacity-80"
+              >
+                <TeamLogo team={team} size="lg" />
+                <p className="text-sm font-semibold truncate max-w-full">{team.teamName}</p>
+                <p className="text-[11px] text-text-muted">{team.ownerName}</p>
+                {standing && (
+                  <p className="text-xs text-text-muted">
+                    {standing.wins}-{standing.losses}
+                    {standing.ties ? `-${standing.ties}` : ''}
+                  </p>
+                )}
+              </button>
               {team.id === league.commissionerTeamId && (
                 <span className="text-[10px] font-bold tracking-wide text-primary-ink bg-primary/15 rounded-full px-2 py-0.5">COMMISSIONER</span>
               )}

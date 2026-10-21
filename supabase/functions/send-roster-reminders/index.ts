@@ -57,7 +57,7 @@ function settingsSliceFrom(raw: unknown): { totalSlots: number; weeklyCredits: n
     lineupSlots: slots,
     totalSlots: Object.values(slots).reduce((a, b) => a + b, 0),
     weeklyCredits: typeof r.weeklyCredits === 'number' ? r.weeklyCredits : 100,
-    minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 2, // baseline of 2 always applies
+    minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 1, // default floor; a commissioner can raise it
   };
 }
 

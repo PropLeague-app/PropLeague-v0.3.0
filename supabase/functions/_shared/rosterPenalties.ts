@@ -112,7 +112,7 @@ export function checkRosterRules(picks: PenaltyPickReal[], s: PenaltySettingsRea
   }
 
   const games = new Set(picks.map((p) => p.gameId));
-  const need = s.minGamesPerRoster ?? 2;
+  const need = s.minGamesPerRoster ?? 1;
   const tooFewGames = picks.length > 0 && games.size < need;
   return { invalidSlotIds: [...invalid], tooFewGames, feeApplies: invalid.size > 0 || tooFewGames };
 }

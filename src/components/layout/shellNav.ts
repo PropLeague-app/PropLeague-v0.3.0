@@ -55,6 +55,10 @@ let homeLast: { path: string; leagueId: string | null } = { path: '/home', leagu
 export function inTabSection(tab: string, path: string): boolean {
   if (tab === '/slate') return path === '/slate' || path.startsWith('/slate/');
   if (tab === '/home') return path === '/home' || path.startsWith('/matchup/');
+  // Settings belongs to the Profile tab: it is reached from the gear on your own profile and has no
+  // tab of its own, so the tab you came in on has to stay lit while you are in there, or the tab bar
+  // shows nothing selected and Back has no obvious partner (see chat, Oct 2026).
+  if (tab === '/profile') return path === '/profile' || path.startsWith('/profile/') || path === '/settings' || path.startsWith('/settings/');
   return path === tab || path.startsWith(`${tab}/`);
 }
 

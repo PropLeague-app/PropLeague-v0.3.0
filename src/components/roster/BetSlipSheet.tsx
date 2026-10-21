@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { profitForStake, formatCents } from '../../engine/oddsMath';
 import { realDollarAmount } from '../../engine/prizePool';
 import { findClaimingTeam, claimBlockReason } from '../../engine/duplicatePicks';
+import { gameDiversityBlock } from '../../engine/validation';
 import { rosterKey } from '../../engine/rosterSlots';
 import { maxStakeRounded, stakeError, type StakeContext } from '../../engine/stakeRules';
 import { activeMarketRules, marketBlockReason, marketMaxStake, marketSlotCapReason } from '../../engine/marketRules';
@@ -80,7 +81,8 @@ export function BetSlipSheet({
   const isML = target.slotPosition === 'ML';
   const minOdds = isML ? settings.mlBetOverride?.minOdds ?? null : settings.propBetOverride?.minOdds ?? settings.minOdds;
 
-  const slotsNow = league?.rostersByTeamWeek[rosterKey(target.teamId, target.week)]?.slots;
+  const rosterNow = league?.rostersByTeamWeek[rosterKey(target.teamId, target.week)];
+  const slotsNow = rosterNow?.slots;
 
   // Swapping (engine/pickSwap.ts): which slot this pick goes in. The slip can offer every slot of
   // this position whose pick can still be swapped plus the first empty one. If one of them already
@@ -170,6 +172,11 @@ export function BetSlipSheet({
   if (preClaimReason) reasons.push(preClaimReason);
   if (claimError) reasons.push(claimError);
   if (replacing && kind === 'same') reasons.push('This is your current pick at the same odds. Change its stake on the Lineup screen.');
+  // Refused here rather than voided later: the game-diversity rule used to be checked only when a
+  // lineup was submitted, so a lineup that broke it could still settle (see chat, Oct 2026). Fires
+  // only on the pick that would make the rule impossible to meet, which is the last open slot.
+  const diversityBlock = rosterNow && league ? gameDiversityBlock(rosterNow, league.settings, slotId, target.gameId) : null;
+  if (diversityBlock) reasons.push(diversityBlock);
 
   const valid = reasons.length === 0 && stake > 0;
   const potentialProfit = profitForStake(stake, target.outcome.price);

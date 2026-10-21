@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
-import { validateLineup } from '../engine/validation';
+import { lineupStatus, validateLineup } from '../engine/validation';
 import { rosterPenalties } from '../engine/penalties';
-import { computeIncompleteLineupPenalty } from '../engine/scoring';
+import { computeIncompleteLineupPenalty, lineupUpside } from '../engine/scoring';
 import { activeMultipliers } from '../engine/prizePool';
 import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
@@ -13,9 +13,29 @@ import { activeMarketRules, marketMaxStake } from '../engine/marketRules';
 import type { StakeContext } from '../engine/stakeRules';
 import { ConfirmSheet } from '../components/common/ConfirmSheet';
 import { BudgetBar } from '../components/common/BudgetBar';
-import { SOFT_PRIMARY_BTN, SOFT_PROFIT_BTN } from '../components/common/buttonStyles';
 import { BOTTOM_TAB_BAR_HEIGHT } from '../components/layout/BottomTabBar';
 import { weekLabel } from '../types';
+
+/** The state mark wears the app's own soft button treatment (faint fill, hairline border, bright
+ *  tinted glyph) rather than a solid dot, so it reads as part of the same kit as every other action
+ *  on screen. The bar around it stays neutral: one tinted element says the state clearly, a whole
+ *  glowing bar just shouts (see chat, Oct 2026). */
+const MARK_TONE = {
+  incomplete: 'btn-soft-warning',
+  blocked: 'btn-soft-loss',
+  ready: 'btn-soft-profit',
+} as const;
+
+/** One figure in the status bar: the number first, its name under it, the way the budget strip at
+ *  the top of this screen already stacks them. */
+function StatCell({ value, label, tone = '' }: { value: string; label: string; tone?: string }) {
+  return (
+    <div className="flex-1 min-w-0 text-center">
+      <p className={`text-base font-bold tabular-nums leading-none tracking-tight ${tone}`}>{value}</p>
+      <p className="text-[9px] font-semibold uppercase tracking-wider text-text-muted mt-1">{label}</p>
+    </div>
+  );
+}
 
 export function Lineup() {
   const [infoOpen, setInfoOpen] = useState(false);
@@ -26,6 +46,8 @@ export function Lineup() {
   const [stakeErrors, setStakeErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Bumped by the Retry affordance, which is the only way a failed auto-mark is tried again.
+  const [retryCount, setRetryCount] = useState(0);
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const updateWagerStake = useAppStore((s) => s.updateWagerStake);
@@ -94,6 +116,36 @@ export function Lineup() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roster]);
 
+  // Reaching ✓ is what marks the lineup complete. The screen used to ask for a tap, which made
+  // waiving the unspent-credits penalty into something you had to remember: a full, legal, in-budget
+  // lineup could carry the penalty into kickoff purely because nobody pressed the button (see chat,
+  // Oct 2026). Every edit clears `submitted` on the device and on the server (migrations 0022/0041),
+  // so this re-marks on the way back to ✓ rather than only once a week.
+  //
+  // Keyed on the lineup's own contents, not on a boolean: a failed save must not retry on a loop as
+  // the store churns, but the same lineup edited and brought back to ✓ has to be tried again.
+  const markedSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!league || !userTeam || !roster) return;
+    if (!validateLineup(roster, league.settings).valid || roster.submitted) return;
+    const sig = roster.slots.map((s) => `${s.slotId}:${s.wager?.id ?? ''}:${s.wager?.stake ?? ''}`).join('|');
+    if (markedSigRef.current === sig) return;
+    markedSigRef.current = sig;
+    let cancelled = false;
+    setSubmitting(true);
+    setSubmitError(null);
+    void (async () => {
+      const ok = await submitLineup(league.id, userTeam.id, league.currentWeek);
+      if (cancelled) return;
+      setSubmitting(false);
+      if (!ok) setSubmitError('Could not save your lineup as complete. Check your connection.');
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [league, userTeam, roster, retryCount]);
+
   if (!league || !userTeam || !roster) {
     return (
       <div className="p-4 text-center text-text-muted text-sm">Join or create a league to build a lineup.</div>
@@ -127,6 +179,11 @@ export function Lineup() {
   // "!" badge, just promoted to the header since these are lineup-wide, not
   // per-slot.
   const hasIssues = validation.overallReasons.length > 0;
+  const status = lineupStatus(roster, league.settings, validation);
+  const filledSlots = roster.slots.filter((s) => s.wager).length;
+  // The one figure this screen never showed: what the week pays if it all lands. Settled picks count
+  // at what they actually returned, so it stays honest as results come in (see engine/scoring.ts).
+  const upside = lineupUpside(roster);
 
   return (
     <div className="flex flex-col">
@@ -163,8 +220,9 @@ export function Lineup() {
               </div>
             )}
             <p className="text-[11px] text-text-muted">
-              Picks save instantly, no need to submit. Marking complete just confirms it's full and in
-              budget -- left incomplete at kickoff, any unused credits count as a loss.
+              Picks save instantly and the bar at the bottom tracks where the week stands. It marks
+              itself complete once the lineup is full, in budget and legal -- left incomplete at
+              kickoff, any unused credits count as a loss.
             </p>
           </div>
         )}
@@ -225,35 +283,50 @@ export function Lineup() {
             ))}
           </div>
         )}
-        <div className="flex items-center justify-end text-xs text-text-muted px-1">
-          <span>{validation.distinctGames} game(s) used</span>
+        {/* Was a "Mark Lineup Complete" button, then a sentence of explanation, which is the one
+            thing a footer on a screen of numbers should not be. What belongs here is the week's own
+            figures: how much of the lineup is built, how it is spread, and what it stands to win,
+            which is the number nothing else on the screen reports. The state itself is a mark, and
+            the only prose is the one line saying what is wrong, when something is (see chat, Oct
+            2026). The money already lives in the budget strip at the top, so it is not repeated. */}
+        <div className="w-full rounded-xl border border-border bg-bg-card px-3 py-2.5">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden
+              className={`mark-chip w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-lg leading-none ${MARK_TONE[status.state]}`}
+            >
+              {status.mark}
+            </span>
+            <StatCell value={`${filledSlots}/${roster.slots.length}`} label="slots" />
+            <div className="w-px self-stretch bg-border" />
+            <StatCell value={`${validation.distinctGames}`} label="games" />
+            <div className="w-px self-stretch bg-border" />
+            <StatCell
+              value={`${upside < 0 ? '-' : ''}$${Math.abs(upside).toFixed(2)}`}
+              label="to win"
+              tone={upside > 0 ? 'text-profit' : upside < 0 ? 'text-loss' : ''}
+            />
+          </div>
+          {(status.note || submitError || submitting) && (
+            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+              <p className={`flex-1 min-w-0 text-[11px] leading-snug ${submitError ? 'text-loss' : 'text-text-muted'}`}>
+                {submitError ?? (submitting ? 'Saving…' : status.note)}
+              </p>
+              {submitError && (
+                <button
+                  onClick={() => {
+                    setSubmitError(null);
+                    markedSigRef.current = null;
+                    setRetryCount((n) => n + 1);
+                  }}
+                  className="shrink-0 text-xs font-semibold text-primary border border-primary/50 rounded-full px-3 py-1 active:opacity-80"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        {/* submitLineup returns a boolean that this button used to throw away: no pending state, no
-            failure, and nothing stopping a second press while the first was in flight (see chat,
-            Oct 2026). Marking complete is not cosmetic -- it is what waives the unspent-credits
-            penalty on a full lineup (see computeIncompleteLineupPenalty) -- so a press that silently
-            did nothing could cost real credits at kickoff. */}
-        {submitError && <p className="text-loss text-xs px-1">{submitError}</p>}
-        <button
-          disabled={!validation.valid || submitting}
-          onClick={async () => {
-            if (submitting) return;
-            setSubmitting(true);
-            setSubmitError(null);
-            try {
-              const ok = await submitLineup(league.id, userTeam.id, league.currentWeek);
-              if (!ok) setSubmitError('Could not mark your lineup complete. Check your connection and try again.');
-            } finally {
-              setSubmitting(false);
-            }
-          }}
-          // text-lg font-bold so the screen's main action carries the same display treatment as a
-          // heading: the soft button styles set their own weight at body size, which left this one
-          // looking thin next to everything else after the font change (see chat, Oct 2026).
-          className={`w-full py-3 rounded-xl text-lg font-bold ${roster.submitted && validation.valid ? SOFT_PROFIT_BTN : SOFT_PRIMARY_BTN}`}
-        >
-          {submitting ? 'Saving…' : roster.submitted && validation.valid ? 'Lineup Complete ✓' : 'Mark Lineup Complete'}
-        </button>
       </div>
 
       {editingSlot?.wager && (

@@ -72,7 +72,7 @@ export function validateLineup(roster: WeeklyRoster, settings: LeagueSettings): 
     );
   }
   // manual v0.1.1 §5 C: commissioner-configurable floor, defaulting to the baseline of 2.
-  const minGames = settings.minGamesPerRoster ?? 2;
+  const minGames = settings.minGamesPerRoster ?? 1;
   if (filledCount > 0 && gameIds.size < minGames) {
     overallReasons.push(`Roster must include props from at least ${minGames} different games`);
   }
@@ -136,4 +136,118 @@ export function validateLineup(roster: WeeklyRoster, settings: LeagueSettings): 
     slotResults.every((s) => s.valid);
 
   return { valid, totalAllocated, remaining, distinctGames: gameIds.size, slotResults, overallReasons };
+}
+
+export type LineupState = 'incomplete' | 'blocked' | 'ready';
+
+export interface LineupStatus {
+  state: LineupState;
+  /** The glyph the status bar shows for this state. */
+  mark: '!' | '✕' | '✓';
+  /** One short line naming what is wrong, or '' when nothing is. The counts live in the status bar's
+   *  own figures, so this says only what those figures cannot. */
+  note: string;
+}
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** What the lineup footer says, as three states rather than a button.
+ *
+ * The old footer was a "Mark Lineup Complete" button, which made waiving the unspent-credits
+ * penalty into something you had to remember to tap. Hole In Won carried eight picks from one game
+ * into settlement partly because nothing on the screen ever said the lineup was wrong, it just
+ * offered a button that did nothing (see chat, Oct 2026).
+ *
+ * The three states are deliberately not "valid / invalid". They separate unfinished from stuck:
+ *
+ *  - `!` incomplete. Nothing is wrong, there is simply more to do. Slots still open with credits
+ *    still to spend.
+ *  - `✕` blocked. One axis is finished and the other is not, so you cannot get to a legal lineup by
+ *    carrying on. Every slot filled with credits left over, or every credit spent with slots still
+ *    empty, means something already placed has to change. A broken rule (a stake under the minimum,
+ *    a duplicate player, too few games) reads the same way.
+ *  - `✓` ready. Full, in budget, every rule met.
+ *
+ * Reaching `✓` is what marks the lineup complete, so the state is the whole interaction and there is
+ * nothing left to press.
+ */
+export function lineupStatus(
+  roster: WeeklyRoster,
+  settings: LeagueSettings,
+  validation: LineupValidationResult,
+): LineupStatus {
+  const total = roster.slots.length;
+  const filled = roster.slots.filter((s) => s.wager).length;
+  const empty = total - filled;
+  const over = validation.remaining < -0.001;
+  const left = validation.remaining > 0.001;
+  const credits = `$${settings.weeklyCredits.toFixed(2)}`;
+  const minGames = settings.minGamesPerRoster ?? 1;
+  // An empty slot's only complaint is that it is empty, which is unfinished work rather than a
+  // broken rule. Reading the slot reasons rather than a fixed list of rule names means a rule added
+  // later lands here on its own.
+  const ruleReason = validation.slotResults
+    .find((r) => !r.valid && r.reasons.some((x) => x !== 'Empty slot'))
+    ?.reasons.find((x) => x !== 'Empty slot');
+
+  if (validation.valid) return { state: 'ready', mark: '✓', note: '' };
+  if (ruleReason) return { state: 'blocked', mark: '✕', note: ruleReason };
+  if (filled > 0 && validation.distinctGames < minGames) {
+    return { state: 'blocked', mark: '✕', note: `Needs picks from ${minGames}+ different games` };
+  }
+  if (over) {
+    return { state: 'blocked', mark: '✕', note: `$${Math.abs(validation.remaining).toFixed(2)} over budget` };
+  }
+  if (empty === 0 && left) {
+    return { state: 'blocked', mark: '✕', note: `Every slot filled, $${validation.remaining.toFixed(2)} unspent` };
+  }
+  if (empty > 0 && !left) {
+    return {
+      state: 'blocked',
+      mark: '✕',
+      note: `All ${credits} allocated, ${empty} ${plural(empty, 'slot', 'slots')} still empty`,
+    };
+  }
+  return { state: 'incomplete', mark: '!', note: '' };
+}
+
+/** Would putting this pick in this slot leave a lineup that can never meet the game-diversity rule?
+ *
+ * The rule is a property of the finished lineup, so it can only be judged at the moment the last
+ * empty slot is filled: up to then another game could still arrive. That is exactly when this
+ * fires, and it is why the check reads "after this pick, how many slots are still open" rather than
+ * counting games as you go.
+ *
+ * Returns the reason to refuse, or null to allow. Refusing at placement is deliberate: the rule
+ * used to be checked only when a lineup was submitted, so anyone who never tapped the button could
+ * carry an illegal lineup into settlement untouched (see chat, Oct 2026). A rule that cannot be
+ * broken needs no penalty attached to it.
+ *
+ * `supabase/migrations/0041_place_wager_game_diversity.sql` is the same rule inside place_wager,
+ * which is what actually enforces it. This copy is here so the bet slip can grey the button out and
+ * say why, instead of letting someone tap it and bounce off the server.
+ */
+export function gameDiversityBlock(
+  roster: WeeklyRoster,
+  settings: LeagueSettings,
+  slotId: string,
+  gameId: string,
+): string | null {
+  const minGames = settings.minGamesPerRoster ?? 1;
+  if (minGames <= 1) return null;
+
+  const games = new Set<string>();
+  let openAfter = 0;
+  for (const slot of roster.slots) {
+    if (slot.slotId === slotId) {
+      games.add(gameId);
+      continue;
+    }
+    if (slot.wager) games.add(slot.wager.gameId);
+    else openAfter += 1;
+  }
+  // Every remaining open slot could still bring a new game, so there is only a problem when even
+  // the best case falls short.
+  if (games.size + openAfter >= minGames) return null;
+  return `Your lineup would be left on ${games.size} game${games.size === 1 ? '' : 's'}. This league needs picks from at least ${minGames} different games.`;
 }

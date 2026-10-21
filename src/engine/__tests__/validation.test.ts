@@ -41,6 +41,12 @@ function fullyAllocatedRoster(): WeeklyRoster {
   };
 }
 
+/** The same roster with every pick on one game, for the game-diversity rule. */
+function oneGameRoster(): WeeklyRoster {
+  const roster = fullyAllocatedRoster();
+  return { ...roster, slots: roster.slots.map((slot) => ({ ...slot, wager: { ...slot.wager!, gameId: 'game-a' } })) };
+}
+
 describe('validateLineup', () => {
   it('is invalid with empty slots and reports how many are missing', () => {
     const roster = buildEmptyRoster('team1', 1, DEFAULT_LEAGUE_SETTINGS.lineupSlots);
@@ -56,12 +62,14 @@ describe('validateLineup', () => {
     expect(result.distinctGames).toBeGreaterThanOrEqual(2);
   });
 
-  it('rejects a roster using only one game (game diversity rule)', () => {
+  it('allows a roster using only one game by default', () => {
+    // Pins the default at 1. It was 2, which imposed a rule on every league whose commissioner had
+    // never asked for one and which nothing enforced when the picks were placed (see chat, Oct
+    // 2026). Raising it is the commissioner's call, and the two cases below cover that.
     const roster = fullyAllocatedRoster();
     roster.slots = roster.slots.map((s) => ({ ...s, wager: s.wager ? { ...s.wager, gameId: 'only-game' } : null }));
     const result = validateLineup(roster, DEFAULT_LEAGUE_SETTINGS);
-    expect(result.valid).toBe(false);
-    expect(result.overallReasons.some((r) => r.includes('2 different games'))).toBe(true);
+    expect(result.overallReasons.some((r) => r.includes('different games'))).toBe(false);
   });
 
   it('flags the same player used in two slots the same week', () => {
@@ -83,12 +91,21 @@ describe('validateLineup', () => {
     expect(slotResult?.valid).toBe(false);
   });
 
-  // manual v0.1.1 §5 C: commissioner-configurable floor above the baseline of 2.
+  // manual v0.1.1 §5 C: a commissioner-configurable floor. The default is 1, i.e. no constraint
+  // (see chat, Oct 2026) -- it used to be 2, which meant every league had a rule nobody had asked
+  // for and which nothing enforced at placement time.
   describe('minGamesPerRoster (manual v0.1.1 §5 C)', () => {
-    it('applies the baseline of 2 distinct games when the setting is OFF (null)', () => {
-      const roster = fullyAllocatedRoster(); // already spans 2 games
+    it('does not constrain games when the setting is OFF (null)', () => {
+      const roster = oneGameRoster();
       const result = validateLineup(roster, { ...DEFAULT_LEAGUE_SETTINGS, minGamesPerRoster: null });
       expect(result.overallReasons.some((r) => r.includes('different games'))).toBe(false);
+    });
+
+    it('rejects a single-game roster once the commissioner asks for 2', () => {
+      const roster = oneGameRoster();
+      const result = validateLineup(roster, { ...DEFAULT_LEAGUE_SETTINGS, minGamesPerRoster: 2 });
+      expect(result.valid).toBe(false);
+      expect(result.overallReasons.some((r) => r.includes('at least 2 different games'))).toBe(true);
     });
 
     it('rejects a roster below a raised minimum', () => {

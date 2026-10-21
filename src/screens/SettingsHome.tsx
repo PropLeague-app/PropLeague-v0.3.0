@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { goBack } from '../components/layout/BackHeader';
 import { useAppStore } from '../store/useAppStore';
 import { SOFT_PRIMARY_BTN } from '../components/common/buttonStyles';
 import { useAuthStore } from '../store/useAuthStore';
@@ -23,15 +24,8 @@ import { formatCents } from '../engine/oddsMath';
 import { ChipRow, CollapsibleSection, HelpContext, SectionHeader, SettingsRow, SubSection } from '../components/settings/SettingsPrimitives';
 import { meaningfulPending, pendingKeys } from '../engine/settingsRules';
 import {
-  ChartColumn,
-  Calendar,
-  Users,
-  Trophy,
-  Ticket,
-  DollarSign,
-  TrendingUp,
-  Medal,
   KeyRound,
+  ShieldCheck,
   Plus,
   DoorOpen,
   Lock,
@@ -45,28 +39,13 @@ import {
   Smartphone,
   ExternalLink,
   Check,
-  ChevronRight,
   SlidersHorizontal,
-  Swords,
   TrendingDown,
   Wrench,
 } from 'lucide-react';
-import { PasswordInput } from '../components/common/PasswordInput';
 import type { ThemeMode } from '../types';
 import { ACCENTS, THEMES, THEME_BY_ID, themeTone, type AccentColor } from '../engine/themes';
 import { useResolvedTheme } from '../hooks/useResolvedTheme';
-
-const MORE_LINKS = [
-  { to: '/standings', label: 'Full Standings', icon: <ChartColumn size={18} /> },
-  { to: '/schedule', label: 'Season Schedule', icon: <Calendar size={18} /> },
-  { to: '/members', label: 'League Members', icon: <Users size={18} /> },
-  // Becomes Bracket while the playoffs are on (see the render below).
-  { to: '/matchups', label: 'Matchups', icon: <Swords size={18} /> },
-  { to: '/bet-history', label: 'My Bets', icon: <Ticket size={18} /> },
-  { to: '/prize-pool', label: 'Prize Pool', icon: <DollarSign size={18} /> },
-  { to: '/my-stats', label: 'My Stats', icon: <TrendingUp size={18} /> },
-  { to: '/leaderboards', label: 'Leaderboards', icon: <Medal size={18} /> },
-];
 
 const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
 
@@ -172,93 +151,6 @@ function PrefRow({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-/** Collapsed to a single row by default; expands into a small inline form.
- * Manages its own state so it doesn't add more hooks to the already-large
- * SettingsHome component. */
-function ChangePasswordRow() {
-  const updatePassword = useAuthStore((s) => s.updatePassword);
-  const [open, setOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit() {
-    setError(null);
-    if (!newPassword) {
-      setError('Enter a new password.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-    setSubmitting(true);
-    const result = await updatePassword(newPassword);
-    setSubmitting(false);
-    if (!result.ok) {
-      setError(result.error ?? 'Something went wrong.');
-      return;
-    }
-    setSuccess(true);
-    setNewPassword('');
-    setConfirmPassword('');
-  }
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => {
-          setOpen(true);
-          setSuccess(false);
-          setError(null);
-        }}
-        className="w-full flex items-center gap-2.5 pl-3 pr-3 py-2 text-left transition-colors active:bg-bg-raised"
-      >
-        <span className="w-6 h-6 shrink-0 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-          <KeyRound size={14} />
-        </span>
-        <span className="flex-1 text-xs font-medium text-text">Change Password</span>
-        <ChevronRight size={16} className="text-text-muted shrink-0" />
-      </button>
-    );
-  }
-
-  return (
-    <div className="p-3 space-y-2">
-      <PasswordInput
-        value={newPassword}
-        onChange={(e) => setNewPassword(e.target.value)}
-        placeholder="New password"
-        autoComplete="new-password"
-        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
-      />
-      <PasswordInput
-        value={confirmPassword}
-        onChange={(e) => setConfirmPassword(e.target.value)}
-        placeholder="Confirm new password"
-        autoComplete="new-password"
-        className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
-      />
-      {error && <p className="text-loss text-xs">{error}</p>}
-      {success && <p className="text-profit text-xs">Password updated.</p>}
-      <div className="flex gap-2">
-        <button
-          onClick={submit}
-          disabled={submitting}
-          className="flex-1 btn-soft-primary font-semibold py-1.5 rounded-lg text-sm disabled:opacity-40"
-        >
-          Save
-        </button>
-        <button onClick={() => setOpen(false)} className="flex-1 bg-bg-raised border border-border font-medium py-2 rounded-lg text-sm">
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function SettingsHome() {
   const navigate = useNavigate();
   const profile = useAppStore((s) => s.profile);
@@ -433,8 +325,20 @@ export function SettingsHome() {
 
   return (
     <HelpContext.Provider value={(category, topic) => setHelpFocus({ category, topic })}>
+      {/* Settings is pushed from the gear on your own profile now rather than being a tab of its
+          own, so it needs a way back up. The Profile tab also stays lit while you are in here
+          (shellNav's inTabSection), so the two agree about where this screen belongs. */}
       <div className="flex items-center justify-between px-4 pt-2 pb-3 sticky top-0 bg-bg-raised z-10">
-        <h1 className="text-xl font-bold">Profile & Settings</h1>
+        <div className="flex items-center gap-1 min-w-0">
+          <button
+            onClick={() => (anyDirty ? setPendingNav('/profile') : goBack(navigate, '/profile'))}
+            aria-label="Back"
+            className="text-text-muted -ml-1 pl-1 pr-1 py-1 shrink-0 text-xl leading-none"
+          >
+            ‹
+          </button>
+          <h1 className="text-xl font-bold truncate">Settings</h1>
+        </div>
         <button
           onClick={() => setHowItWorksOpen(true)}
           aria-label="Help: how PropLeague works"
@@ -445,21 +349,6 @@ export function SettingsHome() {
       </div>
 
       <div className="px-4 pt-2 pb-5 space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          {MORE_LINKS.map((l) =>
-            l.to === '/matchups' && league?.seasonPhase === 'playoffs' ? { ...l, label: 'Bracket', icon: <Trophy size={18} /> } : l,
-          ).map((link) => (
-            <button
-              key={link.to}
-              onClick={() => goTo(link.to)}
-              className="bg-bg-card border border-border rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm transition-colors active:bg-bg-raised"
-            >
-              <span>{link.icon}</span>
-              {link.label}
-            </button>
-          ))}
-        </div>
-
         {league && isCommissioner && seasonNotStarted && (
           <div className="bg-bg-card border border-dashed border-primary rounded-xl p-3 space-y-2">
             <p className="text-sm font-semibold">Start the season</p>
@@ -779,7 +668,16 @@ export function SettingsHome() {
         <section className="space-y-2">
           <SectionHeader>Account</SectionHeader>
           <div className="bg-bg-card border border-border rounded-xl overflow-hidden divide-y divide-border">
-            <ChangePasswordRow />
+            {/* Account actions moved to their own screen (see screens/AccountSecurity.tsx): email,
+                password, signed-in devices and deletion are where a mistake is expensive, and they
+                were sitting in a strip of display preferences with no room to say what they do. */}
+            <SettingsRow
+              icon={<ShieldCheck size={14} />}
+              compact
+              label="Account & Security"
+              summary="Email, password, devices"
+              onClick={() => goTo('/settings/account')}
+            />
             <SettingsRow icon={<Lock size={14} />} compact label="Log Out" tone="danger" chevron={false} onClick={() => setLogoutConfirmOpen(true)} />
           </div>
         </section>

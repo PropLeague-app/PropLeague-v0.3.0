@@ -31,7 +31,10 @@ export function IdentityBadge({ identity, initials, size = 'md' }: { identity: L
   // page even when a team's own color/logo happens to sit close to the background.
   const cls = `${SIZE_CLASSES[size]} rounded-full flex items-center justify-center font-bold text-white shrink-0 overflow-hidden border border-border`;
   if (identity.logoMode === 'image' && identity.logoDataUrl) {
-    return <img src={identity.logoDataUrl} alt="" className={cls} />;
+    // object-cover, not the browser default of fill: an uploaded photo is rarely square, and fill
+    // stretches it to the badge instead of cropping to it, which reads as an oval face rather than
+    // a round badge (see chat, Oct 2026). The badge box was square all along; the picture was not.
+    return <img src={identity.logoDataUrl} alt="" className={`${cls} object-cover`} />;
   }
   if (identity.logoMode === 'emoji' && identity.logoEmoji) {
     const target = emojiFontPx(DIAMETER_PX[size], BORDER_PX);

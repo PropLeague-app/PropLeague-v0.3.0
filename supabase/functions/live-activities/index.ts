@@ -65,7 +65,7 @@ function settingsSliceFrom(raw: unknown) {
     lineupSlots: slots,
     totalSlots: Object.values(slots).reduce((a, b) => a + b, 0),
     weeklyCredits: typeof r.weeklyCredits === 'number' ? r.weeklyCredits : 100,
-    minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 2,
+    minGames: typeof r.minGamesPerRoster === 'number' ? r.minGamesPerRoster : 1,
     hidePicks: r.hidePicks === true,
     hideEmptySlots: r.hideEmptySlots !== false,
     emptySlotFloor: typeof r.emptySlotFloor === 'number' ? r.emptySlotFloor : null,

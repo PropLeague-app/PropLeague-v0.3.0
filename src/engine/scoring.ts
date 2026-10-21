@@ -51,6 +51,21 @@ export function computeWeeklyScore(roster: WeeklyRoster, settings: LeagueSetting
  * came in. A pick's share of the pool should track that pick, and an unfilled slot should simply
  * not move the pool at all until the week closes and the penalty becomes real.
  */
+/** The best this lineup can still do: every pick that has settled at what it actually returned, every
+ * pick still live at what it would return if it lands.
+ *
+ * The ceiling for the week, correct at any point in it. At kickoff it is the whole lineup's potential
+ * profit; by Monday night it has converged on the real result. Deliberately not the gross potential
+ * of every pick ever placed, which keeps promising a payout from picks that have already lost. */
+export function lineupUpside(roster: WeeklyRoster): number {
+  return roster.slots.reduce((sum, s) => {
+    const w = s.wager;
+    if (!w) return sum;
+    if (w.status === 'pending') return sum + profitForStake(w.stake, w.oddsAtPlacement);
+    return sum + (w.settledProfit ?? 0);
+  }, 0);
+}
+
 export function settledWeeklyPL(roster: WeeklyRoster): number {
   return roster.slots.reduce(
     (sum, s) => (s.wager && s.wager.status !== 'pending' ? sum + (s.wager.settledProfit ?? 0) : sum),

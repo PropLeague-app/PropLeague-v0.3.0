@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DAY_SLOT_ORDER, DAY_SLOT_SHORT } from '../engine/dayWindows';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Flame, TrendingUp } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { computeIndividualStats, collectTeamBets, collectLeagueBets, computeTeamStreak, LEAGUE_VIEW_ID, type RecordPL } from '../engine/stats';
@@ -131,6 +131,11 @@ function PlayerList({ title, rows, onPick }: { title: string; rows: PlayerRecord
 
 export function MyStats() {
   const location = useLocation();
+  // Whose stats these are lives in the route (/my-stats/:teamId), so the screen can be linked to,
+  // survives a reload, and keeps its own header and share button instead of being embedded headless
+  // inside a Profile (see chat, Oct 2026). A preset arriving by router state still works for the
+  // paths that use one, and is simply the fallback when the route names no team.
+  const { teamId: teamParam } = useParams();
   const currentLeagueId = useAppStore((s) => s.currentLeagueId);
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const userTeam = league?.teams.find((t) => t.isUser);
@@ -151,7 +156,11 @@ export function MyStats() {
   const presetState = location.state as { view?: 'league'; team?: string } | null;
   const presetView = presetState?.view;
   // A tapped row on Leaderboards opens that team's stats directly.
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(presetView === 'league' ? LEAGUE_VIEW_ID : (presetState?.team ?? null));
+  const presetTeamId = presetView === 'league' ? LEAGUE_VIEW_ID : (presetState?.team ?? null);
+  const selectedTeamId = teamParam ?? presetTeamId;
+  // Picking someone else moves the route rather than setting local state, which is what makes the
+  // choice shareable and survive Back.
+  const setSelectedTeamId = (id: string) => navigate(`/my-stats/${id}`, { replace: true });
   const viewedTeamId = selectedTeamId ?? userTeam?.id;
   const isLeagueView = selectedTeamId === LEAGUE_VIEW_ID;
 
@@ -174,6 +183,8 @@ export function MyStats() {
 
   const viewedTeam = isLeagueView ? undefined : (league.teams.find((t) => t.id === selectedTeamId) ?? userTeam);
   const isOwnTeam = !isLeagueView && viewedTeam?.id === userTeam.id;
+  // Back goes to the profile these stats belong to, which is where they are reached from now.
+  const backTo = isLeagueView || !viewedTeam || viewedTeam.id === userTeam.id ? '/profile' : `/profile/${viewedTeam.id}`;
   const gameLookup = (gameId: string) => resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled);
   const isGameStarted = (gameId: string) => gameHasStarted(gameLookup(gameId));
 
@@ -187,7 +198,7 @@ export function MyStats() {
   if (stats.settledBets === 0) {
     return (
       <div className="flex flex-col">
-        <BackHeader title={title} fallback="/bet-history" />
+        <BackHeader title={title} fallback={backTo} />
         <div className="p-4 space-y-3">
           <MemberSelector teams={league.teams} selectedTeamId={viewedTeamId ?? userTeam.id} onSelect={setSelectedTeamId} showLeagueOption />
           <EmptyState
@@ -441,7 +452,7 @@ export function MyStats() {
     <div className="flex flex-col">
       <BackHeader
         title={title}
-        fallback="/bet-history"
+        fallback={backTo}
         right={<ShareButton title={activeTab === 'overview' ? title : `${title} ${tabShareTitle}`} label={activeTab === 'overview' ? 'Share these stats' : `Share ${tabShareTitle.toLowerCase()}`} disabled={!tabSharable} renderCard={renderShareCard} />}
       />
       <div className="p-4 space-y-4">

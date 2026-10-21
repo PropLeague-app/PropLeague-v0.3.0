@@ -41,7 +41,13 @@ describe('isPerfectWeek', () => {
   });
   it('too few distinct games disqualifies it', () => {
     const r = roster([{ status: 'won', stake: 50, gameId: 'g1' }, { status: 'won', stake: 50, gameId: 'g1' }]);
-    expect(isPerfectWeek(r, settings, true)).toBe(false);
+    expect(isPerfectWeek(r, { ...settings, minGamesPerRoster: 2 }, true)).toBe(false);
+  });
+
+  it('one game is enough for a perfect week at the default minimum', () => {
+    // The default is 1 now, so a clean sweep inside a single game counts (see chat, Oct 2026).
+    const r = roster([{ status: 'won', stake: 50, gameId: 'g1' }, { status: 'won', stake: 50, gameId: 'g1' }]);
+    expect(isPerfectWeek(r, settings, true)).toBe(true);
   });
   it('a week that is not final yet, or still has a pending pick, never counts', () => {
     expect(isPerfectWeek(full(['won', 'won', 'won', 'won']), settings, false)).toBe(false);

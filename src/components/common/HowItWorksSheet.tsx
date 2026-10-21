@@ -48,7 +48,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
   const slotTotal = settings ? Object.values(settings.lineupSlots).reduce((a, b) => a + b, 0) : 8;
   const slots = settings ? slotBreakdown(settings) : '1 QB, 2 RB, 2 WR, 1 TE, 1 K, 1 ML';
   const minBet = settings?.minBetPerSlot ?? 1;
-  const minGames = Math.max(2, settings?.minGamesPerRoster ?? 2);
+  const minGames = Math.max(1, settings?.minGamesPerRoster ?? 1);
   const playoffTeams = settings?.playoffTeams ?? 4;
   const generic = !settings;
 
@@ -88,8 +88,16 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Stakes and games',
       body: [
-        `Every pick needs at least ${money(minBet)}. Picks must come from at least ${minGames} different games. Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. Each key is a single tap (holding a key does not repeat), and any message about the stake shows just above the keypad so the keys never shift while you type. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
+        `Every pick needs at least ${money(minBet)}.${minGames > 1 ? ` Picks must come from at least ${minGames} different games, and a pick that would leave your lineup short of that is refused when you try to place it.` : ''} Your commissioner may also cap prop or moneyline stakes, cap a market per pick, or limit how many slots can use a market, and no single bet can use up the whole budget. The bet slip shows the limits. To change a stake after the pick is in, tap the stake on the Lineup screen. A keypad opens (PropLeague has its own, so the phone keyboard never covers the screen) with the same rules as the bet slip: up to two decimals, and Max fills in the most the rules allow. Each key is a single tap (holding a key does not repeat), and any message about the stake shows just above the keypad so the keys never shift while you type. The budget bar at the top turns from orange to yellow to green as more of your credits are in play.`,
         'Open picks at a sportsbook, in Profile & Settings under Display, is off until you turn it on. With it on, a small badge appears to the left of Add to Roster carrying the initials of the book that priced that line in that book\'s color, DK in green for DraftKings, FD in blue for FanDuel, with an arrow leaving it. Tap it and the keypad is replaced by one button out to that book; Back returns to the keypad. The book prices the bet at its own live number, which can differ from the one here, and a pick only ever joins your lineup through Add to Roster. PropLeague is not a sportsbook, takes nothing for the tap and is not told whether you placed anything. The badge only appears on a pick whose book published a link, and only for sportsbooks licensed in US states, so a line priced by an offshore book or carrying stale odds will not have one.',
+      ],
+    },
+    {
+      title: 'Lineup status',
+      body: [
+        'The bar at the bottom of the Lineup screen carries the week\'s figures: how many slots are filled, how many different games your picks come from, and what the lineup stands to win if every one of them lands. A pick that has already settled counts in that last figure at what it actually returned, so it stays honest as results come in rather than promising a payout from a pick that has lost.',
+        `The mark on the left is the state. An orange ! means there is simply more to do. A red ✕ means carrying on will not get you there, so something already placed has to change, and a line under the figures says what: every slot filled with credits left over, every credit spent with slots still empty, over your ${money(credits)}, or a pick that breaks a rule. A green ✓ means full, exactly in budget and legal.`,
+        'There is no button to press. Reaching ✓ marks the lineup complete on its own, which is what protects you from the unspent-credits penalty at kickoff. Change a pick or a stake afterwards and the bar falls back to whatever state the new lineup is in, then marks itself complete again as soon as it is valid.',
       ],
     },
     {
@@ -110,7 +118,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Duplicate and correlated picks',
       body: [
-        'A commissioner can limit how many teams may hold the same prop, and can block related props from sharing a roster (for example a QB over and his WR over). The Lineup screen flags a rule break before you submit.',
+        'A commissioner can limit how many teams may hold the same prop, and can block related props from sharing a roster (for example a QB over and his WR over). The Lineup screen flags a rule break on the slot itself and in the status bar at the bottom.',
       ],
     },
     {
@@ -252,6 +260,15 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Activity feed and chat',
       body: [
         'League Home has an activity feed and a chat tab with an unread badge. The commissioner posts announcements in rich text and can pin up to 3 (the pin is gold, or blue with the Orange or Gold accent). Anyone can react to a post with an emoji. Tap one of the four quick reactions, or the + for a full picker with a search box and every emoji category. Each team gets one reaction per post, so picking a different one moves yours instead of adding a second (tap your own again to remove it). Reactions show as chips with the logos of the teams that picked them, and extra ones collapse into a stack showing a few emojis and how many reactions are inside. Tapping a chip shows which teams picked that emoji, and tapping the stack lists every team that reacted, each with its emoji. Weekly Moments and perfect or skunked weeks show up here as cards.',
+      ],
+    },
+    {
+      title: 'Account & Security',
+      body: [
+        'Settings has its own Account & Security screen for the things that belong to your login rather than to your team. Your team name, colour, abbreviation and logo are not here, they live on your profile.',
+        'Changing your email sends a confirmation link to the new address, and you keep signing in with the old one until you follow it. Changing your password asks for the current one first, so an unlocked phone is not enough to take the account. If you have only ever signed in with Google or Apple there is nothing to confirm, so the same panel sets a password instead. Forgotten it? Email me a reset link sends one to the address on the account.',
+        'Log Out signs out this device. Log Out Everywhere ends every device signed in to the account, including this one, and touches nothing else.',
+        'Delete My Account is permanent. Your login, profile and notification settings go, and you type DELETE to confirm it. Your leagues keep running: each of your teams carries on as an AI team, so nobody\'s schedule breaks, and the weeks already played, the standings, the chat and the prize pool stay exactly as they are. If you run a league it is handed to another member. Nothing about it can be undone, though the same email can sign up again from scratch.',
       ],
     },
     {

@@ -3,6 +3,8 @@ import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { computeTeamStreak } from '../engine/stats';
 import { sortStandings } from '../engine/standings';
+import { standingsMovement } from '../engine/powerRankings';
+import { MovementTriangle } from '../components/common/MovementTriangle';
 import { leagueClinchStatuses, regularSeasonMatchups } from '../engine/bracketModel';
 import { activeMultipliers } from '../engine/prizePool';
 import { seasonScaleRef } from '../engine/plColor';
@@ -83,6 +85,7 @@ function StandingsRows({
   const plStyle = usePlStyle();
   const clinch = leagueClinchStatuses(league);
   const plRef = seasonScaleRef(league);
+  const movement = standingsMovement(league);
   return (
     <div className="space-y-1.5">
       {rows.map((s, i) => {
@@ -102,6 +105,9 @@ function StandingsRows({
               <div className={`grid ${PRIMARY_GRID} gap-1 items-center px-2 py-2`}>
                 <span className="truncate font-medium flex items-center gap-1.5 min-w-0">
                   <span className="shrink-0 text-text-muted tabular-nums">{i + 1}.</span>
+                  {/* Where this team sat after last week. Replaying the standings one week short is
+                      enough to work this out, so it needs no stored history (see chat, Oct 2026). */}
+                  <MovementTriangle value={movement[s.teamId] ?? null} className="w-6 shrink-0" />
                   <TeamLogo team={team} size="sm" />
                   <span className="truncate">{team.teamName}</span>
                   <ClinchIcon status={clinch.get(team.id)} />
