@@ -142,7 +142,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'NFL Slate and lines',
       body: [
-        'The NFL Slate tab lists the week\'s games and every market on them, with lines from The Odds API. Tap Refresh Odds to pull the latest, and a warning shows when the lines are more than 12 hours old. Your commissioner can turn alt lines and live line movement on or off.',
+        'The NFL Slate tab lists the week\'s games and every market on them, with lines from The Odds API. Tap Refresh Odds to pull the latest, and a warning shows when the lines are more than 12 hours old. A game\'s lines freeze at kickoff. Your commissioner can turn alt lines and live line movement on or off.',
         'If you leave NFL Slate with a game open, tapping the tab brings you back to that game, at the same spot and week. League Home does the same for an open matchup. Tap the tab again while you are on it to go back to the default view (this week\'s games, or the home page). Quitting the app starts fresh. On NFL Slate and the prop picker, tap the header (or the very top of the screen) to jump back to the top.',
         'Tap a game to see its lines and player props, and tap any line to pick it from there. It goes in an open slot for that position if you have one. If not, the bet slip offers to swap it for one of your picks there, with a note such as Replacing your QB pick at the top (see Swapping a pick). Picks you already hold from that game carry the same odds tag, and any problem shows as a one-line note just under the header, wherever you are scrolled.',
       ],

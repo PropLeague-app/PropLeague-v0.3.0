@@ -1,9 +1,14 @@
 // Supabase Edge Function: fetch-nfl-odds
 //
-// Fetches live/upcoming NFL game odds (h2h, spreads, totals) from The Odds
-// API, and upserts them into public.real_games. This is also the function
-// that creates real_games rows in the first place (the pregame odds feed is
-// the first place a given week's games show up).
+// Fetches upcoming NFL game odds (h2h, spreads, totals) from The Odds API,
+// and upserts them into public.real_games. This is also the function that
+// creates real_games rows in the first place (the pregame odds feed is the
+// first place a given week's games show up).
+//
+// Kickoff guard (Oct 2026): the feed keeps listing a game after kickoff with
+// in-play prices, and with no guard those overwrote the closing line (Week 7
+// NE@CHI stored CHI at -427). A game that has kicked off now keeps its last
+// pre-kickoff bookmakers. See _shared/gameOdds.ts. Fixed forward only.
 //
 // CHANGED (Sept 2026, see chat -- audit after the balldontlie migration):
 // this used to ALSO call The Odds API's /scores endpoint every run and write
@@ -42,6 +47,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { bookmakersForRun, hasKickedOff, type BookmakerRow } from '../_shared/gameOdds.ts';
 
 const ODDS_API_KEY = Deno.env.get('ODDS_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -135,40 +141,6 @@ interface RealGameRow {
   updated_at: string;
 }
 
-type BookmakerRow = { key: string; title: string; markets: { key: string; outcomes: OddsApiOutcome[] }[] };
-
-const GAME_LEVEL_KEYS = new Set(['h2h', 'spreads', 'totals']);
-
-// This function only ever fetches game-level markets (h2h/spreads/totals) --
-// fetch-nfl-player-props is what adds player-prop markets to the same
-// bookmakers column, on its own separate manual trigger. A plain upsert would
-// overwrite the whole `bookmakers` value with ONLY this function's game-level
-// data, silently destroying any player props already stored there -- which is
-// exactly what happened the moment this function's cron (or a manual
-// re-trigger, like the one just used to fix day_slot) next ran after someone
-// had fetched props. Merging by bookmaker key, keeping any non-game-level
-// markets already present, is what actually fixes this rather than papering
-// over a single occurrence of it.
-function mergeBookmakers(existing: BookmakerRow[], fresh: BookmakerRow[]): BookmakerRow[] {
-  const existingByKey = new Map(existing.map((b) => [b.key, b]));
-  const freshByKey = new Map(fresh.map((b) => [b.key, b]));
-  const allKeys = new Set([...existingByKey.keys(), ...freshByKey.keys()]);
-
-  const merged: BookmakerRow[] = [];
-  for (const key of allKeys) {
-    const existingBookmaker = existingByKey.get(key);
-    const freshBookmaker = freshByKey.get(key);
-    const preservedPropMarkets = (existingBookmaker?.markets ?? []).filter((m) => !GAME_LEVEL_KEYS.has(m.key));
-    const freshGameLevelMarkets = (freshBookmaker?.markets ?? []).filter((m) => GAME_LEVEL_KEYS.has(m.key));
-    merged.push({
-      key,
-      title: freshBookmaker?.title ?? existingBookmaker?.title ?? key,
-      markets: [...freshGameLevelMarkets, ...preservedPropMarkets],
-    });
-  }
-  return merged;
-}
-
 Deno.serve(async (_req: Request) => {
   if (!ODDS_API_KEY) {
     return new Response(JSON.stringify({ error: 'ODDS_API_KEY secret is not set' }), { status: 500 });
@@ -176,7 +148,8 @@ Deno.serve(async (_req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ADMIN_KEY);
 
-  // Live/upcoming odds — game-level markets only (see file header for why).
+  // Upcoming odds, game-level markets only (see file header for why). The feed also lists games
+  // already in progress; their in-play prices are dropped below.
   const oddsRes = await fetch(
     `https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&includeLinks=true`,
   );
@@ -199,9 +172,14 @@ Deno.serve(async (_req: Request) => {
     .in('id', allIds);
   const existingByid = new Map((existingRows ?? []).map((r) => [r.id as string, r]));
 
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  let frozenAfterKickoff = 0;
   const rows: RealGameRow[] = oddsGames.map((game) => {
     const existing = existingByid.get(game.id);
+    // Once a game kicks off, the feed's prices are in-play. Keep the pre-kickoff line (gameOdds.ts).
+    const kickedOff = hasKickedOff(game.commence_time, existing?.status as string | undefined, nowMs);
+    if (kickedOff) frozenAfterKickoff++;
     const freshBookmakers: BookmakerRow[] = game.bookmakers.map((b) => ({
       key: b.key,
       title: b.title,
@@ -218,7 +196,7 @@ Deno.serve(async (_req: Request) => {
       status: (existing?.status as RealGameRow['status'] | undefined) ?? 'upcoming',
       home_score: (existing?.home_score as number | null | undefined) ?? null,
       away_score: (existing?.away_score as number | null | undefined) ?? null,
-      bookmakers: mergeBookmakers((existing?.bookmakers as BookmakerRow[] | undefined) ?? [], freshBookmakers),
+      bookmakers: bookmakersForRun(existing?.bookmakers as BookmakerRow[] | undefined, freshBookmakers, kickedOff),
       updated_at: nowIso,
     };
   });
@@ -228,7 +206,7 @@ Deno.serve(async (_req: Request) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 
-  return new Response(JSON.stringify({ ok: true, gamesUpserted: rows.length }), {
+  return new Response(JSON.stringify({ ok: true, gamesUpserted: rows.length, frozenAfterKickoff }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
