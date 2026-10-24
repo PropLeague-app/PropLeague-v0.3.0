@@ -4,7 +4,8 @@ import { useAppStore } from '../store/useAppStore';
 import { formatCents } from '../engine/oddsMath';
 import { activeMultipliers, championAndRunnerUp, computePayouts, poolTeamCount } from '../engine/prizePool';
 import { findWeek, liveWeekEntry, poolHasDetail, poolHighlights, poolWithLiveWeek, seasonImpacts, weekImpacts, type PoolImpactRow } from '../engine/poolView';
-import { weekLabel, type League, type PoolWeekEntry, type PrizePool as Pool, type WeekId } from '../types';
+import { poolTimeline, weekEndIndex, weekStartValue, type PoolTimelinePoint } from '../engine/poolTimeline';
+import { weekLabel, type League, type PoolWeekEntry, type WeekId } from '../types';
 import { BackHeader } from '../components/layout/BackHeader';
 import { Card } from '../components/common/Card';
 import { EmptyState } from '../components/common/EmptyState';
@@ -12,6 +13,7 @@ import { TeamLogo } from '../components/common/TeamLogo';
 import { usePlStyle } from '../components/common/usePlStyle';
 import { HowItWorksSheet } from '../components/common/HowItWorksSheet';
 import { ShareButton } from '../share/ShareButton';
+import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { PoolShareCard } from '../share/cards/PoolShareCard';
 
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${formatCents(n)}`;
@@ -20,7 +22,6 @@ const plClass = (n: number) => (n >= 0 ? 'text-profit' : 'text-loss');
 
 /** What the screen is looking at: the whole season (null), the pool as created ('start'), or one week. */
 type PoolPoint = WeekId | 'start' | null;
-const samePoint = (a: PoolPoint, b: PoolPoint) => a != null && b != null && String(a) === String(b);
 
 function placeLabel(place: number): ReactNode {
   if (place === 1)
@@ -54,50 +55,65 @@ function payoutChips(league: League): string[] {
 }
 
 /**
- * The pool over the season as a filled area against the starting pool, with a point per settled week.
- * Tapping a point picks that week (tapping the picked one again clears it). Wide invisible columns do
- * the catching, so a point is easy to hit with a thumb.
+ * The pool over the season as a filled area against the starting pool, stepped by game window
+ * (engine/poolTimeline.ts): a dot closes each settled week, the steps between are the Thursday,
+ * Sunday and Monday games inside it. Drag (or tap) to hold any moment, the way Power Rankings works.
+ * The week still being played is drawn dashed and hollow so it never reads as a settled result.
  */
 function PoolChart({
-  pool,
-  selected,
-  onSelect,
-  liveWeek,
+  points,
+  initial,
+  held,
+  onHold,
 }: {
-  pool: Pool;
-  /** 'start' is the pool as it was created, before any week settled. */
-  selected: PoolPoint;
-  onSelect: (point: PoolPoint) => void;
-  /** The week still in progress, drawn dashed and hollow so it never reads as a settled result. */
-  liveWeek?: WeekId | null;
+  points: PoolTimelinePoint[];
+  initial: number;
+  /** Index of the moment being held, or null for the whole season. */
+  held: number | null;
+  onHold: (index: number) => void;
 }) {
   const W = 320;
   const H = 110;
   const PAD = 10;
-  const points: { key: PoolPoint; value: number }[] = [
-    { key: 'start', value: pool.initial },
-    ...pool.history.map((h) => ({ key: h.week as PoolPoint, value: h.poolAfter })),
-  ];
   const values = points.map((p) => p.value);
-  const hi = Math.max(...values, pool.initial);
-  const lo = Math.min(...values, pool.initial);
+  const hi = Math.max(...values, initial);
+  const lo = Math.min(...values, initial);
   const span = Math.max(hi - lo, 1);
   const x = (i: number) => (points.length > 1 ? PAD + (i * (W - PAD * 2)) / (points.length - 1) : W / 2);
   const y = (v: number) => PAD + (1 - (v - lo) / span) * (H - PAD * 2);
-  const liveIdx = liveWeek == null ? -1 : points.findIndex((p) => String(p.key) === String(liveWeek));
-  // The settled line stops before the week in progress; that last leg is drawn dashed instead.
-  const solidPts = liveIdx < 0 ? points : points.slice(0, liveIdx);
-  const line = solidPts.map((p, i) => `${x(i)},${y(p.value)}`).join(' ');
-  const liveLeg =
-    liveIdx > 0 ? `${x(liveIdx - 1)},${y(points[liveIdx - 1].value)} ${x(liveIdx)},${y(points[liveIdx].value)}` : null;
+  const firstLive = points.findIndex((p) => p.live);
+  // The settled line stops where the week in progress begins; from there it is drawn dashed.
+  const solidEnd = firstLive < 0 ? points.length : firstLive;
+  const line = points.slice(0, solidEnd).map((p, i) => `${x(i)},${y(p.value)}`).join(' ');
+  const liveLine = firstLive > 0 ? points.slice(firstLive - 1).map((p, i) => `${x(firstLive - 1 + i)},${y(p.value)}`).join(' ') : null;
   const area = `${PAD},${H} ${points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')} ${x(points.length - 1)},${H}`;
-  const baseY = y(pool.initial);
-  const up = pool.current >= pool.initial;
+  const baseY = y(initial);
+  const up = points[points.length - 1].value >= initial;
   const stroke = up ? 'var(--color-profit)' : 'var(--color-loss)';
-  const band = (W - PAD * 2) / Math.max(points.length - 1, 1);
+
+  /** Nearest point to the finger, through the element's rect since the plot is scaled to its width. */
+  const indexAt = (clientX: number, el: SVGSVGElement) => {
+    const rect = el.getBoundingClientRect();
+    const fx = ((clientX - rect.left) / Math.max(1, rect.width)) * W;
+    const i = Math.round(((fx - PAD) / Math.max(1, W - PAD * 2)) * (points.length - 1));
+    return Math.max(0, Math.min(points.length - 1, i));
+  };
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28" role="img" aria-label="Prize pool over the season">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full h-28 touch-none"
+      role="img"
+      aria-label="Prize pool over the season"
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        onHold(indexAt(e.clientX, e.currentTarget));
+      }}
+      onPointerMove={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) onHold(indexAt(e.clientX, e.currentTarget));
+      }}
+      onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+    >
       <defs>
         <linearGradient id="poolFill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
@@ -107,38 +123,31 @@ function PoolChart({
       <polygon points={area} fill="url(#poolFill)" />
       {/* The starting pool, so above and below the line read at a glance. */}
       <line x1={PAD} y1={baseY} x2={W - PAD} y2={baseY} stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
-      {solidPts.length > 1 && (
-        <polyline points={line} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {solidEnd > 1 && <polyline points={line} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+      {liveLine && <polyline points={liveLine} fill="none" stroke={stroke} strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" opacity="0.8" />}
+      {points.map((p, i) =>
+        // A dot closes each week; the steps inside a week are just the line.
+        p.weekEnd && i !== held ? (
+          <circle
+            key={i}
+            cx={x(i)}
+            cy={y(p.value)}
+            r="2.5"
+            // Hollow while the week is still being played, filled once it has settled.
+            fill={p.live ? 'var(--color-bg-card)' : stroke}
+            stroke={p.live ? stroke : undefined}
+            strokeWidth={p.live ? 1.5 : undefined}
+          />
+        ) : null,
       )}
-      {liveLeg && <polyline points={liveLeg} fill="none" stroke={stroke} strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" opacity="0.8" />}
-      {points.map((p, i) => {
-        const on = samePoint(p.key, selected);
-        return (
-          <g key={String(p.key)}>
-            {/* The picked point gets a dropline and a halo, so it reads as picked even at a glance. */}
-            {on && <line x1={x(i)} y1={y(p.value)} x2={x(i)} y2={H} stroke="var(--color-primary)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />}
-            {on && <circle cx={x(i)} cy={y(p.value)} r="8" fill="var(--color-primary)" opacity="0.2" />}
-            <circle
-              cx={x(i)}
-              cy={y(p.value)}
-              r={on ? 4.5 : 2.5}
-              // Hollow while the week is still being played, filled once it has settled.
-              fill={i === liveIdx && !on ? 'var(--color-bg-card)' : on ? 'var(--color-primary)' : stroke}
-              stroke={i === liveIdx || on ? (on ? 'var(--color-bg-card)' : stroke) : undefined}
-              strokeWidth={i === liveIdx || on ? 1.5 : undefined}
-            />
-            <rect
-              x={x(i) - band / 2}
-              y={0}
-              width={band}
-              height={H}
-              fill="transparent"
-              onClick={() => onSelect(on ? null : p.key)}
-              style={{ cursor: 'pointer' }}
-            />
-          </g>
-        );
-      })}
+      {held != null && points[held] && (
+        <g>
+          {/* The held moment gets a dropline and a halo, so it reads as held even at a glance. */}
+          <line x1={x(held)} y1={y(points[held].value)} x2={x(held)} y2={H} stroke="var(--color-primary)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+          <circle cx={x(held)} cy={y(points[held].value)} r="8" fill="var(--color-primary)" opacity="0.2" />
+          <circle cx={x(held)} cy={y(points[held].value)} r="4.5" fill="var(--color-primary)" stroke="var(--color-bg-card)" strokeWidth="1.5" />
+        </g>
+      )}
     </svg>
   );
 }
@@ -222,11 +231,15 @@ export function PrizePool() {
   const league = useAppStore((s) => (currentLeagueId ? s.leagues[currentLeagueId] : undefined));
   const refreshPrizePool = useAppStore((s) => s.refreshPrizePool);
   const plStyle = usePlStyle();
-  const [point, setPoint] = useState<PoolPoint>(null);
-  const week = point === 'start' ? null : point;
-  const atStart = point === 'start';
+  // The moment held on the chart, as an index into the timeline. Null is the whole season. The week
+  // it falls in drives everything under the chart, so scrubbing and the week stepper are one control.
+  const [held, setHeld] = useState<number | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const pool = league?.prizePool;
+  // Every settled week's rosters, which is what lets the line step through each week by game window
+  // (engine/poolTimeline.ts). Re-read once a session, so picks cached before they carried their
+  // game window pick it up on the first visit.
+  useEnsureSettledWeekRosters(league);
 
   // Weeks settled before 1.2.11 have no per-team detail. A rebuild writes it, so the commissioner's app
   // asks for one the first time this screen opens on an old pool; everyone else sees it once that runs.
@@ -245,9 +258,21 @@ export function PrizePool() {
   // presented as a settled number.
   const live = useMemo(() => (league && pool ? liveWeekEntry(league, pool) : null), [league, pool]);
   const viewPool = useMemo(() => (pool ? poolWithLiveWeek(pool, live) : pool), [pool, live]);
+  const timeline = useMemo(() => (league && viewPool ? poolTimeline(league, viewPool, live?.week ?? null) : []), [league, viewPool, live]);
+  const heldPt = held != null ? timeline[Math.min(held, timeline.length - 1)] : undefined;
+  const point: PoolPoint = heldPt ? heldPt.week : null;
+  const week = point === 'start' ? null : point;
+  const atStart = point === 'start';
   const entry: PoolWeekEntry | undefined = useMemo(() => findWeek(viewPool, week), [viewPool, week]);
-  /** The picked point is the week still being played, so its numbers are provisional. */
-  const atLive = live != null && samePoint(point, live.week as PoolPoint);
+  /** The held moment is in the week still being played, so its numbers are provisional. */
+  const atLive = !!heldPt?.live;
+  /** Held inside a week rather than at its close: the numbers are the pool at that moment. */
+  const midWeek = !!heldPt && !heldPt.weekEnd;
+  const setPoint = (p: PoolPoint) => {
+    if (p == null) return setHeld(null);
+    const i = weekEndIndex(timeline, p);
+    setHeld(i >= 0 ? i : null);
+  };
   const season = useMemo(() => seasonImpacts(pool), [pool]);
   const marks = useMemo(() => poolHighlights(pool), [pool]);
 
@@ -276,13 +301,26 @@ export function PrizePool() {
   const payouts = league.seasonPhase === 'complete' ? computePayouts(pool, league.bracket, league.settings, league.standings) : [];
   const { championId } = championAndRunnerUp(league.bracket);
   const chips = payoutChips(league);
-  // Stepping through the chart points: the created pool, then each settled week.
-  const order: PoolPoint[] = ['start', ...(viewPool?.history ?? []).map((h) => h.week as PoolPoint)];
-  const stepTo = (by: number): PoolPoint | undefined => {
-    const i = order.findIndex((o) => samePoint(o, point));
-    return i < 0 ? undefined : order[i + by];
+  // The stepper moves week to week: the created pool, then each week's close. From inside a week,
+  // back goes to the previous close and forward to this week's own.
+  const closes = timeline.map((p, i) => (p.weekEnd ? i : -1)).filter((i) => i >= 0);
+  const stepTo = (by: number): number | undefined => {
+    if (held == null) return undefined;
+    const target = by < 0 ? [...closes].reverse().find((i) => i < held) : closes.find((i) => i > held);
+    return target;
   };
+  const when = heldPt?.kickoff ? new Date(heldPt.kickoff) : null;
+  const heldLabel = !heldPt
+    ? 'Season'
+    : atStart
+      ? 'Pool created'
+      : when && heldPt.slot
+        ? `${when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${weekLabel(heldPt.week as WeekId)}`
+        : weekLabel(heldPt.week as WeekId);
   const from = pool.history[0] ? weekLabel(pool.history[0].week) : null;
+  // The held moment against the pool its week started from: the whole week at a close, part of it
+  // when held inside one.
+  const weekSoFar = held != null && heldPt && !atStart ? (heldPt.weekEnd ? (entry?.netRealPL ?? 0) : heldPt.value - weekStartValue(timeline, held)) : 0;
 
   return (
     <div className="flex flex-col">
@@ -350,60 +388,66 @@ export function PrizePool() {
         ) : (
           <Card className="space-y-2">
             <div className="flex items-center justify-between gap-2">
+              {/* The stepper and Back to season stay in the layout while hidden, so holding a moment
+                  never shifts the chart (the same fix as Power Rankings' Today button, backlog C2). */}
               <div className="flex items-center gap-1 min-w-0">
-                {point != null && (
-                  <button
-                    type="button"
-                    aria-label="Previous week"
-                    disabled={stepTo(-1) === undefined}
-                    onClick={() => setPoint(stepTo(-1) ?? point)}
-                    className="shrink-0 text-text-muted disabled:opacity-30 active:opacity-60"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                )}
-                <p className="text-xs font-semibold truncate">{atStart ? 'Pool created' : entry ? weekLabel(entry.week) : 'Season'}</p>
-                {point != null && (
-                  <button
-                    type="button"
-                    aria-label="Next week"
-                    disabled={stepTo(1) === undefined}
-                    onClick={() => setPoint(stepTo(1) ?? point)}
-                    className="shrink-0 text-text-muted disabled:opacity-30 active:opacity-60"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                )}
-              </div>
-              {point != null && (
-                <button type="button" onClick={() => setPoint(null)} className="shrink-0 text-[11px] font-semibold text-primary">
-                  Back to season
+                <button
+                  type="button"
+                  aria-label="Previous week"
+                  aria-hidden={held == null}
+                  tabIndex={held == null ? -1 : undefined}
+                  disabled={held == null || stepTo(-1) === undefined}
+                  onClick={() => setHeld(stepTo(-1) ?? held)}
+                  className={`shrink-0 text-text-muted disabled:opacity-30 active:opacity-60 ${held == null ? 'invisible' : ''}`}
+                >
+                  <ChevronLeft size={16} />
                 </button>
-              )}
+                <p className="text-xs font-semibold truncate">{heldLabel}</p>
+                <button
+                  type="button"
+                  aria-label="Next week"
+                  aria-hidden={held == null}
+                  tabIndex={held == null ? -1 : undefined}
+                  disabled={held == null || stepTo(1) === undefined}
+                  onClick={() => setHeld(stepTo(1) ?? held)}
+                  className={`shrink-0 text-text-muted disabled:opacity-30 active:opacity-60 ${held == null ? 'invisible' : ''}`}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHeld(null)}
+                aria-hidden={held == null}
+                tabIndex={held == null ? -1 : undefined}
+                className={`shrink-0 text-[11px] font-semibold text-primary ${held == null ? 'invisible' : ''}`}
+              >
+                Back to season
+              </button>
             </div>
-            <PoolChart pool={viewPool ?? pool} selected={point} onSelect={setPoint} liveWeek={live?.week ?? null} />
+            <PoolChart points={timeline} initial={pool.initial} held={held} onHold={setHeld} />
             {/* Under the chart: the picked point on its own, or the season in three tiles. Tapping the
                 chart is how any other week is reached, so the list never grows to eighteen rows. */}
             {point != null ? (
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-bg-raised px-2 py-1.5">
-                  <p className="text-[10px] text-text-muted">{atStart ? 'Buy-in' : atLive ? 'This week so far' : 'That week'}</p>
+                  <p className="text-[10px] text-text-muted">{atStart ? 'Buy-in' : atLive || midWeek ? 'Week so far' : 'That week'}</p>
                   {atStart ? (
                     <p className="text-sm font-semibold tabular-nums">
                       {poolTeamCount(league)} × {formatCents(league.settings.buyInAmount)}
                     </p>
                   ) : (
                     <p
-                      className={`text-sm font-semibold tabular-nums ${plClass(entry?.netRealPL ?? 0)}`}
-                      style={plStyle(entry?.netRealPL ?? 0, Math.max(1, pool.initial))}
+                      className={`text-sm font-semibold tabular-nums ${plClass(weekSoFar)}`}
+                      style={plStyle(weekSoFar, Math.max(1, pool.initial))}
                     >
-                      {signed(entry?.netRealPL ?? 0)}
+                      {signed(weekSoFar)}
                     </p>
                   )}
                 </div>
                 <div className="rounded-lg bg-bg-raised px-2 py-1.5">
-                  <p className="text-[10px] text-text-muted">{atLive ? 'Pool right now' : 'Pool after'}</p>
-                  <p className="text-sm font-semibold tabular-nums">{formatCents(atStart ? pool.initial : (entry?.poolAfter ?? pool.current))}</p>
+                  <p className="text-[10px] text-text-muted">{atLive && !midWeek ? 'Pool right now' : midWeek ? 'Pool then' : 'Pool after'}</p>
+                  <p className="text-sm font-semibold tabular-nums">{formatCents(atStart ? pool.initial : (heldPt?.value ?? pool.current))}</p>
                 </div>
               </div>
             ) : (

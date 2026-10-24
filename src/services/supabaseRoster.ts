@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import type { MarketKey, RosterSlotState, SlotPosition, WagerStatus, WeekId } from '../types';
+import type { DaySlot, MarketKey, RosterSlotState, SlotPosition, WagerStatus, WeekId } from '../types';
 
 type ServiceResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -126,6 +126,24 @@ export async function fetchLeagueRostersForWeek(
       },
     }));
     wagersByTeam[row.team_id] = { wagers, submitted: row.submitted };
+  }
+
+  // Each pick's kickoff and day window, in one query for the whole week. There is no foreign key from
+  // wagers to real_games, so this cannot be an embed. It is what lets Power Rankings and the Prize
+  // Pool step a week by game day straight away, instead of loading every game first (backlog C3).
+  // A failure here only means the charts fall back to one point per week.
+  const gameIds = [...new Set(Object.values(wagersByTeam).flatMap((t) => t.wagers.map((s) => s.wager?.gameId).filter((id): id is string => !!id)))];
+  if (gameIds.length > 0) {
+    const { data: games } = await supabase.from('real_games').select('id, kickoff, day_slot').in('id', gameIds);
+    const byId = new Map((games ?? []).map((g) => [g.id as string, g as { kickoff: string | null; day_slot: string | null }]));
+    for (const team of Object.values(wagersByTeam)) {
+      for (const s of team.wagers) {
+        const g = s.wager ? byId.get(s.wager.gameId) : undefined;
+        if (!s.wager || !g) continue;
+        if (g.kickoff) s.wager.kickoff = g.kickoff;
+        if (g.day_slot) s.wager.daySlot = g.day_slot as DaySlot;
+      }
+    }
   }
   return { ok: true, wagersByTeam };
 }

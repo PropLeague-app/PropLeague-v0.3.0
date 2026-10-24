@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { betEdge, powerBreakdown, powerRankings, powerSeries, standingsMovement } from '../powerRankings';
+import { betEdge, gamesReadyForSeries, pointDate, powerBreakdown, powerRankings, powerSeries, standingsMovement } from '../powerRankings';
 import { buildEmptyRoster, rosterKey } from '../rosterSlots';
 import { DEFAULT_LEAGUE_SETTINGS, type League, type Matchup, type WagerStatus, type WeeklyRoster } from '../../types';
 
@@ -252,6 +252,30 @@ describe('powerSeries stepped by game day', () => {
     const pts = powerSeries(league(rosters, [1]), {}).a;
     expect(pts[pts.length - 1].score).toBeCloseTo(5, 6);
     expect(pts[pts.length - 1].bets).toBe(1);
+  });
+});
+
+describe('picks that carry their own day window (C3)', () => {
+  const withSlots = (r: ReturnType<typeof roster>, slots: string[], kickoffs: string[]) => ({
+    ...r,
+    slots: r.slots.map((s, i) => (s.wager ? { ...s, wager: { ...s.wager, daySlot: slots[i], kickoff: kickoffs[i] } } : s)),
+  });
+
+  it('steps by day and is ready with no games loaded at all', () => {
+    const rosters = {
+      [rosterKey('a', 1)]: withSlots(roster('a', 1, [['won', 10, 100], ['lost', 10, 100]]), ['TNF', 'MNF'], ['2026-10-23T00:15:00Z', '2026-10-27T00:15:00Z']),
+      [rosterKey('b', 1)]: roster('b', 1, []),
+    };
+    const l = league(rosters, [1]);
+    expect(gamesReadyForSeries(l, {})).toBe(true);
+    const pts = powerSeries(l, {}).a;
+    expect(pts.map((p) => p.slot)).toEqual(['TNF', 'MNF']);
+    expect(pointDate(pts[0], {}, l)?.toISOString()).toBe('2026-10-23T00:15:00.000Z');
+  });
+
+  it('still waits on games for picks cached without a window', () => {
+    const rosters = { [rosterKey('a', 1)]: roster('a', 1, [['won', 10, 100]]), [rosterKey('b', 1)]: roster('b', 1, []) };
+    expect(gamesReadyForSeries(league(rosters, [1]), {})).toBe(false);
   });
 });
 

@@ -68,10 +68,10 @@ function rosterEdge(
     const w = slot.wager;
     if (!w || (w.status !== 'won' && w.status !== 'lost')) continue;
     if (onlySlot) {
-      const game = gamesById?.[w.gameId];
-      // A pick whose game is not loaded cannot be placed in a day window; it lands in the last one
-      // so it is still counted rather than silently dropped from the season.
-      const where = game?.daySlot ?? DAY_SLOT_ORDER[DAY_SLOT_ORDER.length - 1];
+      // The pick carries its own window now (read with the roster, backlog C3); a loaded game is the
+      // fallback for picks cached before that. One with neither lands in the last window, so it is
+      // still counted rather than silently dropped from the season.
+      const where = w.daySlot ?? gamesById?.[w.gameId]?.daySlot ?? DAY_SLOT_ORDER[DAY_SLOT_ORDER.length - 1];
       if (where !== onlySlot) continue;
     }
     edge += betEdge(w);
@@ -327,25 +327,35 @@ export function gamesReadyForSeries(league: League, gamesById: Record<string, NF
     for (const slot of roster.slots) {
       const w = slot.wager;
       if (!w || (w.status !== 'won' && w.status !== 'lost')) continue;
-      if (!gamesById[w.gameId]) return false;
+      // A pick that carries its own day window needs no game loaded (backlog C3).
+      if (!w.daySlot && !gamesById[w.gameId]) return false;
     }
   }
   return true;
 }
 
-/** When a point in the trajectory happened, from the games its week and window were played in.
- * Null when the series is not stepped by day, or the games are not loaded. */
+/** When a point in the trajectory happened: the earliest kickoff in its week and window. Read from the
+ * picks themselves (they carry their game's kickoff, backlog C3), falling back to loaded games for
+ * picks cached before that. Null when the series is not stepped by day or nothing is known. */
 export function pointDate(
   point: { week: WeekId; slot?: DaySlot } | undefined,
   gamesById: Record<string, NFLGame> | undefined,
+  league?: Pick<League, 'rostersByTeamWeek'>,
 ): Date | null {
-  if (!point?.slot || !gamesById) return null;
+  if (!point?.slot) return null;
   let earliest: number | null = null;
-  for (const game of Object.values(gamesById)) {
-    if (String(game.week) !== String(point.week) || game.daySlot !== point.slot) continue;
-    const t = new Date(game.kickoff).getTime();
-    if (Number.isNaN(t)) continue;
-    if (earliest == null || t < earliest) earliest = t;
+  const consider = (iso: string | undefined) => {
+    const t = iso ? new Date(iso).getTime() : Number.NaN;
+    if (!Number.isNaN(t) && (earliest == null || t < earliest)) earliest = t;
+  };
+  for (const roster of Object.values(league?.rostersByTeamWeek ?? {})) {
+    if (String(roster.week) !== String(point.week)) continue;
+    for (const s of roster.slots) if (s.wager?.daySlot === point.slot) consider(s.wager.kickoff);
+  }
+  if (earliest == null) {
+    for (const game of Object.values(gamesById ?? {})) {
+      if (String(game.week) === String(point.week) && game.daySlot === point.slot) consider(game.kickoff);
+    }
   }
   return earliest == null ? null : new Date(earliest);
 }

@@ -43,7 +43,8 @@ export function PowerRankings() {
     for (const roster of Object.values(league.rostersByTeamWeek)) {
       for (const slot of roster.slots) {
         const w = slot.wager;
-        if (w && (w.status === 'won' || w.status === 'lost')) ids.add(w.gameId);
+        // Picks now carry their own day window (backlog C3); only ones cached before that need a game.
+        if (w && (w.status === 'won' || w.status === 'lost') && !w.daySlot) ids.add(w.gameId);
       }
     }
     for (const id of ids) if (!realGamesById[id]) loadRealGame(id);
@@ -69,7 +70,7 @@ export function PowerRankings() {
   // Dragging to the far right lands on today, which should read as today rather than as a past
   // point you still have to come back from.
   const atLatest = scrubIndex == null || scrubIndex >= pointCount - 1;
-  const when = pointDate(heldPoint, realGamesById);
+  const when = pointDate(heldPoint, realGamesById, league);
   const dateLabel = when
     ? `${when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${weekLabel(heldPoint!.week)}`
     : heldPoint

@@ -536,6 +536,11 @@ export interface Wager {
   placedAt: string;
   status: WagerStatus;
   settledProfit: number | null;
+  /** The game's kickoff and day window, carried with the pick (read alongside the roster) so a
+   * season can be stepped by game day without loading every game first. Missing on picks cached
+   * before Oct 2026 until their week is next read. */
+  kickoff?: string;
+  daySlot?: DaySlot;
 }
 
 export interface RosterSlotState {
