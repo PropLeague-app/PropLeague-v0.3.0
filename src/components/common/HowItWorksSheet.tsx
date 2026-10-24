@@ -173,7 +173,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Void requests',
       body: [
-        'If a player left a game early, open Settings, then Void Requests, find him, choose a reason and add a note. Your commissioner approves or denies it, and you get a notification either way. Only Over and Anytime TD picks that did not hit are voided, for everyone.',
+        'If a player left a game early, open Void Requests from League Home or Settings, find him, choose a reason and add a note. Your commissioner approves or denies it, and you get a notification either way. Only Over and Anytime TD picks that did not hit are voided, for everyone.',
         'A void can run the other way too. If someone was voided who should not have been, say a player who was active all game but barely used, find him in that week and ask for the void to be lifted. His picks go back to being graded from the real stats like any other.',
         'Week chips at the top of the card step back through weeks already played, so a mistake found later can still be fixed. Changing a week that has already settled re-grades its picks, so that week\'s scores, its winner, the standings and the prize pool can all move. The commissioner sees a warning saying so before answering.',
         'You can have 3 requests waiting at once, and a player the commissioner already answered cannot be asked about again that week in the same direction.',
@@ -349,7 +349,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Void Requests',
       body: [
-        'Any member can request a void from Settings, then Void Requests: find the player, pick a reason and add a short note. The commissioner gets a push (unless Void requests is turned off in that league\'s League notifications), a red Review button, and a red ! on the Profile tab until every request is answered. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
+        'Any member can request a void from Void Requests on League Home or in Settings: find the player, pick a reason and add a short note. The commissioner gets a push (unless Void requests is turned off in that league\'s League notifications), a red Review button, and a red ! on the Profile tab until every request is answered. Check to approve, X to deny. Approving voids every Over and Anytime TD pick on him that did not hit on the next settlement. Unders, moneylines and spreads are never touched.',
         'Your own requests skip the queue. Un-flagging restores the picks, and approving or flagging posts a short League Update.',
       ],
     },

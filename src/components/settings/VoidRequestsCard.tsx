@@ -189,12 +189,15 @@ export function VoidRequestsCard({
   week,
   isCommissioner,
   openOnMount = false,
+  embedded = false,
 }: {
   leagueId: string;
   week: WeekId;
   isCommissioner: boolean;
   /** Opened from a void request push: start open and scrolled into view. */
   openOnMount?: boolean;
+  /** Inside a sheet that already has its own title (League Home): the contents only, no collapsible header. */
+  embedded?: boolean;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -358,18 +361,8 @@ export function VoidRequestsCard({
       ? `${myPending} request${myPending > 1 ? 's' : ''} waiting on your commissioner`
       : 'Ask to void a player who left early';
 
-  return (
-    <div ref={cardRef}>
-      <CollapsibleSection
-        defaultOpen={openOnMount}
-        title="Void Requests"
-        variant="action"
-        actionLabel={isCommissioner ? 'Review' : 'Request'}
-        icon={<UserX size={16} />}
-        help={isCommissioner ? ['commissioner', 'Void Requests'] : ['scoring', 'Void requests']}
-        attention={isCommissioner && pending.length > 0}
-        summary={summary}
-      >
+  const body = (
+    <>
         <p className="flex items-start gap-1.5 text-[11px] text-text-muted">
           <Check size={12} className="shrink-0 mt-px text-primary" />
           {isCommissioner
@@ -725,7 +718,27 @@ export function VoidRequestsCard({
             </ul>
           </div>
         )}
-      </CollapsibleSection>
+    </>
+  );
+
+  return (
+    <div ref={cardRef}>
+      {embedded ? (
+        <div className="space-y-3">{body}</div>
+      ) : (
+      <CollapsibleSection
+        defaultOpen={openOnMount}
+        title="Void Requests"
+        variant="action"
+        actionLabel={isCommissioner ? 'Review' : 'Request'}
+        icon={<UserX size={16} />}
+        help={isCommissioner ? ['commissioner', 'Void Requests'] : ['scoring', 'Void requests']}
+        attention={isCommissioner && pending.length > 0}
+        summary={summary}
+      >
+          {body}
+        </CollapsibleSection>
+      )}
 
       {confirmOpen && selectedGroup && reason && (
         <ConfirmSheet
