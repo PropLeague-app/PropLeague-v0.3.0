@@ -11,7 +11,7 @@ const CHIP_FS = 24;
 const CHIP_H = 44;
 const CHIP_GAP = 10;
 /** Room for chips: card width minus the bar's side padding. */
-const CHIP_ROOM = SHARE_W - 112;
+const chipRoom = (width: number) => width - 112;
 
 /** Rendered width of a chip, so chips can be split into rows ahead of time and the frame height can
  * include any extra row.
@@ -37,14 +37,14 @@ function chipTextWidth(text: string, weight: number): number {
  * than the rest at the same length. */
 const chipWidth = (text: string, lead: boolean) => Math.ceil(chipTextWidth(text, lead ? 800 : 600)) + 40;
 
-function chipRows(chips: string[]): string[][] {
+function chipRows(chips: string[], room: number): string[][] {
   const rows: string[][] = [[]];
   let used = 0;
   for (let i = 0; i < chips.length; i += 1) {
     const c = chips[i];
     const w = chipWidth(c, i === 0);
     const row = rows[rows.length - 1];
-    if (row.length > 0 && used + CHIP_GAP + w > CHIP_ROOM) {
+    if (row.length > 0 && used + CHIP_GAP + w > room) {
       rows.push([c]);
       used = w;
     } else {
@@ -68,6 +68,7 @@ export function ShareFrame({
   subtitle,
   bodyHeight = SHARE_BODY_H,
   minBodyHeight = SHARE_BODY_H,
+  width = SHARE_W,
   children,
 }: {
   leagueName: string;
@@ -77,17 +78,19 @@ export function ShareFrame({
   /** Smallest body. The default keeps the standard 4:5 picture; a card with little to show can pass a
    * smaller number and shrink to fit instead of leaving empty space. */
   minBodyHeight?: number;
+  /** Card width. 1080 for every card but one: a landscape picture (Power Rankings) passes its own. */
+  width?: number;
   children: ReactNode;
 }) {
   const body = Math.max(minBodyHeight, bodyHeight);
   const { chips, text } = splitSubtitle(subtitle);
-  const rows = chipRows(chips);
+  const rows = chipRows(chips, chipRoom(width));
   // Every chip row past the first adds to the header, and so to the whole picture.
   const extraH = chips.length > 0 ? (rows.length - 1) * (CHIP_H + CHIP_GAP) : 0;
   return (
     <div
       style={{
-        width: SHARE_W,
+        width,
         height: body + SHARE_CHROME_H + extraH,
         boxSizing: 'border-box',
         padding: '0 56px 56px',

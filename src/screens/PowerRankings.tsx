@@ -12,6 +12,8 @@ import { MovementTriangle } from '../components/common/MovementTriangle';
 import { weekLabel } from '../types';
 import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekRosters';
 import { usePlStyle } from '../components/common/usePlStyle';
+import { ShareButton } from '../share/ShareButton';
+import { PowerShareCard } from '../share/cards/PowerShareCard';
 
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}`;
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
@@ -108,7 +110,31 @@ export function PowerRankings() {
 
   return (
     <div className="flex flex-col">
-      <BackHeader title="Power Rankings" fallback="/profile" />
+      <BackHeader
+        title="Power Rankings"
+        fallback="/profile"
+        right={
+          <ShareButton
+            title="Power Rankings"
+            label="Share power rankings"
+            disabled={!anySettled}
+            // A snapshot of the view (backlog C1): the selected team, the chart as it stands (or held
+            // where it is scrubbed to) and the table at that moment, side by side.
+            renderCard={() => (
+              <PowerShareCard
+                league={league}
+                subtitle={dateLabel || undefined}
+                series={series}
+                selectedTeamId={selectedId}
+                scrubIndex={atLatest ? null : atIndex}
+                rows={rows}
+                scoreRef={scoreRef}
+                head={breakdown}
+              />
+            )}
+          />
+        }
+      />
       <div className="p-4 space-y-4">
         {!anySettled ? (
           <EmptyState
@@ -130,14 +156,16 @@ export function PowerRankings() {
               </div>
               <div className="flex items-center justify-between gap-2 -mt-1">
                 <span className="text-[11px] text-text-muted truncate min-w-0">{dateLabel}</span>
-                {!atLatest && (
-                  <button
-                    onClick={() => setScrubIndex(null)}
-                    className="shrink-0 text-[11px] font-semibold text-primary border border-primary/50 rounded-full px-2.5 py-0.5 active:opacity-80"
-                  >
-                    Today
-                  </button>
-                )}
+                {/* Always in the layout, only hidden at today, so the row keeps its height and the chart
+                    below never jumps while scrubbing (backlog C2). */}
+                <button
+                  onClick={() => setScrubIndex(null)}
+                  aria-hidden={atLatest}
+                  tabIndex={atLatest ? -1 : undefined}
+                  className={`shrink-0 text-[11px] font-semibold text-primary border border-primary/50 rounded-full px-2.5 py-0.5 active:opacity-80 ${atLatest ? 'invisible' : ''}`}
+                >
+                  Today
+                </button>
               </div>
               {chartReady ? (
               <PowerTrajectory

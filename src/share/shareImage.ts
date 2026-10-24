@@ -29,7 +29,8 @@ function pageBackground(): string {
  * parent, never the card itself. */
 export async function renderCardPng(node: HTMLElement): Promise<string> {
   const opts = {
-    width: SHARE_W,
+    // 1080 for nearly every card; a landscape card is wider and says so with its own width.
+    width: Math.round(node.offsetWidth) || SHARE_W,
     height: Math.round(node.offsetHeight),
     pixelRatio: 1,
     cacheBust: false,

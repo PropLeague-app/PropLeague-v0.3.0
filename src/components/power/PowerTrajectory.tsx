@@ -24,6 +24,7 @@ export function PowerTrajectory({
   scrubIndex,
   onScrub,
   height = 240,
+  plotWidth = 320,
 }: {
   league: League;
   series: Record<string, PowerPoint[]>;
@@ -33,8 +34,11 @@ export function PowerTrajectory({
   scrubIndex?: number | null;
   onScrub?: (index: number | null) => void;
   height?: number;
+  /** The drawing's own width in plot units. The screen uses 320; a wide share picture passes more so
+   *  the lines get room instead of the whole drawing being stretched. */
+  plotWidth?: number;
 }) {
-  const W = 320;
+  const W = plotWidth;
   const teamCount = league.teams.length;
   /** Room for one badge per team, up to a point. Past that the badges stagger into two columns so
    *  a 16-team league does not need a chart half a screen tall (see chat, Oct 2026). */
@@ -108,7 +112,7 @@ export function PowerTrajectory({
       columnOf,
       xAt: x,
     };
-  }, [series, H, league.teams, scrubIndex, stagger, LOGO]);
+  }, [series, H, W, league.teams, scrubIndex, stagger, LOGO]);
 
   /** Nearest week to wherever the finger is. The plot is scaled to the element's width, so the
    *  mapping goes through the bounding rect rather than through the viewBox. */

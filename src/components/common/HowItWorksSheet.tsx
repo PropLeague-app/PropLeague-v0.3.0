@@ -238,7 +238,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Sharing',
       body: [
-        'Tap the share icon at the top of Bets, My Stats or any Matchup (current or past), or the small one on a leaderboard, to make a picture to send. It is a clean card built from the numbers on screen, not a screenshot. It follows your theme (light or dark, and scaled P/L colors), and a perfect week gets its flames behind the team logo (a skunked week gets stink lines and flies instead). Bets shares whatever your filters show: a few picks fill a standard 4:5 picture, and a long list makes it taller, like a long parlay slip (up to 30 picks, then "+N more"). Tap the small icon on one ticket to share just that bet. My Stats shares the tab you are on (Overview, Markets, Trends or Matchups). Picks that are hidden until kickoff stay hidden in the picture.',
+        'Tap the share icon at the top of Bets, My Stats, Power Rankings or any Matchup (current or past), or the small one on a leaderboard, to make a picture to send. It is a clean card built from the numbers on screen, not a screenshot. It follows your theme (light or dark, and scaled P/L colors), and a perfect week gets its flames behind the team logo (a skunked week gets stink lines and flies instead). Bets shares whatever your filters show: a few picks fill a standard 4:5 picture, and a long list makes it taller, like a long parlay slip (up to 30 picks, then "+N more"). Tap the small icon on one ticket to share just that bet. My Stats shares the tab you are on (Overview, Markets, Trends or Matchups). Picks that are hidden until kickoff stay hidden in the picture.',
       ],
     },
     {

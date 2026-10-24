@@ -15,6 +15,8 @@ export function ShareSheet({ title, onClose, children }: { title: string; onClos
   const cardRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.3);
   const [cardH, setCardH] = useState(SHARE_H);
+  // Most cards are 1080 wide; a landscape one is wider, so the width is measured too.
+  const [cardW, setCardW] = useState(SHARE_W);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,10 @@ export function ShareSheet({ title, onClose, children }: { title: string; onClos
   useLayoutEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    const measure = () => setCardH(Math.max(200, el.offsetHeight));
+    const measure = () => {
+      setCardH(Math.max(200, el.offsetHeight));
+      setCardW(Math.max(200, el.offsetWidth));
+    };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(measure);
@@ -35,14 +40,14 @@ export function ShareSheet({ title, onClose, children }: { title: string; onClos
     function fit() {
       // Leave room for the header row and the button. Fit the whole picture on screen when it is
       // roughly the standard shape; a much taller one takes the full width and scrolls.
-      const byWidth = (window.innerWidth - 32) / SHARE_W;
+      const byWidth = (window.innerWidth - 32) / cardW;
       const byHeight = (window.innerHeight - 230) / cardH;
       setScale(Math.max(0.1, byHeight >= byWidth * 0.6 ? Math.min(byWidth, byHeight) : byWidth));
     }
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, [cardH]);
+  }, [cardH, cardW]);
 
   async function handleShare() {
     if (!cardRef.current || busy) return;
@@ -74,9 +79,9 @@ export function ShareSheet({ title, onClose, children }: { title: string; onClos
 
       <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col">
         <div className="m-auto py-1">
-          <div style={{ width: SHARE_W * scale, height: cardH * scale, borderRadius: 12 * scale * 3, overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ width: SHARE_W, height: cardH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-              <div ref={cardRef} style={{ width: SHARE_W }}>
+          <div style={{ width: cardW * scale, height: cardH * scale, borderRadius: 12 * scale * 3, overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ width: cardW, height: cardH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+              <div ref={cardRef} style={{ width: 'fit-content' }}>
                 {children}
               </div>
             </div>
