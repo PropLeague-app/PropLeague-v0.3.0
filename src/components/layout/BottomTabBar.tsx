@@ -87,14 +87,14 @@ export function BottomTabBar() {
   //   position, until the app is quit.
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const setSlateWeek = useUIStore((s) => s.setSlateWeek);
+  const resetSlateView = useUIStore((s) => s.resetSlateView);
   // The same tab-tap rules as handleClick, but driven by navigate() rather than by letting
   // the NavLink's own default through, for the replay-after-confirm path where there is no
   // click event left to allow.
   function goToTab(to: string) {
     if (inTabSection(to, pathname)) {
       if (isMemoryTab(to)) resetTabMemory(to);
-      if (to === '/slate') setSlateWeek(null);
+      if (to === '/slate') resetSlateView();
       if (pathname === to) {
         scrollShellToTop();
         return;
@@ -119,7 +119,7 @@ export function BottomTabBar() {
     }
     if (inTabSection(to, pathname)) {
       if (isMemoryTab(to)) resetTabMemory(to);
-      if (to === '/slate') setSlateWeek(null);
+      if (to === '/slate') resetSlateView();
       if (pathname === to) {
         e.preventDefault();
         scrollShellToTop();

@@ -104,7 +104,7 @@ export function NFLSlate() {
             {refreshNote && <p className="text-xs text-text-muted">{refreshNote}</p>}
           </div>
         )}
-        <WeekSelector value={activeWeek} onChange={setWeek} />
+        <WeekSelector value={activeWeek} currentWeek={league?.currentWeek} onChange={setWeek} />
       </div>
 
       <div className="px-4 pt-3 pb-4">

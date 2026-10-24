@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { useUIStore } from '../store/useUIStore';
 import { getGame, getPlayerPropGroups } from '../services/oddsService';
 import { nflTeamById } from '../data/nflTeams';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
@@ -36,7 +37,12 @@ export function GameDetail() {
     setNotice(text);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 2800);
   }
-  const [positionFilter, setPositionFilter] = useState<'All' | Position>('All');
+  // Kept per game in the UI store, so a trip to Lineup and back does not reset it to All.
+  const positionFilter = useUIStore((s) => (gameId ? s.slatePositionByGame[gameId] : undefined)) ?? 'All';
+  const setSlatePosition = useUIStore((s) => s.setSlatePosition);
+  const setPositionFilter = (pos: 'All' | Position) => {
+    if (gameId) setSlatePosition(gameId, pos);
+  };
 
   // Same real-first, simulated-fallback pattern already used in Lineup.tsx --
   // without this, a game reached from the (now real-data) NFL Slate screen

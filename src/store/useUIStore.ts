@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WeekId } from '../types';
+import type { Position, WeekId } from '../types';
 
 /** Ephemeral, non-persisted UI state — deliberately separate from useAppStore (which
  * persists everything to localStorage) so this never gets written to disk or survives
@@ -17,6 +17,12 @@ interface UIState {
    * coming back keeps it; a tap on the NFL Slate tab while on it, or a relaunch, goes back to null. */
   slateWeek: WeekId | null;
   setSlateWeek: (week: WeekId | null) => void;
+  /** The position filter picked on each game's detail screen, by game id, so going to Lineup and back
+   * keeps it. Same lifetime as slateWeek. */
+  slatePositionByGame: Record<string, 'All' | Position>;
+  setSlatePosition: (gameId: string, position: 'All' | Position) => void;
+  /** NFL Slate back to its default view: the current week, every game's filter on All. */
+  resetSlateView: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -26,4 +32,8 @@ export const useUIStore = create<UIState>((set) => ({
   setPendingVoidRequests: (count) => set({ pendingVoidRequests: count }),
   slateWeek: null,
   setSlateWeek: (week) => set({ slateWeek: week }),
+  slatePositionByGame: {},
+  setSlatePosition: (gameId, position) =>
+    set((s) => ({ slatePositionByGame: { ...s.slatePositionByGame, [gameId]: position } })),
+  resetSlateView: () => set({ slateWeek: null, slatePositionByGame: {} }),
 }));
