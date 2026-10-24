@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { recentHighlights, unreadActivityCount } from '../activityDigest';
+import { momentPreviewTitle, momentPreviewValue, recentHighlights, unreadActivityCount } from '../activityDigest';
 import type { ActivityItem, ChatMessage } from '../../types';
 
 const t = (minutesAgo: number) => new Date(Date.UTC(2026, 9, 23, 12, 0) - minutesAgo * 60_000).toISOString();
@@ -34,6 +34,15 @@ describe('unreadActivityCount', () => {
   it('counts other people talking but never your own messages', () => {
     const chat = [msg('1', 'them', t(10)), msg('2', 'me', t(9)), msg('3', 'them', t(8))];
     expect(unreadActivityCount([], chat, 'me', SEEN)).toBe(2);
+  });
+
+  // Chat has its own screen (C6): reading the feed must not clear unread chat, and the reverse.
+  it('counts chat against its own cursor when one is given', () => {
+    const items = [item({ id: 'a', ts: t(10), type: 'announcement' })];
+    const chat = [msg('1', 'them', t(20)), msg('2', 'them', t(5))];
+    const chatSeen = new Date(Date.UTC(2026, 9, 23, 11, 50)).getTime(); // 10 minutes ago
+    expect(unreadActivityCount(items, chat, 'me', SEEN, chatSeen)).toBe(2);
+    expect(unreadActivityCount(items, chat, 'me', Date.now(), 0)).toBe(2);
   });
 
   it('is zero when everything predates the last look', () => {
@@ -126,5 +135,28 @@ describe('recentHighlights spreads across kinds', () => {
     ];
     const chat = [msg('c1', 'them', t(5))];
     expect(recentHighlights(items, chat, 'me', SEEN).map((h) => h.id)).toEqual(['pin', 'm1', 'c1']);
+  });
+});
+
+describe('moment previews', () => {
+  it('keeps a streak as is', () => {
+    expect(momentPreviewValue('W5')).toBe('W5');
+    expect(momentPreviewValue('L3')).toBe('L3');
+  });
+  it('turns a swing into its size', () => {
+    expect(momentPreviewValue('-$16.17 → +$37.57')).toBe('+$53.74');
+    expect(momentPreviewValue('+$40.00 → -$10.00')).toBe('-$50.00');
+  });
+  it('takes the profit from a ticket, not the stake', () => {
+    expect(momentPreviewValue('Isaiah Likely anytime TD @ +200, $10.00 stake, +$20.00')).toBe('+$20.00');
+    expect(momentPreviewValue('Buffalo Bills -5.5 @ -108, $15.00 stake, -$15.00 — missed by 2.5')).toBe('-$15.00');
+  });
+  it('has nothing to show for plain text', () => {
+    expect(momentPreviewValue(undefined)).toBeUndefined();
+    expect(momentPreviewValue('a quiet week')).toBeUndefined();
+  });
+  it('titles from the display name, else the sentence head without its emoji', () => {
+    expect(momentPreviewTitle('The Ice Box', 'x')).toBe('The Ice Box');
+    expect(momentPreviewTitle(undefined, '🎢 The Roller Coaster: MBCE F.C. — -$16.17 → +$37.57')).toBe('The Roller Coaster');
   });
 });

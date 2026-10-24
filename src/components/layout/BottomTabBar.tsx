@@ -63,11 +63,20 @@ export function BottomTabBar() {
   // 2026). Counts league news and other people talking, never your own settled picks.
   const activityLeague = useAppStore((s) => (s.currentLeagueId ? s.leagues[s.currentLeagueId] : undefined));
   const lastSeenActivity = useAppStore((s) => s.lastSeenActivityByLeague);
+  const lastSeenChat = useAppStore((s) => s.lastSeenChatByLeague);
   const activityUnread = (() => {
     if (!activityLeague) return 0;
     const seen = lastSeenActivity[activityLeague.id];
+    const seenChat = lastSeenChat[activityLeague.id];
     const userTeamId = activityLeague.teams.find((t) => t.isUser)?.id;
-    return unreadActivityCount(activityLeague.activity, activityLeague.chat, userTeamId, seen ? new Date(seen).getTime() : 0);
+    // News against the feed's cursor, chat against the chat screen's (backlog C6).
+    return unreadActivityCount(
+      activityLeague.activity,
+      activityLeague.chat,
+      userTeamId,
+      seen ? new Date(seen).getTime() : 0,
+      seenChat ? new Date(seenChat).getTime() : 0,
+    );
   })();
 
   // Discard-on-leave confirm for the identity/logo editors (manual v0.1.1 §2 #4) — the

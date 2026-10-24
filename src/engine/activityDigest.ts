@@ -19,6 +19,44 @@ export interface Highlight {
   teamId?: string;
   pinned: boolean;
   unread: boolean;
+  /** A Moment's award name, so its line can lead with that instead of the server's full sentence. */
+  title?: string;
+  /** A Moment's one number worth showing on a single line ("+$20.00", "W5"). */
+  value?: string;
+}
+
+const SIGNED_AMOUNT = /[+-]\$[\d,]+\.\d{2}/;
+
+function parseSigned(text: string): number {
+  const m = text.trim().match(/^([+-])\$([\d,]+(?:\.\d+)?)$/);
+  if (!m) return Number.NaN;
+  const n = Number(m[2].replace(/,/g, ''));
+  return m[1] === '-' ? -n : n;
+}
+
+function formatSigned(n: number): string {
+  return `${n < 0 ? '-' : '+'}$${Math.abs(n).toFixed(2)}`;
+}
+
+/** The single figure that sums up a Moment, from its extra text: a streak as is, a week-over-week swing
+ * as its size, otherwise the first signed dollar amount (a ticket's profit, a week's score). */
+export function momentPreviewValue(extra: string | undefined): string | undefined {
+  if (!extra) return undefined;
+  const text = extra.trim();
+  if (/^[WL]\d+$/.test(text)) return text;
+  if (text.includes(' → ')) {
+    const [from, to] = text.split(' → ').map(parseSigned);
+    if (!Number.isNaN(from) && !Number.isNaN(to)) return formatSigned(to - from);
+  }
+  return text.match(SIGNED_AMOUNT)?.[0];
+}
+
+/** A Moment's award name. Older rows only carry the full sentence ("🎢 The Roller Coaster: ..."), so
+ * the name is whatever comes before the colon, minus any leading symbol. */
+export function momentPreviewTitle(displayName: string | undefined, message: string): string {
+  if (displayName?.trim()) return displayName.trim();
+  const head = message.split(':')[0];
+  return head.replace(/^[^\p{L}\p{N}]+/u, '').trim() || message;
 }
 
 /** Settled-bet alerts and lineup reminders are about you and already arrived as a push, so they are
@@ -33,15 +71,18 @@ const ms = (iso: string) => {
 
 /** How many things have happened in this league since the reader last looked.
  *
+ * Chat has its own screen and its own cursor (backlog C6): opening the feed clears the news, opening
+ * the chat clears the messages. `lastSeenChatMs` is that second cursor; left out, both use one.
  * Your own chat messages never count: you know what you said. */
 export function unreadActivityCount(
   items: ActivityItem[],
   chat: ChatMessage[],
   userTeamId: string | undefined,
   lastSeenMs: number,
+  lastSeenChatMs: number = lastSeenMs,
 ): number {
   const news = items.filter((i) => isLeagueNews(i) && ms(i.ts) > lastSeenMs).length;
-  const said = chat.filter((m) => m.teamId !== userTeamId && ms(m.ts) > lastSeenMs).length;
+  const said = chat.filter((m) => m.teamId !== userTeamId && ms(m.ts) > lastSeenChatMs).length;
   return news + said;
 }
 
@@ -71,6 +112,7 @@ export function recentHighlights(
     teamId: (i.type === 'moment' ? i.momentTeamId : i.postedByTeamId) ?? undefined,
     pinned: !!i.pinned,
     unread: ms(i.ts) > lastSeenMs,
+    ...(i.type === 'moment' ? { title: momentPreviewTitle(i.momentDisplayName, i.message), value: momentPreviewValue(i.momentExtra) } : {}),
   }));
 
   const fromChat: Highlight[] = chat.map((m) => ({

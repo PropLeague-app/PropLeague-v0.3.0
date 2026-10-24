@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronDown, ChevronUp, Hourglass, MessageSquare, Rocket, RefreshCw, Pin, Swords } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronUp, Hourglass, MessageSquare, Rocket, RefreshCw, Pin, SquarePen, Swords, X } from 'lucide-react';
 import { MAX_PINNED_ANNOUNCEMENTS, pinnedAnnouncementCount } from '../engine/richText';
 import { fillScheduleGaps, useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
@@ -17,6 +17,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { PrizePoolTicker } from '../components/home/PrizePoolTicker';
 import { LeagueLogo } from '../components/common/LeagueLogo';
 import { LeagueSwitcherSheet } from '../components/home/LeagueSwitcherSheet';
+import { ChatScreen } from '../components/home/ChatScreen';
 import { leagueBracketModel, leagueWeekMatchups, weekStatus } from '../engine/bracketModel';
 
 const scheduleChecked = new Set<string>();
@@ -46,7 +47,7 @@ export function LeagueHome() {
   // Collapsed by default: the point of the preview is that the page stays short.
   const [activityOpen, setActivityOpen] = useState(false);
   // Which tab the feed opens on, so the header's chat control lands on the conversation.
-  const [activityTab, setActivityTab] = useState<'all' | 'chat'>('all');
+  const [chatOpen, setChatOpen] = useState(false);
   const activityRef = useRef<HTMLDivElement>(null);
   const [announceText, setAnnounceText] = useState('');
   const [announcePin, setAnnouncePin] = useState(false);
@@ -101,19 +102,18 @@ export function LeagueHome() {
   }
 
   const userTeam = league.teams.find((t) => t.isUser);
-  // Unread-chat badge on the Chat tab pill (see ActivityFeed) -- a message
-  // counts as unread if it's from someone else and newer than the last time
-  // this device looked at the Chat tab for this league (see chat, Sept 2026).
+  // Unread-chat badge on the header's chat bubble: a message counts as unread if it's from someone
+  // else and newer than the last time this device had the chat screen open for this league.
   const lastSeenChatTs = lastSeenChatByLeague[league.id];
   const lastSeenChatMs = lastSeenChatTs ? new Date(lastSeenChatTs).getTime() : 0;
   const chatUnreadCount = league.chat.filter(
     (m) => m.teamId !== userTeam?.id && new Date(m.ts).getTime() > lastSeenChatMs,
   ).length;
-  // The whole feed's unread count, which is a different cursor to the chat one: opening the feed
-  // clears this, opening the Chat tab inside it clears that (see engine/activityDigest.ts).
+  // The Activity card's count is the feed's own news and Moments: chat has its own screen and its own
+  // count on the bubble (backlog C6). The League Home tab badge adds the two (BottomTabBar).
   const lastSeenActivityTs = lastSeenActivityByLeague[league.id];
   const lastSeenActivityMs = lastSeenActivityTs ? new Date(lastSeenActivityTs).getTime() : 0;
-  const activityUnread = unreadActivityCount(league.activity, league.chat, userTeam?.id, lastSeenActivityMs);
+  const activityUnread = unreadActivityCount(league.activity, [], userTeam?.id, lastSeenActivityMs);
 
   // Client-side-only refresh: re-reads whatever's already in Supabase (scores,
   // wager/roster status, standings) -- does NOT touch the odds/lines
@@ -191,12 +191,7 @@ export function LeagueHome() {
           <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
         </button>
         <button
-          onClick={() => {
-            setActivityTab('chat');
-            setActivityOpen(true);
-            markActivitySeen(league.id);
-            requestAnimationFrame(() => activityRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
-          }}
+          onClick={() => setChatOpen(true)}
           aria-label="League chat"
           className="relative p-2 -mr-2 text-text-muted shrink-0"
         >
@@ -333,26 +328,25 @@ export function LeagueHome() {
           onToggle={() => {
             const next = !activityOpen;
             setActivityOpen(next);
-            if (!next) setActivityTab('all');
             // Opening it is what counts as having looked, which is what clears the tab badge.
             if (next) markActivitySeen(league.id);
           }}
-        >
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <p className="font-semibold text-xs flex-1 min-w-0 sr-only">Activity</p>
-            {/* League News is commissioner-only/auto (see chat). Used to be a
-               client-side gate only -- post_announcement itself (hand-created in
-               the SQL editor, not migration-tracked) only ever checked league
-               membership, so anyone could call it directly regardless of this
-               button. 0024_post_announcement_commissioner_lock.sql closed that;
-               this button-level check just keeps a non-commissioner from seeing
-               the composer at all. */}
-            {isCommissioner && (
-              <button onClick={() => setAnnounceOpen((v) => !v)} className="text-xs text-primary font-medium">
-                {announceOpen ? 'Cancel' : '+ Announcement'}
+          // League News is commissioner-only/auto (see chat). post_announcement is locked server-side
+          // (0024_post_announcement_commissioner_lock.sql); this just keeps everyone else from seeing
+          // the composer. Sits in the Activity header now instead of floating above the tabs (B5.14).
+          headerAction={
+            isCommissioner ? (
+              <button
+                onClick={() => setAnnounceOpen((v) => !v)}
+                aria-label={announceOpen ? 'Cancel announcement' : 'New announcement'}
+                aria-pressed={announceOpen}
+                className={`shrink-0 p-1 ${announceOpen ? 'text-primary' : 'text-text-muted'}`}
+              >
+                {announceOpen ? <X size={15} /> : <SquarePen size={14} />}
               </button>
-            )}
-          </div>
+            ) : undefined
+          }
+        >
           {isCommissioner && announceOpen && (
             <div className="mb-2 space-y-1.5">
               <div className="flex gap-2">
@@ -406,21 +400,28 @@ export function LeagueHome() {
           <ActivityFeed
             league={league}
             items={league.activity}
-            chat={league.chat}
-            chatUnreadCount={chatUnreadCount}
-            initialTab={activityTab}
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
-            onSendChat={async (message) => (await postChatMessage(league.id, message)).ok}
             onDeleteAnnouncement={(itemId) => deleteAnnouncement(league.id, itemId)}
             onTogglePin={(itemId, pinned) => setAnnouncementPinned(league.id, itemId, pinned)}
-            onDeleteChat={(itemId) => deleteChatMessage(league.id, itemId)}
-            onSeenChat={() => markChatSeen(league.id)}
           />
         </ActivityMini>
 
         <LeagueLinks league={league} />
 
       </div>
+
+      {/* Over League Home rather than a route, so this screen stays mounted underneath and coming back
+          keeps its scroll and the Activity card as they were (backlog C6). */}
+      {chatOpen && (
+        <ChatScreen
+          league={league}
+          chat={league.chat}
+          onClose={() => setChatOpen(false)}
+          onSend={async (message) => (await postChatMessage(league.id, message)).ok}
+          onDelete={(itemId) => deleteChatMessage(league.id, itemId)}
+          onSeen={() => markChatSeen(league.id)}
+        />
+      )}
     </>
   );
 }

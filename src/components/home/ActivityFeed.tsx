@@ -1,6 +1,6 @@
-import { createContext, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Megaphone, Bell, DollarSign, Sparkles, Inbox, MessageCircle, Send, ChevronDown, Trash2, Pin, Plus, SlidersHorizontal } from 'lucide-react';
-import type { ActivityItem, ChatMessage, League } from '../../types';
+import { createContext, Suspense, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Megaphone, Bell, DollarSign, Sparkles, Inbox, ChevronDown, Trash2, Pin, SmilePlus, SlidersHorizontal } from 'lucide-react';
+import type { ActivityItem, League } from '../../types';
 import { MOMENT_CATEGORY_LABELS, weekLabel, weekOrder } from '../../types';
 import { ClinchIcon } from '../common/ClinchIcon';
 import type { ClinchStatus } from '../../engine/clinch';
@@ -27,7 +27,8 @@ import { haptic } from '../../services/haptics';
 import { usePlStyle } from '../common/usePlStyle';
 import { weekScaleRef } from '../../engine/plColor';
 import type { CSSProperties } from 'react';
-import { CHIP_LOGOS, CHIP_ROW_GAP, QUICK_REACTIONS, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
+import { CHIP_LOGOS, CHIP_ROW_GAP, fitChips, reactionGroups, type ReactionGroup } from '../../engine/reactions';
+import { momentPreviewValue } from '../../engine/activityDigest';
 
 const ICONS: Record<ActivityItem['type'], ReactNode> = {
   announcement: <Megaphone size={16} />,
@@ -130,12 +131,22 @@ function ReactionsSheet({
 // which one is "yours" and tapping any other emoji will move it rather than add a
 // second one.
 //
-// Layout: the reactions people have left sit to the left of the quick buttons, each as
-// the emoji plus the logos of the teams that chose it (tap for the full team list). When
-// there are more kinds than fit in that space, the ones that don't fit collapse into one
-// overlapping stack; tapping it opens an overview of every reaction. "+" opens a picker
-// with more emojis than the quick four.
-function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: string, emoji: string) => void }) {
+// Layout: only the reactions people have actually left, each as the emoji plus the logos of the
+// teams that chose it (tap for the full team list), then one add-reaction button. The quick four
+// used to sit on every card whether anyone had reacted or not, which doubled each card's weight and
+// squeezed the chips until they were clipped (backlog B5.8, B5.9). They are still one tap away: they
+// lead the picker's first tab. When there are more kinds than fit, the rest collapse into one
+// overlapping stack; tapping it opens an overview of every reaction.
+function Reactions({
+  item,
+  onReact,
+  addOnly = false,
+}: {
+  item: ActivityItem;
+  onReact?: (itemId: string, emoji: string) => void;
+  /** Just the add-reaction button, for a card with no reactions yet that has room beside its value. */
+  addOnly?: boolean;
+}) {
   const teams = useContext(ReactionTeamsContext);
   const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
   const groups = useMemo(() => reactionGroups(item.reactors, item.reactions), [item.reactors, item.reactions]);
@@ -160,7 +171,8 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
   const ring = (emoji: string) => (emoji === item.myReaction ? 'ring-1 ring-primary' : '');
 
   return (
-    <div className="flex items-center gap-1 flex-1 min-w-0 justify-end">
+    <div className={`flex items-center gap-1 justify-end ${addOnly ? 'shrink-0' : 'flex-1 min-w-0'}`}>
+      {!addOnly && (
       <div ref={areaRef} className="flex flex-1 min-w-0 items-center justify-end overflow-hidden p-0.5 -my-0.5" style={{ gap: CHIP_ROW_GAP }}>
         {shown.map((group) => (
           <button
@@ -197,26 +209,15 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
           </button>
         )}
       </div>
-      {QUICK_REACTIONS.map((emoji) => (
-        <button
-          key={emoji}
-          onClick={() => {
-            haptic.tap();
-            onReact(item.id, emoji);
-          }}
-          className={`shrink-0 text-xs ${emoji === item.myReaction ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
-        >
-          {emoji}
-        </button>
-      ))}
+      )}
       <button
         type="button"
         onClick={(e) => setPopup({ kind: 'picker', rect: e.currentTarget.getBoundingClientRect() })}
-        aria-label="More reactions"
+        aria-label="Add a reaction"
         aria-haspopup="dialog"
-        className="shrink-0 w-4 h-4 rounded-full border border-border text-text-muted flex items-center justify-center active:bg-bg-raised"
+        className="shrink-0 -m-1 p-1 text-text-muted/50 active:text-text"
       >
-        <Plus size={10} strokeWidth={2.5} />
+        <SmilePlus size={13} />
       </button>
 
       {popup?.kind === 'picker' && (
@@ -225,6 +226,7 @@ function Reactions({ item, onReact }: { item: ActivityItem; onReact?: (itemId: s
             <ReactionPicker
               current={item.myReaction}
               onPick={(emoji) => {
+                haptic.tap();
                 onReact(item.id, emoji);
                 closePopup();
               }}
@@ -320,9 +322,7 @@ function PerfectWeekCard({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <p className="shrink-0 text-[9px] text-text-muted">
-          {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-        </p>
+        <p className="shrink-0 text-[9px] text-text-muted">{shortTime(item.ts)}</p>
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
           <Reactions item={item} onReact={onReact} />
           {canDelete && onDelete && (
@@ -396,9 +396,7 @@ function SkunkedWeekCard({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <p className="shrink-0 text-[9px] text-text-muted">
-          {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-        </p>
+        <p className="shrink-0 text-[9px] text-text-muted">{shortTime(item.ts)}</p>
         <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
           <Reactions item={item} onReact={onReact} />
           {canDelete && onDelete && (
@@ -440,56 +438,58 @@ function NewsCard({
   if (perfect) return <PerfectWeekCard league={league} item={item} post={perfect} onReact={onReact} onDelete={onDelete} canDelete={canDelete} />;
   const skunked = isAnnouncement ? parseSkunkedWeek(item.message) : null;
   if (skunked) return <SkunkedWeekCard league={league} item={item} post={skunked} onReact={onReact} onDelete={onDelete} canDelete={canDelete} />;
-  // Announcements the commissioner posted (or flagged a void with) carry their team id;
-  // system ones (season start, welcome) do not.
-  const label = isAnnouncement ? (item.postedByTeamId ? 'Commissioner Announcement' : 'League Update') : null;
   // A system post gets an icon that matches what it says, instead of an emoji in the text.
   const systemIcon = isAnnouncement && !item.postedByTeamId ? systemPostIcon(item.message) : null;
   const showPin = isAnnouncement && (canPin || item.pinned);
+  const showDelete = isAnnouncement && canDelete && !!onDelete;
+  // No "Commissioner Announcement" caps label any more: the league logo already says who posted it,
+  // and in the League News tab it repeated on every card (backlog B5.11). Pin and delete sit together
+  // at the top right rather than one at the top and one in the reaction row (B5.10).
   return (
     <Card className={`flex items-start gap-2.5 ${item.pinned ? 'ring-1 ring-pin/40' : ''}`}>
       {systemIcon ?? (isAnnouncement ? <LeagueLogo league={league} size="sm" /> : <span>{ICONS[item.type]}</span>)}
       <div className="min-w-0 flex-1">
-        {(label || showPin) && (
-          <div className="flex items-center justify-between gap-2 min-h-[16px]">
-            <span className="text-[10px] uppercase tracking-wide font-semibold text-text-muted">{label}</span>
-            {showPin &&
-              (canPin && onTogglePin ? (
-                <button
-                  onClick={() => onTogglePin(item)}
-                  className={`shrink-0 p-0.5 -mr-0.5 -mt-0.5 ${item.pinned ? 'text-pin' : 'text-text-muted/50 hover:text-text-muted'}`}
-                  aria-label={item.pinned ? 'Unpin announcement' : 'Pin announcement'}
-                  aria-pressed={!!item.pinned}
-                >
-                  <Pin size={14} fill={item.pinned ? 'currentColor' : 'none'} />
+        <div className="flex items-start gap-2">
+          {/* Sized against MomentCard (12px title, 9px label) so a feed of announcements and moments
+              reads as one list instead of two (see chat, Oct 2026). */}
+          <p className="flex-1 min-w-0 text-xs leading-relaxed">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
+          {(showPin || showDelete) && (
+            <div className="shrink-0 flex items-center gap-2 -mr-0.5 pt-0.5">
+              {showPin &&
+                (canPin && onTogglePin ? (
+                  <button
+                    onClick={() => onTogglePin(item)}
+                    className={`p-0.5 -m-0.5 ${item.pinned ? 'text-pin' : 'text-text-muted/50 hover:text-text-muted'}`}
+                    aria-label={item.pinned ? 'Unpin announcement' : 'Pin announcement'}
+                    aria-pressed={!!item.pinned}
+                  >
+                    <Pin size={13} fill={item.pinned ? 'currentColor' : 'none'} />
+                  </button>
+                ) : (
+                  <span className="text-pin" aria-label="Pinned">
+                    <Pin size={13} fill="currentColor" />
+                  </span>
+                ))}
+              {showDelete && (
+                <button onClick={() => onDelete!(item.id)} className="p-0.5 -m-0.5 text-text-muted/50 hover:text-loss" aria-label="Delete announcement">
+                  <Trash2 size={13} />
                 </button>
-              ) : (
-                <span className="shrink-0 text-pin" aria-label="Pinned">
-                  <Pin size={14} fill="currentColor" />
-                </span>
-              ))}
-          </div>
-        )}
-        {/* Sized against MomentCard (12px title, 9px label) so a feed of announcements and moments
-            reads as one list instead of two. Was text-sm, which made a highlighted player name and
-            an italic note tower over the moment cards beside them (see chat, Oct 2026). */}
-        <p className="text-xs leading-relaxed">{isAnnouncement ? <RichText text={item.message} /> : item.message}</p>
-        <div className="flex items-center justify-between mt-0.5">
-          <p className="shrink-0 text-[11px] text-text-muted">
-            {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </p>
-          <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-            <Reactions item={item} onReact={onReact} />
-            {isAnnouncement && canDelete && onDelete && (
-              <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0" aria-label="Delete announcement">
-                <Trash2 size={13} />
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="shrink-0 text-[11px] text-text-muted">{shortTime(item.ts)}</p>
+          <Reactions item={item} onReact={onReact} />
         </div>
       </div>
     </Card>
   );
+}
+
+/** "Oct 20 at 10:02 AM", the one timestamp format the feed uses. */
+function shortTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 /** Splits a moment's extra text on embedded signed dollar amounts ("+$45.00",
@@ -603,6 +603,9 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
   const isStreak = !!extra && (category === 'hottestBettor' || category === 'coldestBettor') && /^[WL]\d+$/.test(extra);
   const swingParts = category === 'biggestSwing' && extra?.includes(' → ') ? extra.split(' → ') : null;
   const isPlainAmount = !!extra && /^[+-]\$[\d,]+\.\d{2}$/.test(extra);
+  const swingSize = swingParts ? momentPreviewValue(extra) : undefined;
+  const hasReactions = reactionGroups(item.reactors, item.reactions).length > 0;
+  const addInline = !hasReactions && !!onReact;
   // Week-total amounts (a team's whole-week score) follow the P/L colors setting, scaled against that
   // week's worst score like the matchup screens. Single-bet results (the ticket categories) keep the
   // classic red, the same as a bet everywhere else.
@@ -618,22 +621,40 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
   // logo row above a value whose position moved with the category, and no two cards in a column
   // lined up with each other (see chat, Oct 2026). Now: logo, two lines of identity, value pinned to
   // the right of the same row, an optional detail line, then the footer. Same skeleton every time.
+  // "missed by" used to sit beside the pill and squeeze the title to an ellipsis; it lives on the bet's
+  // own line now (backlog B5.7).
   const value = ticket ? (
-    <div className="flex items-center gap-1.5">
-      {ticket.note && <span className="text-[9px] text-text-muted font-medium whitespace-nowrap">missed by {ticket.note}</span>}
-      <AmountPill text={ticket.profitText} size="sm" />
-    </div>
+    <AmountPill text={ticket.profitText} size="sm" />
   ) : isStreak ? (
     <AmountPill text={extra!} negative={extra!.startsWith('L')} size="sm" />
+  ) : swingParts && swingSize ? (
+    // The size of the swing up top; the two weeks it ran between go on the detail line, where the pair
+    // no longer squeezes the title (backlog B5.6).
+    <AmountPill text={swingSize} size="sm" />
+  ) : isPlainAmount ? (
+    <AmountPill text={extra!} size="sm" scaled={scaledFor(extra!, weekNum)} />
+  ) : null;
+
+  // The line under the title: the bet for a ticket, the two weeks for a swing, otherwise any plain text.
+  const detail = ticket ? (
+    <p className="text-[10px] truncate">
+      <span className="text-text font-medium">{ticket.description}</span>
+      <span className="text-text-muted">
+        : {ticket.stakeText} @ <OddsDisplay odds={Number(ticket.oddsText)} />
+        {ticket.note && ` · missed by ${ticket.note}`}
+      </span>
+    </p>
   ) : swingParts ? (
     <div className="flex items-center gap-1">
-      {/* The swing runs from last week's score to this week's, each scaled against its own week. */}
+      {/* Last week's score to this week's, each scaled against its own week. */}
       <AmountPill text={swingParts[0]} size="sm" scaled={scaledFor(swingParts[0], weekNum - 1)} />
       <span className="text-[9px] text-text-muted">→</span>
       <AmountPill text={swingParts[1]} size="sm" scaled={scaledFor(swingParts[1], weekNum)} />
     </div>
-  ) : isPlainAmount ? (
-    <AmountPill text={extra!} size="sm" scaled={scaledFor(extra!, weekNum)} />
+  ) : !value && extra ? (
+    <p className="text-[10px] font-medium truncate">
+      <HighlightedExtra text={extra} />
+    </p>
   ) : null;
 
   return (
@@ -649,69 +670,61 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
           </p>
         </div>
         {item.momentPosition && <PositionBadge position={item.momentPosition} />}
-        {value && <div className="shrink-0">{value}</div>}
+        {/* With no reactions yet the add button takes no row of its own: it sits in the card's bottom
+            right corner, on the bet's line when there is one, otherwise under the value, so most cards
+            are two lines (backlog B5.8). */}
+        {(value || (addInline && !detail)) && (
+          <div className="shrink-0 flex flex-col items-end gap-1">
+            {value}
+            {addInline && !detail && <Reactions item={item} onReact={onReact} addOnly />}
+          </div>
+        )}
       </div>
 
-      {ticket ? (
-        <p className="text-[10px] truncate">
-          <span className="text-text font-medium">{ticket.description}</span>
-          <span className="text-text-muted">
-            : {ticket.stakeText} @ <OddsDisplay odds={Number(ticket.oddsText)} />
-          </span>
-        </p>
-      ) : (
-        !value &&
-        extra && (
-          <p className="text-[10px] font-medium truncate">
-            <HighlightedExtra text={extra} />
-          </p>
-        )
-      )}
-
-      <div className="flex items-center justify-between">
-        <p className="shrink-0 text-[9px] text-text-muted">
-          {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-        </p>
-        <Reactions item={item} onReact={onReact} />
-      </div>
-    </div>
-  );
-}
-
-type FeedTab = 'all' | 'moments' | 'news' | 'chat';
-
-const FEED_TAB_LABELS: Record<FeedTab, string> = { all: 'All', moments: 'Moments', news: 'League News', chat: 'Chat' };
-
-/** One message row in the Chat tab (see chat: deliberately separate from the
- * News/Moments cards above -- no Card wrapper, no reactions, just sender + text,
- * since this is meant to read like a normal group chat, not another award/news
- * card style). */
-// manual v0.3.0 §6: "a person should be able to delete their own chats too" --
-// team?.isUser is the same "is this mine" flag every other own-team check in
-// the app already uses; onDelete only ever needs to be called for the viewer's
-// own message since the button is gated on that same flag.
-function ChatBubble({ league, item, onDelete }: { league: League; item: ChatMessage; onDelete?: (itemId: string) => void }) {
-  const team = league.teams.find((t) => t.id === item.teamId);
-  return (
-    <div className="flex items-start gap-2 group">
-      {team ? <TeamLogo team={team} size="sm" /> : <span className="w-6 h-6 shrink-0" />}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-xs font-semibold truncate">{team?.teamName ?? 'Former member'}</p>
-          <p className="text-[10px] text-text-muted shrink-0">
-            {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </p>
+      {detail && (
+        <div className="flex items-end gap-2">
+          <div className="flex-1 min-w-0">{detail}</div>
+          {addInline && <Reactions item={item} onReact={onReact} addOnly />}
         </div>
-        <p className="text-sm break-words">{item.message}</p>
-      </div>
-      {team?.isUser && onDelete && (
-        <button onClick={() => onDelete(item.id)} className="text-text-muted hover:text-loss shrink-0 mt-0.5" aria-label="Delete message">
-          <Trash2 size={13} />
-        </button>
+      )}
+
+      {/* No per-card time: a week's Moments are all written in the same second, so seven cards read
+          the same timestamp. The week label above each run says when instead (backlog B5.12). */}
+      {hasReactions && (
+        <div className="flex items-center">
+          <Reactions item={item} onReact={onReact} />
+        </div>
       )}
     </div>
   );
 }
+
+/** The All tab's items, with a week label in front of each run of Moments (the same label the Moments
+ * tab groups by), since Moment cards carry no time of their own. */
+function withMomentLabels(items: ActivityItem[]): ({ kind: 'label'; key: string; text: string } | { kind: 'item'; item: ActivityItem })[] {
+  const out: ({ kind: 'label'; key: string; text: string } | { kind: 'item'; item: ActivityItem })[] = [];
+  let lastWeek: string | null = null;
+  for (const item of items) {
+    if (item.type === 'moment') {
+      const week = item.momentWeek != null ? String(item.momentWeek) : 'earlier';
+      if (week !== lastWeek) {
+        out.push({ kind: 'label', key: `label-${item.id}`, text: item.momentWeek != null ? `${weekLabel(item.momentWeek)} Moments` : 'Moments' });
+        lastWeek = week;
+      }
+    } else {
+      lastWeek = null;
+    }
+    out.push({ kind: 'item', item });
+  }
+  return out;
+}
+
+const RUN_LABEL = 'text-[10px] font-semibold text-text-muted uppercase tracking-wide px-1 pt-1';
+
+// Chat is its own screen now (ChatScreen.tsx, backlog C6), so it lives in exactly one place.
+type FeedTab = 'all' | 'moments' | 'news';
+
+const FEED_TAB_LABELS: Record<FeedTab, string> = { all: 'All', moments: 'Moments', news: 'League News' };
 
 function groupMomentsByWeek(items: ActivityItem[]): { key: string; label: string; order: number; items: ActivityItem[] }[] {
   const groups = new Map<string, ActivityItem[]>();
@@ -737,55 +750,26 @@ function groupMomentsByWeek(items: ActivityItem[]): { key: string; label: string
 export function ActivityFeed({
   league,
   items,
-  chat,
-  chatUnreadCount = 0,
-  initialTab,
   onReact,
-  onSendChat,
-  onSeenChat,
   onDeleteAnnouncement,
   onTogglePin,
-  onDeleteChat,
 }: {
   league: League;
   items: ActivityItem[];
-  chat?: ChatMessage[];
-  /** Count of chat messages the user hasn't seen yet (computed by the caller,
-      which is the one that knows the user's own team id and the per-league
-      "last seen" cursor -- see useAppStore's lastSeenChatByLeague). Shown as a
-      small badge on the Chat tab pill itself. */
-  chatUnreadCount?: number;
-  /** Which tab to open on. Lets the League Home header's chat control land on the conversation
-   *  rather than on the timeline (see chat, Oct 2026). Only the starting value; switching tabs here
-   *  stays local, as it always has. */
-  initialTab?: FeedTab;
   onReact?: (itemId: string, emoji: string) => void;
-  /** Resolves false when the send failed, which keeps the typed message in the box. */
-  onSendChat?: (message: string) => Promise<boolean>;
-  /** Called whenever the Chat tab is the active tab and there are messages to
-      have seen -- both right when the user switches to it, and again if a new
-      message arrives while they're still looking at it. */
-  onSeenChat?: () => void;
   /** manual v0.3.0 §6: commissioner (or whoever originally posted it) can
-   * delete an announcement; any member can delete their own chat message.
-   * Both omitted (Advanced dev-panel callers, say) simply hides every delete
-   * button, same pattern onReact/onSendChat already use. */
+   * delete an announcement. Omitted (Advanced dev-panel callers, say) hides every
+   * delete button, same pattern onReact already uses. */
   onDeleteAnnouncement?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Commissioner pin toggle; omitted hides the pin controls. */
   onTogglePin?: (itemId: string, pinned: boolean) => Promise<{ ok: boolean; error?: string }>;
-  onDeleteChat?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
-  const [tab, setTab] = useState<FeedTab>(initialTab ?? 'all');
-  // A later ask for a different tab (the header's chat control, tapped while the feed is already
-  // open) has to move the feed, not be swallowed because the state was already initialised.
-  useEffect(() => {
-    if (initialTab) setTab(initialTab);
-  }, [initialTab]);
+  const [tab, setTab] = useState<FeedTab>('all');
   // Confirm-before-delete (see chat, Sept 2026: accidental taps on the trash
   // icon shouldn't silently delete someone's announcement or message) -- one
   // shared sheet for both kinds rather than per-row state, since only one can
   // ever be open at a time.
-  const [pendingDelete, setPendingDelete] = useState<{ kind: 'announcement' | 'chat'; id: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // Commissioner can delete any announcement; anyone who posted one (or a
   // pre-this-feature announcement with no recorded poster, see chat) can only
   // delete their own -- canDeleteAnnouncement below folds both cases into one
@@ -804,26 +788,6 @@ export function ActivityFeed({
     const res = await onTogglePin(item.id, !item.pinned);
     if (!res.ok) setPinError(res.error ?? 'Could not update the pin.');
   };
-  const [chatText, setChatText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-
-  // The box used to be cleared on the keypress, before the send had resolved, so a failed send took
-  // the message with it and said nothing (see chat, Oct 2026). Now the text only leaves the box once
-  // it has actually been posted, and stays put, selected and retryable, when it has not.
-  async function send() {
-    const message = chatText.trim();
-    if (!message || !onSendChat) return;
-    setSending(true);
-    setChatError(null);
-    try {
-      const ok = await onSendChat(message);
-      if (ok) setChatText('');
-      else setChatError('Message not sent. Check your connection and try again.');
-    } finally {
-      setSending(false);
-    }
-  }
   // Which week groups are collapsed on the Moments tab (see chat, Sept 2026: "the
   // weeks should be collapsible"). Keyed by groupMomentsByWeek's own group.key, not
   // week number, so the synthetic "earlier" bucket collapses independently too.
@@ -831,14 +795,7 @@ export function ActivityFeed({
   // taps it shut, so a league with just one or two weeks of history looks exactly
   // like it did before this existed.
   const [collapsedMomentWeeks, setCollapsedMomentWeeks] = useState<Set<string>>(new Set());
-  const chatItems = chat ?? [];
-
-  useEffect(() => {
-    if (tab === 'chat' && chatItems.length > 0) onSeenChat?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, chatItems.length]);
-
-  if (items.length === 0 && chatItems.length === 0) {
+  if (items.length === 0) {
     return <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No activity yet" subtitle="League announcements and bet alerts will show up here." />;
   }
 
@@ -849,26 +806,14 @@ export function ActivityFeed({
   return (
     <ReactionTeamsContext.Provider value={league.teams}>
     <div className="space-y-3">
-      {/* No overflow-hidden on the wrapper: the unread badge sits on the chat
-          pill's top-right corner and would be clipped by it, so the first and
-          last pills round their own outer corners instead. */}
       <div className="flex bg-bg-card rounded-lg w-fit">
-        {(['all', 'moments', 'news', 'chat'] as FeedTab[]).map((t, i, all) => (
+        {(['all', 'moments', 'news'] as FeedTab[]).map((t, i, all) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`relative px-3 py-1.5 text-xs font-semibold flex items-center gap-1 ${i === 0 ? 'rounded-l-lg' : ''} ${i === all.length - 1 ? 'rounded-r-lg' : ''} ${tab === t ? 'seg-active' : 'text-text-muted'}`}
           >
             {FEED_TAB_LABELS[t]}
-            {/* Top-right corner of the pill, same red (bg-loss) and placement as the
-                lineup-needed "!" on the footer tabs, to keep the app's notification
-                colors to one scheme (see chat, Sept 2026; supersedes the earlier
-                inline orange/purple badge). */}
-            {t === 'chat' && chatUnreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-loss text-white text-[9px] font-bold leading-none">
-                {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
-              </span>
-            )}
           </button>
         ))}
       </div>
@@ -881,11 +826,15 @@ export function ActivityFeed({
 
       {tab === 'all' && (
         <div className="space-y-2">
-          {sorted.slice(0, 8).map((item) =>
-            item.type === 'moment' ? (
-              <MomentCard key={item.id} league={league} item={item} onReact={onReact} />
+          {withMomentLabels(sorted.slice(0, 8)).map((row) =>
+            row.kind === 'label' ? (
+              <p key={row.key} className={RUN_LABEL}>
+                {row.text}
+              </p>
+            ) : row.item.type === 'moment' ? (
+              <MomentCard key={row.item.id} league={league} item={row.item} onReact={onReact} />
             ) : (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
+              <NewsCard key={row.item.id} league={league} item={row.item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete(row.item.id) : undefined} canDelete={canDeleteAnnouncement(row.item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
             ),
           )}
         </div>
@@ -933,68 +882,19 @@ export function ActivityFeed({
             <EmptyState icon={<Inbox size={36} strokeWidth={1.5} />} title="No news yet" subtitle="Commissioner announcements and system updates show up here." />
           ) : (
             news.slice(0, 8).map((item) => (
-              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete({ kind: 'announcement', id: item.id }) : undefined} canDelete={canDeleteAnnouncement(item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
+              <NewsCard key={item.id} league={league} item={item} onReact={onReact} onDelete={onDeleteAnnouncement ? () => setPendingDelete(item.id) : undefined} canDelete={canDeleteAnnouncement(item)} canPin={isCommissioner && !!onTogglePin} onTogglePin={togglePin} />
             ))
-          )}
-        </div>
-      )}
-
-      {tab === 'chat' && (
-        <div className="space-y-3">
-          {onSendChat && (
-            <div className="space-y-1.5">
-              <div className="flex gap-2">
-                <input
-                  value={chatText}
-                  onChange={(e) => setChatText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter' || !chatText.trim() || sending) return;
-                    void send();
-                  }}
-                  placeholder="Message the league…"
-                  maxLength={500}
-                  className="flex-1 bg-bg-card border border-border rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  disabled={!chatText.trim() || sending}
-                  onClick={() => void send()}
-                  aria-label="Send message"
-                  className="btn-soft-primary text-sm font-semibold px-3 rounded-lg disabled:opacity-40"
-                >
-                  <Send size={16} />
-                </button>
-              </div>
-              {chatError && <p className="text-[11px] text-loss px-1">{chatError}</p>}
-            </div>
-          )}
-          {chatItems.length === 0 ? (
-            <EmptyState icon={<MessageCircle size={36} strokeWidth={1.5} />} title="No messages yet" subtitle="Say something to the rest of the league." />
-          ) : (
-            <div className="space-y-3">
-              {[...chatItems].reverse().map((item) => (
-                <ChatBubble
-                  key={item.id}
-                  league={league}
-                  item={item}
-                  onDelete={onDeleteChat ? () => setPendingDelete({ kind: 'chat', id: item.id }) : undefined}
-                />
-              ))}
-            </div>
           )}
         </div>
       )}
 
       {pendingDelete && (
         <ConfirmSheet
-          title={pendingDelete.kind === 'announcement' ? 'Delete this announcement?' : 'Delete this message?'}
+          title="Delete this announcement?"
           description="This can't be undone."
           confirmLabel="Delete"
           confirmingLabel="Deleting…"
-          onConfirm={async () => {
-            const fn = pendingDelete.kind === 'announcement' ? onDeleteAnnouncement : onDeleteChat;
-            if (!fn) return { ok: true };
-            return fn(pendingDelete.id);
-          }}
+          onConfirm={async () => (onDeleteAnnouncement ? onDeleteAnnouncement(pendingDelete) : { ok: true })}
           onClose={() => setPendingDelete(null)}
         />
       )}
