@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { rosterKey, buildEmptyRoster } from '../engine/rosterSlots';
-import { getGame } from '../services/oddsService';
+import { getGame, gameHasStarted, resolveGame } from '../services/oddsService';
+import { isMatchupFinal, matchupStatus } from '../engine/matchupStatus';
 import { resultForGame } from '../data/seed';
 import { displayWeeklyScore, type DecidedGameLookup } from '../engine/scoring';
 import { PositionBadge } from '../components/common/PositionBadge';
@@ -157,7 +158,7 @@ export function MatchupDetail() {
   // scores progressively but only sets winnerId/isTie once the whole week is actually
   // complete -- see chat), so "has a score" no longer means "is final". Same fix as
   // MatchupCard.tsx.
-  const isFinal = matchup.winnerId != null || matchup.isTie;
+  const isFinal = isMatchupFinal(matchup);
   const weekLocked = weekAllGamesStarted(Object.values(realGamesById), matchup.week);
   // The unspent-credits penalty only counts once nothing more can be filled (last kickoff, or any
   // week already past). Before that the live score is settled P/L from $0.
@@ -219,18 +220,12 @@ export function MatchupDetail() {
   const probHidden = probView?.probHidden ?? false;
   const giveWidthPx = probView?.giveWidthPx ?? 2;
 
-  // Center badge should read "Upcoming" until at least one pick has actually
-  // gone live -- previously this showed "Live" the instant the matchup wasn't
-  // final, even early in the week when every slot on both rosters was still
-  // Empty/pending (see chat, Sept 2026 Week 3 screenshots: a red pulsing
-  // "Live" badge over two fully-empty rosters).
-  const isSlotLive = (s: RosterSlotState) => {
-    if (!s.wager) return false;
-    if (s.wager.status !== 'pending') return true;
-    const g = realGamesById[s.wager.gameId] ?? getGame(s.wager.gameId, league.currentWeek, league.settings.lineMovementEnabled);
-    return !!g && g.status !== 'upcoming';
-  };
-  const anyPickLive = rosterA.slots.some(isSlotLive) || rosterB.slots.some(isSlotLive);
+  // Center badge reads "Upcoming" until at least one pick has actually gone live, never just
+  // because the matchup is not final (see chat, Sept 2026: a pulsing "Live" over two empty
+  // rosters). Shared with Season Schedule through engine/matchupStatus.ts.
+  const status = matchupStatus(matchup, [rosterA, rosterB], (gameId) =>
+    gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled)),
+  );
 
   // Share: what this screen shows, as one fixed-size picture. A pick the viewer cannot see yet
   // (hide-picks, before kickoff) is "Hidden" here too, exactly as on screen.
@@ -270,7 +265,7 @@ export function MatchupDetail() {
     <MatchupShareCard
       leagueName={league.name}
       weekText={weekLabel(matchup.week)}
-      statusText={isFinal ? 'Final' : anyPickLive ? 'Live' : 'Upcoming'}
+      statusText={status === 'final' ? 'Final' : status === 'live' ? 'Live' : 'Upcoming'}
       a={shareSide(teamA, scoreA, progressA, perfectA, skunkedA, hiddenA, scoreHiddenA)}
       b={shareSide(teamB, scoreB, progressB, perfectB, skunkedB, hiddenB, scoreHiddenB)}
       winner={isFinal ? (matchup.isTie ? 'tie' : matchup.winnerId === teamA.id ? 'a' : 'b') : null}
@@ -322,7 +317,7 @@ export function MatchupDetail() {
                 reuses StatusPill's own live/final styling (red pulsing dot vs.
                 muted "Final") rather than a bespoke badge, so this stays in sync
                 with that pill's look everywhere else it's used. */}
-            <StatusPill status={isFinal ? 'final' : anyPickLive ? 'live' : 'upcoming'} />
+            <StatusPill status={status} />
             <span className="inline-flex items-center justify-center whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-raised text-text-muted">
               {weekLabel(matchup.week)}
             </span>

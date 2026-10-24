@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Flame } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -14,6 +15,10 @@ import { useEnsureSettledWeekRosters } from '../components/common/useEnsureWeekR
 import { isTeamWeekPerfect } from '../engine/perfectWeek';
 import { isTeamWeekSkunked } from '../engine/skunkedWeek';
 import { leagueSeasonPlan, leagueWeekMatchups } from '../engine/bracketModel';
+import { matchupStatus } from '../engine/matchupStatus';
+import { rosterKey } from '../engine/rosterSlots';
+import { gameHasStarted, resolveGame } from '../services/oddsService';
+import { StatusPill } from '../components/common/StatusPill';
 
 function toWeekId(week: string): WeekId {
   return Number.isNaN(Number(week)) ? (week as WeekId) : Number(week);
@@ -47,6 +52,18 @@ export function ScheduleView() {
   const setSelectedTeamId = (id: string) => navigate(`/schedule/${id}`, { replace: true });
   // Past weeks' rosters are what tell us whether a week was perfect (the flame on its score).
   useEnsureSettledWeekRosters(league);
+
+  // This week's rosters and games decide whether its matchup is Live yet (engine/matchupStatus.ts).
+  const realGamesById = useAppStore((s) => s.realGamesById);
+  const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
+  const loadRealGamesForWeek = useAppStore((s) => s.loadRealGamesForWeek);
+  const leagueId = league?.id;
+  const currentWeek = league?.currentWeek;
+  useEffect(() => {
+    if (!leagueId || currentWeek == null) return;
+    void loadWeekRosters(leagueId, currentWeek);
+    void loadRealGamesForWeek(currentWeek);
+  }, [leagueId, currentWeek, loadWeekRosters, loadRealGamesForWeek]);
 
   if (!league || !userTeam) return null;
 
@@ -96,10 +113,15 @@ export function ScheduleView() {
           const oppScore = matchup.teamAId === viewedTeam.id ? matchup.teamBScore : matchup.teamAScore;
           // matchup.teamAScore/teamBScore update live all week as picks settle (see
           // chat), so "has a score" doesn't mean "is final" -- winnerId/isTie only get
-          // set once the whole week is actually complete. Same fix as MatchupCard.tsx.
+          // set once the whole week is actually complete. Live once any pick on either side is.
           // notStarted is never true here -- these are exactly the weeks filtered out
           // of notStartedWeeks above -- so isFinal only depends on the actual result.
-          const isFinal = matchup.winnerId != null || matchup.isTie;
+          const status = matchupStatus(
+            matchup,
+            [league.rostersByTeamWeek[rosterKey(matchup.teamAId, matchup.week)], league.rostersByTeamWeek[rosterKey(matchup.teamBId, matchup.week)]],
+            (gameId) => gameHasStarted(resolveGame(gameId, realGamesById, league.currentWeek, league.settings.lineMovementEnabled)),
+          );
+          const isFinal = status === 'final';
           const won = isFinal && myScore != null && oppScore != null && myScore > oppScore;
           const tied = isFinal && myScore === oppScore;
           const myPerfect = isFinal && isTeamWeekPerfect(league, viewedTeam.id, toWeekId(week));
@@ -141,6 +163,8 @@ export function ScheduleView() {
                       <span className={oppPerfect ? 'pl-gold-text font-semibold' : oppSkunked ? 'text-loss font-semibold' : ''}>{formatCents(oppScore!)}</span>
                     </p>
                   </>
+                ) : status === 'live' ? (
+                  <StatusPill status="live" />
                 ) : (
                   <p className="text-xs text-text-muted">Upcoming</p>
                 )}
