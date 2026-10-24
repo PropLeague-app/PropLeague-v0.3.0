@@ -23,6 +23,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { getSupabasePublicKey } from '../_shared/supabasePublicKey.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,7 +39,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405);
 
   const url = Deno.env.get('SUPABASE_URL')!;
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const anonKey = getSupabasePublicKey();
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!anonKey || !authHeader) return json({ ok: false, error: 'unauthorized' }, 401);
 

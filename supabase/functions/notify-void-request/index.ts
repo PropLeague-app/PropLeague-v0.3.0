@@ -14,6 +14,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendPushToProfile, claimNotification } from '../_shared/pushNotifications.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { getSupabasePublicKey } from '../_shared/supabasePublicKey.ts';
 import { profileMutedLeague, profileNotifAllowed } from '../_shared/leaguePrefs.ts';
 
 const corsHeaders = {
@@ -41,7 +42,7 @@ Deno.serve(async (req: Request) => {
 
   // Who is calling.
   const url = Deno.env.get('SUPABASE_URL')!;
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const anonKey = getSupabasePublicKey();
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!anonKey || !authHeader) return json({ ok: false, error: 'unauthorized' }, 401);
   const asUser = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });

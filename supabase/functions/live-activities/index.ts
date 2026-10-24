@@ -34,6 +34,7 @@ import { sendLiveActivityPush } from '../_shared/pushNotifications.ts';
 import { favoriteLeagueId, leagueMuted, notifAllowed, slateModeFrom, slateWanted } from '../_shared/leaguePrefs.ts';
 import { daySlotLong, WINDOW_LONG, WINDOW_OF_SLOT } from '../_shared/dayWindows.ts';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { getSupabasePublicKey } from '../_shared/supabasePublicKey.ts';
 import { lossReference, sideDistribution, winProbability, type WinProbPick } from '../_shared/winProb.ts';
 
 const corsHeaders = {
@@ -571,7 +572,7 @@ Deno.serve(async (req: Request) => {
               : 'an unrecognized key';
       return json({ ok: false, error: 'unauthorized', hint: `Received ${got}. The cron must send this project's default secret key (or legacy service_role key) as a Bearer token.` }, 401);
     }
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const anonKey = getSupabasePublicKey();
     const authHeader = req.headers.get('Authorization') ?? '';
     if (!anonKey || !authHeader) return json({ ok: false, error: 'unauthorized' }, 401);
     const asUser = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });

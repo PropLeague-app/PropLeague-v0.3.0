@@ -10,6 +10,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getSupabaseAdminKey } from '../_shared/supabaseAdminKey.ts';
+import { getSupabasePublicKey } from '../_shared/supabasePublicKey.ts';
 import { calendarIndex, seasonPlan, SEASON_CALENDAR, type PlayoffBracket, type PlayoffFieldSize, type PrizePool, type WeekId } from '../_shared/playoffLogic.ts';
 import { buildLeaguePool, type PoolSettingsSlice } from '../_shared/poolRebuild.ts';
 
@@ -36,7 +37,7 @@ Deno.serve(async (req: Request) => {
 
   // Only the commissioner (checked with the caller's own token).
   const url = Deno.env.get('SUPABASE_URL')!;
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const anonKey = getSupabasePublicKey();
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!anonKey || !authHeader) return json({ ok: false, error: 'unauthorized' }, 401);
   const asUser = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
