@@ -4,7 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import { buildEmptyRoster, rosterKey } from '../engine/rosterSlots';
 import { lineupStatus, validateLineup } from '../engine/validation';
 import { rosterPenalties } from '../engine/penalties';
-import { computeIncompleteLineupPenalty, lineupUpside } from '../engine/scoring';
+import { computeIncompleteLineupPenalty, lineupUpside, settledWeeklyPL } from '../engine/scoring';
 import { activeMultipliers } from '../engine/prizePool';
 import { getGame } from '../services/oddsService';
 import { RosterSlotCard } from '../components/roster/RosterSlotCard';
@@ -184,6 +184,12 @@ export function Lineup() {
   // The one figure this screen never showed: what the week pays if it all lands. Settled picks count
   // at what they actually returned, so it stays honest as results come in (see engine/scoring.ts).
   const upside = lineupUpside(roster);
+  // Once a pick has settled, the games count has done its job (it only matters while building), so
+  // that cell shows what the week has banked instead. Same footer size, no added text (backlog B4).
+  const anySettled = roster.slots.some((s) => s.wager && s.wager.status !== 'pending');
+  const banked = settledWeeklyPL(roster);
+  const money = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
+  const moneyTone = (v: number) => (v > 0 ? 'text-profit' : v < 0 ? 'text-loss' : '');
 
   return (
     <div className="flex flex-col">
@@ -285,7 +291,7 @@ export function Lineup() {
         )}
         {/* Was a "Mark Lineup Complete" button, then a sentence of explanation, which is the one
             thing a footer on a screen of numbers should not be. What belongs here is the week's own
-            figures: how much of the lineup is built, how it is spread, and what it stands to win,
+            figures: how much of the lineup is built, how it is spread (or, once picks settle, what it has won), and what it stands to win,
             which is the number nothing else on the screen reports. The state itself is a mark, and
             the only prose is the one line saying what is wrong, when something is (see chat, Oct
             2026). The money already lives in the budget strip at the top, so it is not repeated. */}
@@ -299,13 +305,13 @@ export function Lineup() {
             </span>
             <StatCell value={`${filledSlots}/${roster.slots.length}`} label="slots" />
             <div className="w-px self-stretch bg-border" />
-            <StatCell value={`${validation.distinctGames}`} label="games" />
+            {anySettled ? (
+              <StatCell value={money(banked)} label="won" tone={moneyTone(banked)} />
+            ) : (
+              <StatCell value={`${validation.distinctGames}`} label="games" />
+            )}
             <div className="w-px self-stretch bg-border" />
-            <StatCell
-              value={`${upside < 0 ? '-' : ''}$${Math.abs(upside).toFixed(2)}`}
-              label="to win"
-              tone={upside > 0 ? 'text-profit' : upside < 0 ? 'text-loss' : ''}
-            />
+            <StatCell value={money(upside)} label="to win" tone={moneyTone(upside)} />
           </div>
           {(status.note || submitError || submitting) && (
             <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">

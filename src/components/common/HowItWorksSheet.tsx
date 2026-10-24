@@ -95,7 +95,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Lineup status',
       body: [
-        'The bar at the bottom of the Lineup screen carries the week\'s figures: how many slots are filled, how many different games your picks come from, and what the lineup stands to win if every one of them lands. A pick that has already settled counts in that last figure at what it actually returned, so it stays honest as results come in rather than promising a payout from a pick that has lost.',
+        'The bar at the bottom of the Lineup screen carries the week\'s figures: how many slots are filled, how many different games your picks come from (once a pick settles, what the week has won so far instead), and what the lineup stands to win if every one of them lands. A pick that has already settled counts in that last figure at what it actually returned, so it stays honest as results come in rather than promising a payout from a pick that has lost.',
         `The mark on the left is the state. An orange ! means there is simply more to do. A red ✕ means carrying on will not get you there, so something already placed has to change, and a line under the figures says what: every slot filled with credits left over, every credit spent with slots still empty, over your ${money(credits)}, or a pick that breaks a rule. A green ✓ means full, exactly in budget and legal.`,
         'There is no button to press. Reaching ✓ marks the lineup complete on its own, which is what protects you from the unspent-credits penalty at kickoff. Change a pick or a stake afterwards and the bar falls back to whatever state the new lineup is in, then marks itself complete again as soon as it is valid.',
       ],
