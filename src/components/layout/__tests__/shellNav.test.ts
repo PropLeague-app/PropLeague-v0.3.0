@@ -21,11 +21,23 @@ describe('shellNav tab memory', () => {
   });
 
   it('reopens a matchup only in the league it belongs to', () => {
+    // Walked there from League Home, which is what makes it that tab's memory.
+    noteShellLocation('/home', 'L1');
     noteShellLocation('/matchup/m1', 'L1');
     noteShellLocation('/standings', 'L1');
     expect(tabReopenPath('/home', 'L1')).toBe('/matchup/m1');
     expect(tabReopenPath('/home', 'L2')).toBe('/home');
     resetTabMemory('/home');
+    expect(tabReopenPath('/home', 'L1')).toBe('/home');
+  });
+
+  // A matchup opened from a profile is a detour, not a place League Home has been. Recording it
+  // sent that tab somewhere its own screen never went (see chat, Oct 2026).
+  it('a matchup opened from a profile does not become League Home memory', () => {
+    noteShellLocation('/home', 'L1');
+    resetTabMemory('/home');
+    noteShellLocation('/profile', 'L1');
+    noteShellLocation('/matchup/m9', 'L1');
     expect(tabReopenPath('/home', 'L1')).toBe('/home');
   });
 });

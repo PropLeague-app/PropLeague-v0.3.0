@@ -614,58 +614,61 @@ function MomentCard({ league, item, onReact }: { league: League; item: ActivityI
     return Number.isNaN(amount) ? undefined : plStyle(amount, refFor(week));
   };
 
+  // One shape for every category. Each used to build its own middle, so the award name sat above a
+  // logo row above a value whose position moved with the category, and no two cards in a column
+  // lined up with each other (see chat, Oct 2026). Now: logo, two lines of identity, value pinned to
+  // the right of the same row, an optional detail line, then the footer. Same skeleton every time.
+  const value = ticket ? (
+    <div className="flex items-center gap-1.5">
+      {ticket.note && <span className="text-[9px] text-text-muted font-medium whitespace-nowrap">missed by {ticket.note}</span>}
+      <AmountPill text={ticket.profitText} size="sm" />
+    </div>
+  ) : isStreak ? (
+    <AmountPill text={extra!} negative={extra!.startsWith('L')} size="sm" />
+  ) : swingParts ? (
+    <div className="flex items-center gap-1">
+      {/* The swing runs from last week's score to this week's, each scaled against its own week. */}
+      <AmountPill text={swingParts[0]} size="sm" scaled={scaledFor(swingParts[0], weekNum - 1)} />
+      <span className="text-[9px] text-text-muted">→</span>
+      <AmountPill text={swingParts[1]} size="sm" scaled={scaledFor(swingParts[1], weekNum)} />
+    </div>
+  ) : isPlainAmount ? (
+    <AmountPill text={extra!} size="sm" scaled={scaledFor(extra!, weekNum)} />
+  ) : null;
+
   return (
     <div className="bg-bg-card border border-border rounded-xl p-2 space-y-1">
-      <div>
-        <p className="text-xs font-bold truncate">{item.momentDisplayName ?? item.message}</p>
-        {category && <p className="text-[9px] text-text-muted truncate">{MOMENT_CATEGORY_LABELS[category]}</p>}
-      </div>
-
-      <div className="flex items-center gap-1.5">
-        {team ? <TeamLogo team={team} size="sm" /> : <Sparkles size={16} />}
-        {team && <p className="text-xs font-semibold truncate flex-1 min-w-0">{team.teamName}</p>}
+      <div className="flex items-center gap-2">
+        {team ? <TeamLogo team={team} size="sm" /> : <Sparkles size={16} className="shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold truncate">{item.momentDisplayName ?? item.message}</p>
+          <p className="text-[9px] text-text-muted truncate">
+            {team?.teamName}
+            {team && category ? ' · ' : ''}
+            {category ? MOMENT_CATEGORY_LABELS[category] : ''}
+          </p>
+        </div>
         {item.momentPosition && <PositionBadge position={item.momentPosition} />}
+        {value && <div className="shrink-0">{value}</div>}
       </div>
 
       {ticket ? (
-        <div>
-          <p className="text-[10px] truncate">
-            <span className="text-text font-medium">{ticket.description}</span>
-            <span className="text-text-muted">
-              : {ticket.stakeText} @ <OddsDisplay odds={Number(ticket.oddsText)} />
-            </span>
-          </p>
-          {/* Always flush right, note included -- previously this used justify-between
-              whenever a note existed, which threw the note all the way to the row's far
-              left edge, away from the pill it was actually describing, and (per Hunter,
-              Sept 2026) made the two categories with no note at all look like they were
-              reserving dead space for one that would never show up. Clustering note+pill
-              together removes that reserved-looking gap entirely, in both cases. */}
-          <div className="flex items-center justify-end gap-1.5 mt-0.5">
-            {ticket.note && <span className="text-[10px] text-text-muted font-medium whitespace-nowrap">missed by {ticket.note}</span>}
-            <AmountPill text={ticket.profitText} size="sm" />
-          </div>
-        </div>
-      ) : isStreak ? (
-        <AmountPill text={extra!} negative={extra!.startsWith('L')} size="sm" />
-      ) : swingParts ? (
-        <div className="flex items-center gap-1.5">
-          {/* The swing runs from last week's score to this week's, each scaled against its own week. */}
-          <AmountPill text={swingParts[0]} size="sm" scaled={scaledFor(swingParts[0], weekNum - 1)} />
-          <span className="text-[10px] text-text-muted">→</span>
-          <AmountPill text={swingParts[1]} size="sm" scaled={scaledFor(swingParts[1], weekNum)} />
-        </div>
-      ) : isPlainAmount ? (
-        <AmountPill text={extra!} scaled={scaledFor(extra!, weekNum)} />
+        <p className="text-[10px] truncate">
+          <span className="text-text font-medium">{ticket.description}</span>
+          <span className="text-text-muted">
+            : {ticket.stakeText} @ <OddsDisplay odds={Number(ticket.oddsText)} />
+          </span>
+        </p>
       ) : (
+        !value &&
         extra && (
-          <p className="text-xs font-medium">
+          <p className="text-[10px] font-medium truncate">
             <HighlightedExtra text={extra} />
           </p>
         )
       )}
 
-      <div className="flex items-center justify-between pt-0.5">
+      <div className="flex items-center justify-between">
         <p className="shrink-0 text-[9px] text-text-muted">
           {new Date(item.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
         </p>
@@ -736,6 +739,7 @@ export function ActivityFeed({
   items,
   chat,
   chatUnreadCount = 0,
+  initialTab,
   onReact,
   onSendChat,
   onSeenChat,
@@ -751,6 +755,10 @@ export function ActivityFeed({
       "last seen" cursor -- see useAppStore's lastSeenChatByLeague). Shown as a
       small badge on the Chat tab pill itself. */
   chatUnreadCount?: number;
+  /** Which tab to open on. Lets the League Home header's chat control land on the conversation
+   *  rather than on the timeline (see chat, Oct 2026). Only the starting value; switching tabs here
+   *  stays local, as it always has. */
+  initialTab?: FeedTab;
   onReact?: (itemId: string, emoji: string) => void;
   /** Resolves false when the send failed, which keeps the typed message in the box. */
   onSendChat?: (message: string) => Promise<boolean>;
@@ -767,7 +775,12 @@ export function ActivityFeed({
   onTogglePin?: (itemId: string, pinned: boolean) => Promise<{ ok: boolean; error?: string }>;
   onDeleteChat?: (itemId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
-  const [tab, setTab] = useState<FeedTab>('all');
+  const [tab, setTab] = useState<FeedTab>(initialTab ?? 'all');
+  // A later ask for a different tab (the header's chat control, tapped while the feed is already
+  // open) has to move the feed, not be swallowed because the state was already initialised.
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+  }, [initialTab]);
   // Confirm-before-delete (see chat, Sept 2026: accidental taps on the trash
   // icon shouldn't silently delete someone's announcement or message) -- one
   // shared sheet for both kinds rather than per-row state, since only one can

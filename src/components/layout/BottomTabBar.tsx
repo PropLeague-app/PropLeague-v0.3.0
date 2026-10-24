@@ -5,6 +5,7 @@ import { ConfirmSheet } from '../common/ConfirmSheet';
 import { useUIStore } from '../../store/useUIStore';
 import { useAppStore } from '../../store/useAppStore';
 import { validateLineup } from '../../engine/validation';
+import { unreadActivityCount } from '../../engine/activityDigest';
 import { buildEmptyRoster, rosterKey } from '../../engine/rosterSlots';
 import { usePendingVoidRequests } from '../../hooks/usePendingVoidRequests';
 import { inTabSection, isMemoryTab, resetTabMemory, scrollShellToTop, tabReopenPath, type ShellNavState } from './shellNav';
@@ -56,6 +57,18 @@ export function BottomTabBar() {
   // where the Void Requests card lives and nothing else would bring them there.
   usePendingVoidRequests();
   const voidWaiting = useUIStore((s) => s.pendingVoidRequests) > 0;
+  // Something happened in the league since this device last opened the feed. The only unread signal
+  // used to be a badge on the Chat pill inside the feed itself, at the bottom of League Home, so you
+  // had to scroll to the thing it was advertising before you could see the advert (see chat, Oct
+  // 2026). Counts league news and other people talking, never your own settled picks.
+  const activityLeague = useAppStore((s) => (s.currentLeagueId ? s.leagues[s.currentLeagueId] : undefined));
+  const lastSeenActivity = useAppStore((s) => s.lastSeenActivityByLeague);
+  const activityUnread = (() => {
+    if (!activityLeague) return 0;
+    const seen = lastSeenActivity[activityLeague.id];
+    const userTeamId = activityLeague.teams.find((t) => t.isUser)?.id;
+    return unreadActivityCount(activityLeague.activity, activityLeague.chat, userTeamId, seen ? new Date(seen).getTime() : 0);
+  })();
 
   // Discard-on-leave confirm for the identity/logo editors (manual v0.1.1 §2 #4) — the
   // app has no data-router set up (plain <Routes>), so react-router's navigation
@@ -146,6 +159,14 @@ export function BottomTabBar() {
             {((tab.to === '/lineup' && lineupIncomplete) || (tab.to === '/profile' && voidWaiting)) && (
               <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
                 !
+              </span>
+            )}
+            {/* A count rather than a "!": league news is interesting, not urgent, and "3" tells you
+                whether it is worth a look in a way a bare mark cannot. Capped so a chatty week
+                cannot widen the tab. */}
+            {tab.to === '/home' && activityUnread > 0 && (
+              <span className="absolute -top-1 -right-2 min-w-3.5 h-3.5 px-1 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
+                {activityUnread > 9 ? '9+' : activityUnread}
               </span>
             )}
           </span>

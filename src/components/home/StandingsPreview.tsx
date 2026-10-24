@@ -1,4 +1,6 @@
 import { useNavigate } from 'react-router-dom';
+import { ListOrdered } from 'lucide-react';
+import { HubHeader } from '../common/HubHeader';
 import type { League } from '../../types';
 import { Card } from '../common/Card';
 import { TeamLogo } from '../common/TeamLogo';
@@ -23,10 +25,8 @@ export function StandingsPreview({ league }: { league: League }) {
 
   return (
     <Card onClick={() => navigate('/standings')} className="space-y-2">
-      <div className="flex justify-between items-center">
-        <p className="font-semibold text-sm">Standings</p>
-        <span className="text-primary text-xs">See full standings →</span>
-      </div>
+      {/* Same header, same chevron, as every other block on a hub (see common/HubHeader.tsx). */}
+      <HubHeader icon={<ListOrdered size={13} />} title="Standings" chevron />
       <div className="space-y-1.5">
         {top4.map((s, i) => {
           const team = league.teams.find((t) => t.id === s.teamId);

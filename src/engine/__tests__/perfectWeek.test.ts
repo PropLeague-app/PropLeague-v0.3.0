@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_LEAGUE_SETTINGS } from '../../types';
-import type { LeagueSettings, WagerStatus, WeeklyRoster } from '../../types';
-import { isPerfectWeek } from '../perfectWeek';
+import type { League, LeagueSettings, WagerStatus, WeeklyRoster } from '../../types';
+import { isPerfectWeek, isTeamOnFire } from '../perfectWeek';
 
 const settings: LeagueSettings = { ...DEFAULT_LEAGUE_SETTINGS, weeklyCredits: 100, minGamesPerRoster: null, lineupSlots: { QB: 1, RB: 1, WR: 1, TE: 1, K: 1, ML: 1 } as LeagueSettings['lineupSlots'] };
 
@@ -55,5 +55,72 @@ describe('isPerfectWeek', () => {
   });
   it('no roster at all is not perfect', () => {
     expect(isPerfectWeek(undefined, settings, true)).toBe(false);
+  });
+});
+
+// ---- isTeamOnFire: the streak, as opposed to the trophy ----
+
+/** A league with one team, a roster per week, and a decided matchup for each. */
+function leagueWith(weeks: Record<number, WagerStatus[]>): League {
+  const rostersByTeamWeek: Record<string, WeeklyRoster> = {};
+  const matchupsByWeek: Record<number, { id: string; week: number; teamAId: string; teamBId: string; winnerId: string | null; isTie: boolean }[]> = {};
+  for (const [weekStr, statuses] of Object.entries(weeks)) {
+    const week = Number(weekStr);
+    rostersByTeamWeek[`t:${week}`] = { ...full(statuses), week, teamId: 't' };
+    matchupsByWeek[week] = [{ id: `m${week}`, week, teamAId: 't', teamBId: 'o', winnerId: 't', isTie: false }];
+  }
+  return {
+    id: 'L',
+    settings,
+    teams: [{ id: 't' }, { id: 'o' }],
+    rostersByTeamWeek,
+    matchupsByWeek,
+    standings: [],
+  } as unknown as League;
+}
+
+describe('isTeamOnFire', () => {
+  it('is cold without a perfect week', () => {
+    expect(isTeamOnFire(leagueWith({ 1: ['won', 'won', 'lost', 'won'] }), 't')).toBe(false);
+  });
+
+  it('lights on a perfect week', () => {
+    expect(isTeamOnFire(leagueWith({ 1: ['won', 'won', 'won', 'won'] }), 't')).toBe(true);
+  });
+
+  it('a loss in a later week puts it out', () => {
+    const league = leagueWith({ 1: ['won', 'won', 'won', 'won'], 2: ['won', 'lost', 'won', 'won'] });
+    expect(isTeamOnFire(league, 't')).toBe(false);
+  });
+
+  // The whole point of the rule Hunter picked: only a loss counts against you.
+  it('pushes and voids after it leave it burning', () => {
+    const league = leagueWith({ 1: ['won', 'won', 'won', 'won'], 2: ['push', 'voided', 'won', 'push'] });
+    expect(isTeamOnFire(league, 't')).toBe(true);
+  });
+
+  it('a pick still pending counts neither way', () => {
+    const league = leagueWith({ 1: ['won', 'won', 'won', 'won'], 2: ['pending', 'pending', 'won', 'pending'] });
+    expect(isTeamOnFire(league, 't')).toBe(true);
+  });
+
+  it('a later perfect week relights it after an earlier loss', () => {
+    const league = leagueWith({
+      1: ['won', 'won', 'won', 'won'],
+      2: ['won', 'lost', 'won', 'won'],
+      3: ['won', 'won', 'won', 'won'],
+    });
+    expect(isTeamOnFire(league, 't')).toBe(true);
+  });
+
+  it('a loss BEFORE the perfect week does not count against it', () => {
+    const league = leagueWith({ 1: ['won', 'lost', 'won', 'won'], 2: ['won', 'won', 'won', 'won'] });
+    expect(isTeamOnFire(league, 't')).toBe(true);
+  });
+
+  it('reads only the team it was asked about', () => {
+    const league = leagueWith({ 1: ['won', 'won', 'won', 'won'] });
+    league.rostersByTeamWeek['o:2'] = { ...full(['lost', 'lost', 'lost', 'lost']), week: 2, teamId: 'o' };
+    expect(isTeamOnFire(league, 't')).toBe(true);
   });
 });

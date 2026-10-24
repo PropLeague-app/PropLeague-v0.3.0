@@ -3,7 +3,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { ONBOARDING_PRIMARY_BTN } from '../../components/common/buttonStyles';
 
-const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
+// A profile avatar used to be picked here. It was never drawn anywhere in the app: every screen
+// that shows who someone is shows their team logo, which they choose per league and which carries
+// the team colour with it. Two identities for one person, one of them invisible, so the avatar is
+// gone (see chat, Oct 2026). The column stays filled server-side with this placeholder because
+// profiles.avatar_emoji is NOT NULL and nothing reads it.
+const PLACEHOLDER_AVATAR = '🏈';
 
 /** Matches the key Auth.tsx writes before an OAuth redirect (which loses
  * router state on the round trip to Google/Apple and back). */
@@ -14,7 +19,6 @@ export function ProfileSetup() {
   const location = useLocation();
   const completeProfileSetup = useAuthStore((s) => s.completeProfileSetup);
   const [username, setUsername] = useState('');
-  const [avatar, setAvatar] = useState(AVATARS[0]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -26,7 +30,7 @@ export function ProfileSetup() {
       return;
     }
     setSubmitting(true);
-    const result = await completeProfileSetup(username.trim(), avatar);
+    const result = await completeProfileSetup(username.trim(), PLACEHOLDER_AVATAR);
     setSubmitting(false);
     if (!result.ok) {
       setError(result.error ?? 'Something went wrong.');
@@ -56,23 +60,6 @@ export function ProfileSetup() {
             className={`w-full bg-bg-card border rounded-lg px-3 py-2.5 ${error ? 'border-loss' : 'border-border'}`}
           />
           {error && <p className="text-loss text-xs mt-1">{error}</p>}
-        </div>
-
-        <div>
-          <label className="text-sm text-text-muted mb-2 block">Pick an avatar</label>
-          <div className="grid grid-cols-6 gap-2">
-            {AVATARS.map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => setAvatar(emoji)}
-                className={`text-2xl aspect-square rounded-xl border flex items-center justify-center ${
-                  avatar === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-card'
-                }`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
         </div>
 
         <button

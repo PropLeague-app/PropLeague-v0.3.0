@@ -28,7 +28,6 @@ import {
   ShieldCheck,
   Plus,
   DoorOpen,
-  Lock,
   UserRound,
   Bell,
   BellRing,
@@ -47,7 +46,9 @@ import type { ThemeMode } from '../types';
 import { ACCENTS, THEMES, THEME_BY_ID, themeTone, type AccentColor } from '../engine/themes';
 import { useResolvedTheme } from '../hooks/useResolvedTheme';
 
-const AVATARS = ['🦅', '🐻', '🐺', '🦁', '🐯', '🦈', '🐉', '🦂', '🐢', '🦍', '🦊', '🐗'];
+// The profile avatar picker used to live here. Nothing in the app ever drew it: every screen that
+// shows who someone is shows their team logo, which they pick per league and which carries the team
+// colour with it. Two identities for one person, one of them invisible (see chat, Oct 2026).
 
 /** Compact two-or-three option switch used by the display preferences. */
 function Seg<T extends string>({
@@ -216,7 +217,6 @@ export function SettingsHome() {
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [helpFocus, setHelpFocus] = useState<{ category: string; topic: string } | null>(null);
   const [pendingNav, setPendingNav] = useState<string | null>(null);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [teamIdentityDirty, setTeamIdentityDirty] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
@@ -224,7 +224,7 @@ export function SettingsHome() {
   const userTeam = league?.teams.find((t) => t.isUser);
   const settings = league?.settings;
 
-  // Explicit-save drafts for username/avatar and team name/abbrev (see chat: these
+  // Explicit-save drafts for username and team name/abbrev (see chat: these
   // used to commit on every keystroke straight to local-only state, which is why
   // they always reverted after a sign-out -- factoryReset wipes local state, and
   // nothing was ever pushed to Supabase to re-hydrate from). Re-seeded whenever the
@@ -232,14 +232,12 @@ export function SettingsHome() {
   // fetch from another device); left alone otherwise so an in-progress edit is
   // never silently overwritten mid-type.
   const [usernameDraft, setUsernameDraft] = useState(profile?.username ?? '');
-  const [avatarDraft, setAvatarDraft] = useState(profile?.avatarEmoji ?? '');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   useEffect(() => {
     setUsernameDraft(profile?.username ?? '');
-    setAvatarDraft(profile?.avatarEmoji ?? '');
-  }, [profile?.username, profile?.avatarEmoji]);
-  const profileDirty = usernameDraft.trim() !== (profile?.username ?? '') || avatarDraft !== (profile?.avatarEmoji ?? '');
+  }, [profile?.username]);
+  const profileDirty = usernameDraft.trim() !== (profile?.username ?? '');
 
   const [teamNameDraft, setTeamNameDraft] = useState(userTeam?.teamName ?? '');
   const [abbrevDraft, setAbbrevDraft] = useState(userTeam?.abbrev ?? '');
@@ -273,7 +271,7 @@ export function SettingsHome() {
     }
     setProfileSaving(true);
     setProfileError(null);
-    const result = await authUpdateProfile({ username: trimmed, avatarEmoji: avatarDraft });
+    const result = await authUpdateProfile({ username: trimmed });
     setProfileSaving(false);
     if (!result.ok) {
       setProfileError(result.error ?? 'Something went wrong.');
@@ -386,22 +384,6 @@ export function SettingsHome() {
                     className="w-full bg-bg-raised border border-border rounded-lg px-2.5 py-1.5 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="text-xs text-text-muted mb-0.5 block">Avatar</label>
-                  <div className="grid grid-cols-6 gap-1">
-                    {AVATARS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => setAvatarDraft(emoji)}
-                        className={`text-lg h-9 rounded-lg border flex items-center justify-center ${
-                          avatarDraft === emoji ? 'border-primary bg-primary/10' : 'border-border bg-bg-raised'
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 {profileError && <p className="text-loss text-xs">{profileError}</p>}
                 <div className="flex items-center gap-2">
                   <button
@@ -415,7 +397,6 @@ export function SettingsHome() {
                     <button
                       onClick={() => {
                         setUsernameDraft(profile.username);
-                        setAvatarDraft(profile.avatarEmoji);
                         setProfileError(null);
                       }}
                       className="text-xs text-text-muted px-2"
@@ -678,7 +659,6 @@ export function SettingsHome() {
               summary="Email, password, devices"
               onClick={() => goTo('/settings/account')}
             />
-            <SettingsRow icon={<Lock size={14} />} compact label="Log Out" tone="danger" chevron={false} onClick={() => setLogoutConfirmOpen(true)} />
           </div>
         </section>
 
@@ -722,18 +702,6 @@ export function SettingsHome() {
               navigate(pendingNav);
             }}
             onClose={() => setPendingNav(null)}
-          />
-        )}
-        {logoutConfirmOpen && (
-          <ConfirmSheet
-            title="Log out of PropLeague?"
-            confirmLabel="Log Out"
-            confirmingLabel="Logging out…"
-            onConfirm={async () => {
-              await useAuthStore.getState().signOut();
-              navigate('/welcome');
-            }}
-            onClose={() => setLogoutConfirmOpen(false)}
           />
         )}
       </div>

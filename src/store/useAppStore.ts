@@ -159,6 +159,11 @@ interface AppState {
   postChatMessage: (leagueId: string, message: string) => Promise<{ ok: boolean; error?: string }>;
   deleteChatMessage: (leagueId: string, itemId: string) => Promise<{ ok: boolean; error?: string }>;
   markChatSeen: (leagueId: string) => void;
+  /** When this device last looked at the league's activity feed. Drives the count on the League
+   *  Home tab (see engine/activityDigest.ts). Separate from the chat cursor on purpose: opening the
+   *  feed clears the league badge, opening the Chat tab clears the chat pill. */
+  lastSeenActivityByLeague: Record<string, string>;
+  markActivitySeen: (leagueId: string) => void;
 
   loadRealGamesForWeek: (week: WeekId, options?: { force?: boolean }) => Promise<void>;
   loadSlateForWeek: (week: WeekId, options?: { force?: boolean }) => Promise<void>;
@@ -370,6 +375,7 @@ export const useAppStore = create<AppState>()(
       leaguesHydrated: false,
       leaguesHydrateError: null,
       lastSeenChatByLeague: {},
+      lastSeenActivityByLeague: {},
       seenMatchupResultIds: {},
 
       // Merges onto the existing profile rather than replacing it outright --
@@ -1075,7 +1081,7 @@ export const useAppStore = create<AppState>()(
 
       // manual v0.1.1 §7 #11: wipes every persisted field (profile, leagues,
       // currentLeagueId) and drops back to onboarding.
-      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {}, seenMatchupResultIds: {} }),
+      factoryReset: () => set({ profile: null, leagues: {}, currentLeagueId: null, leaguesHydrated: false, lastSeenChatByLeague: {}, lastSeenActivityByLeague: {}, seenMatchupResultIds: {} }),
       markMatchupResultSeen: (matchupId) =>
         set((state) => ({ seenMatchupResultIds: { ...state.seenMatchupResultIds, [matchupId]: true } })),
 
@@ -1181,6 +1187,9 @@ export const useAppStore = create<AppState>()(
 
       markChatSeen: (leagueId) =>
         set((state) => ({ lastSeenChatByLeague: { ...state.lastSeenChatByLeague, [leagueId]: new Date().toISOString() } })),
+
+      markActivitySeen: (leagueId) =>
+        set((state) => ({ lastSeenActivityByLeague: { ...state.lastSeenActivityByLeague, [leagueId]: new Date().toISOString() } })),
 
       // A week's slate is about a megabyte of odds JSON (every book, every market, every player
       // prop for ~16 games), and mapping it walks all of that on the main thread. Every screen that

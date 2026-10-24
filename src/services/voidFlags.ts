@@ -67,6 +67,32 @@ export async function clearVoidFlag(flagId: string): Promise<VoidResult> {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+/** Re-grade a week that is already behind the league, after a void was added or lifted there.
+ *
+ * In the current week there is nothing to do: those picks are still pending and settle-week is
+ * already grading them on its own cron. Older weeks are the problem. settle-week's auto-discovery
+ * only ever visits current_week and current_week - 1 (see its weeksToProcess), so a week further
+ * back would sit on wagers stuck at 'pending' forever. It does accept an explicit week, which is
+ * what this uses, aimed at the one league with forceLeagueId.
+ *
+ * The pool follows for the reason Hunter gave when this was settled: leaving it on figures that no
+ * longer match the standings means two screens disagreeing about the same week, which is worse than
+ * the error being corrected. Both calls are best-effort and reported rather than awaited for
+ * correctness, because the next ordinary settle-week run reaches the same answer. */
+export async function regradeWeek(leagueId: string, week: string): Promise<VoidResult> {
+  const { error } = await supabase.functions.invoke('settle-week', {
+    method: 'POST',
+    body: { week, forceLeagueId: leagueId },
+  });
+  if (error) return { ok: false, error: error.message };
+  try {
+    await supabase.functions.invoke('rebuild-pool', { method: 'POST', body: { leagueId } });
+  } catch {
+    // The pool is recomputed from scratch on the next week close either way.
+  }
+  return { ok: true };
+}
+
 export interface VoidPlayerGroup {
   playerName: string;
   flagId: string | null;
@@ -102,6 +128,8 @@ export function searchVoidPlayers(groups: VoidPlayerGroup[], query: string): Voi
 // ---- Member requests (migration 0032) ----
 
 export type VoidRequestStatus = 'pending' | 'approved' | 'denied';
+/** Which way a request runs: add a void, or lift one that should never have been there. */
+export type VoidRequestKind = 'void' | 'unvoid';
 
 export interface VoidRequestRow {
   id: string;
@@ -116,6 +144,7 @@ export interface VoidRequestRow {
   resolved_at: string | null;
   pick_count: number;
   team_count: number;
+  kind: VoidRequestKind;
 }
 
 /** A player a member can ask about this week. Counts only, never whose picks they are. */
@@ -166,6 +195,7 @@ export async function requestVoid(
   playerName: string,
   reason: VoidReason,
   note: string,
+  kind: VoidRequestKind = 'void',
 ): Promise<RequestVoidResult> {
   const { data, error } = await supabase.rpc('request_void', {
     p_league_id: leagueId,
@@ -173,6 +203,7 @@ export async function requestVoid(
     p_player_name: playerName,
     p_reason: reason,
     p_note: note.trim(),
+    p_kind: kind,
   });
   if (error) return { ok: false, error: error.message };
   const res = (data ?? {}) as { status?: 'pending' | 'approved'; request_id?: string | null };

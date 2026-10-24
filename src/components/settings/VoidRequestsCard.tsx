@@ -17,8 +17,10 @@ import {
   fetchVoidRequests,
   fetchVoidSearch,
   groupVoidCandidates,
+  regradeWeek,
   requestVoid,
   resolveVoidRequest,
+  type VoidRequestKind,
   searchVoidPlayers,
   setVoidFlag,
   voidReasonLabel,
@@ -162,6 +164,21 @@ function pickCountText(picks: number, teams: number): string {
   return `${picks} pick${picks === 1 ? '' : 's'} · ${teams} team${teams === 1 ? '' : 's'}`;
 }
 
+function WeekChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`shrink-0 text-[11px] font-semibold rounded-full px-2.5 py-1 border ${
+        active ? 'sel-pill' : 'border-border bg-bg-raised text-text-muted'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 /** Void requests. Any member can ask for a player who left a game early to be voided (a reason and a
  * short note are required). The commissioner answers each request with a check or an X, and can also
  * flag a player directly, which skips the queue. Approving or flagging makes the same flag settle-week
@@ -183,7 +200,19 @@ export function VoidRequestsCard({
   useEffect(() => {
     if (openOnMount) cardRef.current?.scrollIntoView({ block: 'center' });
   }, [openOnMount]);
-  const weekStr = String(week);
+  // The week being looked at, which is the current one until the reader steps back. A mistake about
+  // last Sunday is still a mistake, and until migration 0043 there was no way to reach it at all
+  // (see chat, Oct 2026).
+  const [viewWeek, setViewWeek] = useState<string>(String(week));
+  const weekStr = viewWeek;
+  const isPastWeek = weekStr !== String(week);
+  // Numeric weeks behind the current one, newest first. Playoff round labels have no reliable order,
+  // so a league in the playoffs steps back through the regular season only.
+  const pastWeeks = useMemo(() => {
+    const n = Number(week);
+    const upto = Number.isInteger(n) ? n - 1 : 18;
+    return Array.from({ length: Math.max(0, upto) }, (_, i) => String(upto - i));
+  }, [week]);
   const statsByName = useAppStore((s) => s.realPlayerStatsByWeek[weekStr]);
   const loadStats = useAppStore((s) => s.loadRealPlayerStatsForWeek);
 
@@ -267,11 +296,21 @@ export function VoidRequestsCard({
     setQuery('');
   }
 
+  /** A change to a week the league has already moved past leaves its picks pending, which only an
+   *  explicit settle-week run will grade (see regradeWeek). The current week needs none of this. */
+  async function regradeIfPast() {
+    if (!isPastWeek) return;
+    setSentMsg(`Week ${weekStr} is being re-graded. Scores and standings may move.`);
+    const res = await regradeWeek(leagueId, weekStr);
+    if (!res.ok) setError(`That change saved, but the re-grade did not start: ${res.error}`);
+  }
+
   async function removeFlag(group: VoidPlayerGroup) {
     if (!group.flagId) return;
     setBusyFlag(group.flagId);
     const res = await clearVoidFlag(group.flagId);
     if (!res.ok) setError(res.error);
+    else await regradeIfPast();
     await load();
     setBusyFlag(null);
   }
@@ -281,7 +320,10 @@ export function VoidRequestsCard({
     setSentMsg(null);
     const res = await resolveVoidRequest(req.id, approve);
     if (!res.ok) setError(res.error);
-    else setError(null);
+    else {
+      setError(null);
+      if (approve) await regradeIfPast();
+    }
     await load();
     setBusyReq(null);
   }
@@ -290,11 +332,16 @@ export function VoidRequestsCard({
     if (!selectedMember || !reason) return;
     setSending(true);
     setError(null);
-    const res = await requestVoid(leagueId, weekStr, selectedMember.player_name, reason, note);
+    const kind: VoidRequestKind = selectedMember.flag_id ? 'unvoid' : 'void';
+    const res = await requestVoid(leagueId, weekStr, selectedMember.player_name, reason, note, kind);
     if (!res.ok) {
       setError(res.error);
     } else {
-      setSentMsg('Request sent. Your commissioner will approve or deny it.');
+      setSentMsg(
+        kind === 'unvoid'
+          ? 'Request sent. Your commissioner will decide whether to lift that void.'
+          : 'Request sent. Your commissioner will approve or deny it.',
+      );
       resetSelection();
       await load();
     }
@@ -329,6 +376,22 @@ export function VoidRequestsCard({
             ? 'Members can request a void. Check to void his unhit Overs and Anytime TDs, X to deny. Unders and hits are safe.'
             : 'Player left a game early? Request a void with a reason. Your commissioner decides. Only unhit Overs and Anytime TDs are voided.'}
         </p>
+        {/* Stepping back a week is the whole point of migration 0043, so the control for it sits
+            above everything the week contains rather than buried in the flow. */}
+        {pastWeeks.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain -mx-0.5 px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <WeekChip label="This week" active={!isPastWeek} onClick={() => setViewWeek(String(week))} />
+            {pastWeeks.map((w) => (
+              <WeekChip key={w} label={`Wk ${w}`} active={weekStr === w} onClick={() => setViewWeek(w)} />
+            ))}
+          </div>
+        )}
+        {isPastWeek && (
+          <p className="text-[11px] text-warning leading-snug">
+            Week {weekStr} is already settled. A change here re-grades its picks, so that week's
+            scores, its winner and the standings can move.
+          </p>
+        )}
         {error && <p className="text-[11px] text-loss">{error}</p>}
         {sentMsg && <p className="text-[11px] text-profit">{sentMsg}</p>}
 
@@ -341,7 +404,16 @@ export function VoidRequestsCard({
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Avatar name={r.player_name} playerId={r.player_id} />
                     <div className="min-w-0">
-                      <p className="text-[13px] font-semibold truncate">{r.player_name}</p>
+                      <p className="text-[13px] font-semibold truncate">
+                        {r.player_name}
+                        {/* Which way the request runs. Without it an approve button means two
+                            opposite things depending on a field nobody can see. */}
+                        {r.kind === 'unvoid' && (
+                          <span className="ml-1.5 align-middle text-[9px] font-bold uppercase tracking-wider text-warning border border-warning/50 rounded px-1 py-px">
+                            Lift void
+                          </span>
+                        )}
+                      </p>
                       <p className="text-[10px] text-text-muted truncate">
                         {r.team_name ?? 'A member'} · {pickCountText(r.pick_count, r.team_count)}
                       </p>
@@ -559,7 +631,11 @@ export function VoidRequestsCard({
                 {memberMatches.length > 0 && (
                   <div className="rounded-xl bg-bg-raised divide-y divide-border overflow-hidden">
                     {memberMatches.map((r) => {
-                      const blocked = r.flag_id ? 'Already voided' : r.pending_request_id ? 'Request waiting' : r.denied ? 'Denied' : null;
+                      // A voided player is no longer a dead end: he is the one case where the
+                      // request runs the other way, which is the Cam Skattebo case (voided as a DNP
+                      // when he had simply taken very few snaps).
+                      const blocked = r.pending_request_id ? 'Request waiting' : r.denied ? 'Denied' : null;
+                      const hint = r.flag_id ? 'Voided. Ask to lift it' : pickCountText(r.pick_count, r.team_count);
                       return (
                         <button
                           key={r.player_name}
@@ -571,7 +647,7 @@ export function VoidRequestsCard({
                           <Avatar name={r.player_name} playerId={r.player_id} />
                           <span className="flex-1 min-w-0">
                             <span className="block text-[13px] font-medium truncate">{r.player_name}</span>
-                            <span className="block text-[10px] text-text-muted">{blocked ?? pickCountText(r.pick_count, r.team_count)}</span>
+                            <span className={`block text-[10px] ${!blocked && r.flag_id ? 'text-warning' : 'text-text-muted'}`}>{blocked ?? hint}</span>
                           </span>
                         </button>
                       );
@@ -597,7 +673,7 @@ export function VoidRequestsCard({
                 </div>
 
                 <div className="space-y-2">
-                  <StepLabel n={1}>Why should it be voided?</StepLabel>
+                  <StepLabel n={1}>{selectedMember.flag_id ? 'Why should the void be lifted?' : 'Why should it be voided?'}</StepLabel>
                   <div className="grid grid-cols-3 gap-1.5">
                     {REASONS.map((r) => (
                       <button

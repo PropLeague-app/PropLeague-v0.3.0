@@ -49,3 +49,35 @@ export function perfectWeeksForTeam(league: League, teamId: string): WeekId[] {
   const weeks = Object.keys(league.matchupsByWeek) as unknown as WeekId[];
   return weeks.filter((w) => isTeamWeekPerfect(league, teamId, w)).sort((a, b) => Number(a) - Number(b));
 }
+
+/** Is this team on fire right now?
+ *
+ * The flame everywhere else in the app belongs to a WEEK: this card, this row, that week was clean.
+ * This one belongs to a PERSON, and it is the difference between a trophy and a streak. It lights on
+ * a perfect week and stays lit until they lose a bet, which is what makes it worth looking at on a
+ * profile: it says something about now rather than about something that happened in week 3 (see
+ * chat, Oct 2026).
+ *
+ * Only a loss puts it out. A push, a void or a DNP void leaves it burning, because none of those is
+ * a bet the person got wrong. That also means a void lifted weeks later (migration 0043) cannot
+ * reach back and extinguish a streak that was never broken.
+ *
+ * Reads only weeks after the perfect one, so a pick still pending in the current week does not count
+ * either way until it settles.
+ */
+export function isTeamOnFire(league: League, teamId: string): boolean {
+  const perfect = perfectWeeksForTeam(league, teamId);
+  if (perfect.length === 0) return false;
+  const since = Number(perfect[perfect.length - 1]);
+  if (!Number.isFinite(since)) return false;
+
+  for (const [key, roster] of Object.entries(league.rostersByTeamWeek)) {
+    if (roster.teamId !== teamId) continue;
+    const week = Number(roster.week);
+    // Non-numeric weeks are playoff rounds, which always come after the regular season.
+    const after = Number.isFinite(week) ? week > since : true;
+    if (!after) continue;
+    if (key && roster.slots.some((s) => s.wager?.status === 'lost')) return false;
+  }
+  return true;
+}

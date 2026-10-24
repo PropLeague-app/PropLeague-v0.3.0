@@ -59,6 +59,7 @@ export function IdentityPicker({
   colorLabel = 'Background color',
   onSave,
   onDirtyChange,
+  onDraftChange,
   bare = false,
 }: {
   /** Drops the card chrome (border/background/padding) and styles the title as a
@@ -83,6 +84,10 @@ export function IdentityPicker({
    * unsaved changes" confirm (manual v0.1.1 §2 #4) — this component only handles the
    * in-page Save Changes button itself. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** The unsaved draft, reported on every change. Lets a caller paint with a colour before it is
+   *  committed: the profile header's gradient is the team colour, so choosing one with no live
+   *  preview means picking blind and tapping Save to find out (see chat, Oct 2026). */
+  onDraftChange?: (draft: LogoIdentity) => void;
 }) {
   const [draft, setDraft] = useState<LogoIdentity>(() => pickIdentity(value));
   const [emojiCategory, setEmojiCategory] = useState(EMOJI_CATEGORIES[0].id);
@@ -98,6 +103,10 @@ export function IdentityPicker({
     onDirtyChange?.(dirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty]);
+  useEffect(() => {
+    onDraftChange?.(draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   function update(partial: Partial<LogoIdentity>) {
     setDraft((d) => ({ ...d, ...partial }));

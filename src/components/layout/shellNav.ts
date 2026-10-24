@@ -62,10 +62,17 @@ export function inTabSection(tab: string, path: string): boolean {
   return path === tab || path.startsWith(`${tab}/`);
 }
 
+// Where the last route change came from. A matchup counts as League Home's memory only when you
+// actually walked there from League Home: the same matchup opened from a profile is a detour, and
+// recording it sent the League Home tab somewhere its own screen never went (see chat, Oct 2026).
+let cameFrom = '/home';
+
 /** Called on every route change inside the shell. */
 export function noteShellLocation(path: string, leagueId: string | null) {
   if (inTabSection('/slate', path)) slateLast = path;
-  else if (inTabSection('/home', path)) homeLast = { path, leagueId };
+  else if (path === '/home') homeLast = { path, leagueId };
+  else if (path.startsWith('/matchup/') && inTabSection('/home', cameFrom)) homeLast = { path, leagueId };
+  cameFrom = path;
 }
 
 /** Where a tab tap should go when you are not already in that tab. */

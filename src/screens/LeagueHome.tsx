@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, ChevronDown, ChevronUp, Hourglass, Rocket, RefreshCw, Pin } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronUp, Hourglass, MessageSquare, Rocket, RefreshCw, Pin, Swords } from 'lucide-react';
 import { MAX_PINNED_ANNOUNCEMENTS, pinnedAnnouncementCount } from '../engine/richText';
 import { fillScheduleGaps, useAppStore } from '../store/useAppStore';
 import { weekLabel } from '../types';
 import { MatchupCard } from '../components/home/MatchupCard';
+import { HubHeader } from '../components/common/HubHeader';
 import { StandingsPreview } from '../components/home/StandingsPreview';
 import { LeagueLinks } from '../components/home/LeagueLinks';
 import { ActivityFeed } from '../components/home/ActivityFeed';
+import { ActivityMini } from '../components/home/ActivityMini';
+import { unreadActivityCount } from '../engine/activityDigest';
 import { TopToast } from '../components/common/TopToast';
 import { CountdownTimer } from '../components/common/CountdownTimer';
 import { EmptyState } from '../components/common/EmptyState';
@@ -31,6 +34,8 @@ export function LeagueHome() {
   const postChatMessage = useAppStore((s) => s.postChatMessage);
   const deleteChatMessage = useAppStore((s) => s.deleteChatMessage);
   const lastSeenChatByLeague = useAppStore((s) => s.lastSeenChatByLeague);
+  const lastSeenActivityByLeague = useAppStore((s) => s.lastSeenActivityByLeague);
+  const markActivitySeen = useAppStore((s) => s.markActivitySeen);
   const markChatSeen = useAppStore((s) => s.markChatSeen);
   const loadLeagueResults = useAppStore((s) => s.loadLeagueResults);
   const loadWeekRosters = useAppStore((s) => s.loadWeekRosters);
@@ -38,6 +43,11 @@ export function LeagueHome() {
   const realGamesForWeek = useAppStore((s) => (league ? s.realGamesByWeek[String(league.currentWeek)] : undefined));
   const [showAll, setShowAll] = useState(false);
   const [announceOpen, setAnnounceOpen] = useState(false);
+  // Collapsed by default: the point of the preview is that the page stays short.
+  const [activityOpen, setActivityOpen] = useState(false);
+  // Which tab the feed opens on, so the header's chat control lands on the conversation.
+  const [activityTab, setActivityTab] = useState<'all' | 'chat'>('all');
+  const activityRef = useRef<HTMLDivElement>(null);
   const [announceText, setAnnounceText] = useState('');
   const [announcePin, setAnnouncePin] = useState(false);
   const [announceError, setAnnounceError] = useState<string | null>(null);
@@ -99,6 +109,11 @@ export function LeagueHome() {
   const chatUnreadCount = league.chat.filter(
     (m) => m.teamId !== userTeam?.id && new Date(m.ts).getTime() > lastSeenChatMs,
   ).length;
+  // The whole feed's unread count, which is a different cursor to the chat one: opening the feed
+  // clears this, opening the Chat tab inside it clears that (see engine/activityDigest.ts).
+  const lastSeenActivityTs = lastSeenActivityByLeague[league.id];
+  const lastSeenActivityMs = lastSeenActivityTs ? new Date(lastSeenActivityTs).getTime() : 0;
+  const activityUnread = unreadActivityCount(league.activity, league.chat, userTeam?.id, lastSeenActivityMs);
 
   // Client-side-only refresh: re-reads whatever's already in Supabase (scores,
   // wager/roster status, standings) -- does NOT touch the odds/lines
@@ -171,9 +186,26 @@ export function LeagueHome() {
           onClick={handleRefresh}
           disabled={refreshing}
           aria-label="Refresh scores and stats"
-          className="p-2 -mr-2 text-text-muted disabled:opacity-50 shrink-0"
+          className="p-2 text-text-muted disabled:opacity-50 shrink-0"
         >
           <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+        </button>
+        <button
+          onClick={() => {
+            setActivityTab('chat');
+            setActivityOpen(true);
+            markActivitySeen(league.id);
+            requestAnimationFrame(() => activityRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+          }}
+          aria-label="League chat"
+          className="relative p-2 -mr-2 text-text-muted shrink-0"
+        >
+          <MessageSquare size={18} />
+          {chatUnreadCount > 0 && (
+            <span className="absolute top-0.5 right-0 min-w-3.5 h-3.5 px-1 rounded-full bg-loss text-white text-[9px] leading-[14px] font-bold text-center">
+              {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
+            </span>
+          )}
         </button>
         <TopToast message={refreshError} />
       </div>
@@ -203,7 +235,10 @@ export function LeagueHome() {
             }
           />
         ) : userMatchup ? (
-          <MatchupCard league={league} matchup={userMatchup} highlightTeamId={userTeam?.id} />
+          <div>
+            <HubHeader icon={<Swords size={13} />} title="Current Matchup" chevron />
+            <MatchupCard league={league} matchup={userMatchup} highlightTeamId={userTeam?.id} />
+          </div>
         ) : seasonNotStarted ? (
           <EmptyState
             icon={<Rocket size={36} strokeWidth={1.5} />}
@@ -289,11 +324,22 @@ export function LeagueHome() {
 
         <StandingsPreview league={league} />
 
-        <LeagueLinks league={league} />
-
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="font-semibold text-sm">Activity</p>
+        <ActivityMini
+          anchorRef={activityRef}
+          league={league}
+          unread={activityUnread}
+          lastSeenMs={lastSeenActivityMs}
+          open={activityOpen}
+          onToggle={() => {
+            const next = !activityOpen;
+            setActivityOpen(next);
+            if (!next) setActivityTab('all');
+            // Opening it is what counts as having looked, which is what clears the tab badge.
+            if (next) markActivitySeen(league.id);
+          }}
+        >
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <p className="font-semibold text-xs flex-1 min-w-0 sr-only">Activity</p>
             {/* League News is commissioner-only/auto (see chat). Used to be a
                client-side gate only -- post_announcement itself (hand-created in
                the SQL editor, not migration-tracked) only ever checked league
@@ -362,6 +408,7 @@ export function LeagueHome() {
             items={league.activity}
             chat={league.chat}
             chatUnreadCount={chatUnreadCount}
+            initialTab={activityTab}
             onReact={(itemId, emoji) => reactToActivity(league.id, itemId, emoji)}
             onSendChat={async (message) => (await postChatMessage(league.id, message)).ok}
             onDeleteAnnouncement={(itemId) => deleteAnnouncement(league.id, itemId)}
@@ -369,7 +416,10 @@ export function LeagueHome() {
             onDeleteChat={(itemId) => deleteChatMessage(league.id, itemId)}
             onSeenChat={() => markChatSeen(league.id)}
           />
-        </div>
+        </ActivityMini>
+
+        <LeagueLinks league={league} />
+
       </div>
     </>
   );

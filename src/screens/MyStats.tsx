@@ -144,7 +144,10 @@ export function MyStats() {
   const plStyle = usePlStyle();
   const oddsFormat = useAppStore((s) => s.profile?.oddsFormat ?? 'american');
   const navigate = useNavigate();
-  const [tab, setTab] = useState<StatsTab>('overview');
+  // A caller can ask for a tab (the profile's Strengths card opens Markets, which is the tab it is a
+  // preview of). Only the initial value: switching tabs here stays local, as it always has.
+  const requestedTab = (location.state as { statsTab?: StatsTab } | null)?.statsTab;
+  const [tab, setTab] = useState<StatsTab>(requestedTab ?? 'overview');
   // Past weeks' rosters are what perfect weeks are judged from.
   useEnsureSettledWeekRosters(league);
 

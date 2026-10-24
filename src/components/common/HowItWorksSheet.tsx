@@ -174,7 +174,9 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Void requests',
       body: [
         'If a player left a game early, open Settings, then Void Requests, find him, choose a reason and add a note. Your commissioner approves or denies it, and you get a notification either way. Only Over and Anytime TD picks that did not hit are voided, for everyone.',
-        'You can have 3 requests waiting at once, and a player the commissioner denied cannot be requested again that week.',
+        'A void can run the other way too. If someone was voided who should not have been, say a player who was active all game but barely used, find him in that week and ask for the void to be lifted. His picks go back to being graded from the real stats like any other.',
+        'Week chips at the top of the card step back through weeks already played, so a mistake found later can still be fixed. Changing a week that has already settled re-grades its picks, so that week\'s scores, its winner, the standings and the prize pool can all move. The commissioner sees a warning saying so before answering.',
+        'You can have 3 requests waiting at once, and a player the commissioner already answered cannot be asked about again that week in the same direction.',
       ],
     },
     {
@@ -185,6 +187,7 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
       title: 'Perfect and skunked weeks',
       body: [
         'A perfect week has no lost bet: every slot filled, all credits placed, enough different games, and at least one win. Pushes and voids are fine, and a roster hit by the invalid roster penalty never counts. Perfect weeks get a gold treatment with flames, and the league feed announces them (the commissioner can turn that off).',
+        'A perfect week also sets you alight on your profile, and the flames stay there until you lose a bet. Only a loss puts them out: a push or a void leaves them burning. The flames on a matchup card or on your schedule mean something different, that the week itself was clean, so those stay with the week they belong to.',
         'A skunked week is the opposite: every slot filled, nothing still pending, at least three losses and no wins or pushes. Voids are ignored. Skunked weeks get a muted olive treatment with stink lines and flies on the matchup, schedule and share picture. The league feed only announces them if the commissioner turns that on, and it is off by default.',
       ],
     },
@@ -259,7 +262,17 @@ function buildCategories(settings: LeagueSettings | null): Category[] {
     {
       title: 'Activity feed and chat',
       body: [
+        'Activity sits above the league links on League Home and starts collapsed, showing the last three things worth seeing: anything the commissioner pinned, then whatever you have not seen, then whatever is newest. Tap it to open the full feed with all its tabs, which is also what marks it as read. The three lines spread across kinds, so a week of Moments posted in one go cannot take every slot. The speech bubble in the header opens straight onto Chat and carries its own unread count.',
+        'A red count on the League Home tab tells you something happened before you even open it. It counts announcements, Moments and other people talking, and deliberately never counts your own settled-bet alerts, since those already reached you as a push and a badge that is always lit is a badge people learn to ignore.',
         'League Home has an activity feed and a chat tab with an unread badge. The commissioner posts announcements in rich text and can pin up to 3 (the pin is gold, or blue with the Orange or Gold accent). Anyone can react to a post with an emoji. Tap one of the four quick reactions, or the + for a full picker with a search box and every emoji category. Each team gets one reaction per post, so picking a different one moves yours instead of adding a second (tap your own again to remove it). Reactions show as chips with the logos of the teams that picked them, and extra ones collapse into a stack showing a few emojis and how many reactions are inside. Tapping a chip shows which teams picked that emoji, and tapping the stack lists every team that reacted, each with its emoji. Weekly Moments and perfect or skunked weeks show up here as cards.',
+      ],
+    },
+    {
+      title: 'Your profile',
+      body: [
+        'Profile is your hub. The top carries your team in its own colour, with four figures under it: matchup record, your place in the league, season profit and current streak. Tap the pencil and the name and abbreviation become editable in place, while the logo and the colour picker open below. The colour you drag paints the header as you go, so you can see it before you save.',
+        'Under that is every team in the league in standings order, each numbered by where it sits. In a league with conferences the number is the place within that conference, tagged with its initial, so it always matches what the standings screen says. Tap any of them to land on that person\'s profile, or All for the full members screen. Back from anyone else\'s profile returns to your own, however many profiles you hopped through to get there.',
+        'Then the week itself: Current Matchup, and side by side under it Bets and Stats. Bets names your best market, counting only markets where you have at least three settled picks, since two bets on one market is a coin toss wearing a label, with your overall ROI under it. Stats is your profit week by week. Under those, Power Rankings shows where you sit in the league, your score, and your last eight weeks. That line is scaled to your own high and low rather than the league\'s, with a dashed line where the stretch began, so you can see whether you are climbing or sliding instead of a flat line in the middle of the card. Every block carries the same icon as the row for it and a chevron in the corner, so anything with one opens the full screen behind it. Season Schedule and Leaderboards sit at the bottom, and both are on everyone\'s profile, not only your own.',
       ],
     },
     {
